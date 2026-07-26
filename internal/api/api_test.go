@@ -19,6 +19,7 @@ import (
 	"github.com/yaad-index/yaadegar/internal/api/gen"
 	"github.com/yaad-index/yaadegar/internal/clock"
 	"github.com/yaad-index/yaadegar/internal/email"
+	"github.com/yaad-index/yaadegar/internal/preview"
 	"github.com/yaad-index/yaadegar/internal/storage"
 	"github.com/yaad-index/yaadegar/internal/storage/sqlstore"
 )
@@ -30,13 +31,14 @@ const baseDomain = "example.test"
 var testClockStart = time.Date(2027, 6, 15, 12, 0, 0, 0, time.UTC)
 
 type harness struct {
-	t      *testing.T
-	h      http.Handler
-	store  storage.Store
-	tenant storage.Tenant
-	owner  storage.User
-	email  *email.FakeSender
-	clk    *clock.Fake
+	t       *testing.T
+	h       http.Handler
+	store   storage.Store
+	tenant  storage.Tenant
+	owner   storage.User
+	email   *email.FakeSender
+	clk     *clock.Fake
+	preview *preview.FakeFetcher
 }
 
 func newHarness(t *testing.T) *harness {
@@ -55,13 +57,15 @@ func newHarness(t *testing.T) *harness {
 
 	fake := &email.FakeSender{}
 	clk := clock.NewFake(testClockStart)
+	pf := &preview.FakeFetcher{} // hermetic: no real network in API tests
 	h := api.NewHandler(store, api.Options{
 		BaseDomain: baseDomain,
 		Logger:     slog.New(slog.DiscardHandler),
 		Email:      fake,
 		Clock:      clk,
+		Previewer:  preview.New(pf),
 	})
-	return &harness{t: t, h: h, store: store, tenant: tenant, owner: owner, email: fake, clk: clk}
+	return &harness{t: t, h: h, store: store, tenant: tenant, owner: owner, email: fake, clk: clk, preview: pf}
 }
 
 // reqH issues a request through the handler with arbitrary headers. host sets

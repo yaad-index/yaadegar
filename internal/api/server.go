@@ -9,6 +9,7 @@ import (
 	"github.com/yaad-index/yaadegar/internal/api/gen"
 	"github.com/yaad-index/yaadegar/internal/clock"
 	"github.com/yaad-index/yaadegar/internal/email"
+	"github.com/yaad-index/yaadegar/internal/preview"
 	"github.com/yaad-index/yaadegar/internal/storage"
 )
 
@@ -19,6 +20,7 @@ type Server struct {
 	baseDomain string
 	email      email.Sender
 	clock      clock.Clock
+	previewer  *preview.Previewer
 	logger     *slog.Logger
 }
 
@@ -37,13 +39,16 @@ type Options struct {
 	// Clock supplies "now" for time-gated checks (event-dated auto-disable).
 	// Defaults to the real clock when nil.
 	Clock clock.Clock
+	// Previewer scrapes item drafts from product URLs. Defaults to the
+	// SSRF-guarded fetcher when nil; tests inject one over a fake fetcher.
+	Previewer *preview.Previewer
 }
 
 // NewHandler builds the full HTTP handler: the generated strict router wrapped in
 // tenant-resolution and owner-auth middleware. It serves both surfaces and
 // /healthz.
 func NewHandler(store storage.Store, opts Options) http.Handler {
-	s := &Server{store: store, baseDomain: opts.BaseDomain, email: opts.Email, clock: opts.Clock, logger: opts.Logger}
+	s := &Server{store: store, baseDomain: opts.BaseDomain, email: opts.Email, clock: opts.Clock, previewer: opts.Previewer, logger: opts.Logger}
 	if s.logger == nil {
 		s.logger = slog.Default()
 	}
@@ -52,6 +57,9 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 	}
 	if s.clock == nil {
 		s.clock = clock.Real{}
+	}
+	if s.previewer == nil {
+		s.previewer = preview.NewDefault()
 	}
 
 	strict := gen.NewStrictHandlerWithOptions(s, nil, gen.StrictHTTPServerOptions{
