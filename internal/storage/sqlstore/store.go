@@ -48,6 +48,12 @@ func Open(ctx context.Context, cfg storage.Config) (storage.Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("sqlstore: open %s: %w", cfg.Driver, err)
 	}
+	// SQLite is a single-writer database; pinning to one connection serializes
+	// all access, which keeps the capacity checks race-free (no FOR UPDATE) and
+	// avoids SQLITE_BUSY under concurrency.
+	if cfg.Driver == storage.DriverSQLite {
+		db.SetMaxOpenConns(1)
+	}
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("sqlstore: connect %s: %w", cfg.Driver, err)

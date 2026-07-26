@@ -15,6 +15,10 @@ var (
 	// ErrConflict is returned on a uniqueness or state conflict (e.g. a
 	// duplicate subdomain, share slug, or custom domain).
 	ErrConflict = errors.New("storage: conflict")
+	// ErrCapacityExceeded is returned by the capacity-guarded creates when an
+	// insert would push a total past its cap — a reservation beyond quantity_wanted
+	// or a contribution beyond the item price. The check and insert are atomic.
+	ErrCapacityExceeded = errors.New("storage: capacity exceeded")
 )
 
 // Driver selects a backing database.
@@ -128,6 +132,12 @@ type ItemRepo interface {
 // ReservationRepo persists reservations within the bound tenant.
 type ReservationRepo interface {
 	Create(ctx context.Context, r Reservation) (Reservation, error)
+	// CreateWithinCapacity atomically inserts a reservation only if the item's
+	// total reserved quantity would not exceed wantedQty; otherwise it returns
+	// ErrCapacityExceeded (and ErrNotFound if the item is gone). The check and
+	// insert run in one transaction with the item row locked, so concurrent
+	// reservers cannot oversell.
+	CreateWithinCapacity(ctx context.Context, r Reservation, wantedQty int) (Reservation, error)
 	Get(ctx context.Context, id string) (Reservation, error)
 	// ByTokenHash looks a reservation up by the hash of its capability token.
 	ByTokenHash(ctx context.Context, tokenHash string) (Reservation, error)
