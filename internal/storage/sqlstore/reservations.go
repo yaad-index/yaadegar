@@ -11,7 +11,8 @@ import (
 type reservationRepo struct{ baseRepo }
 
 const reservationCols = `id, tenant_id, item_id, giver_name, giver_email,
-	quantity, token_hash, created_at, last_activity_at, is_group, decay_state`
+	quantity, token_hash, created_at, last_activity_at, is_group, decay_state,
+	decay_state_at, decay_release_token_hash, decay_keep_token_hash`
 
 func scanReservation(s scanner) (storage.Reservation, error) {
 	var (
@@ -21,9 +22,11 @@ func scanReservation(s scanner) (storage.Reservation, error) {
 		createdAt    string
 		lastActivity string
 		isGroup      int
+		decayStateAt string
 	)
 	if err := s.Scan(&r.ID, &r.TenantID, &r.ItemID, &giverName, &giverEmail,
-		&r.Quantity, &r.TokenHash, &createdAt, &lastActivity, &isGroup, &r.DecayState); err != nil {
+		&r.Quantity, &r.TokenHash, &createdAt, &lastActivity, &isGroup, &r.DecayState,
+		&decayStateAt, &r.DecayReleaseTokenHash, &r.DecayKeepTokenHash); err != nil {
 		return storage.Reservation{}, err
 	}
 	ts, err := parseTime(createdAt)
@@ -34,10 +37,15 @@ func scanReservation(s scanner) (storage.Reservation, error) {
 	if err != nil {
 		return storage.Reservation{}, err
 	}
+	dsa, err := parseTime(decayStateAt)
+	if err != nil {
+		return storage.Reservation{}, err
+	}
 	r.GiverName = strPtr(giverName)
 	r.GiverEmail = strPtr(giverEmail)
 	r.CreatedAt = ts
 	r.LastActivityAt = la
+	r.DecayStateAt = dsa
 	r.IsGroup = isGroup != 0
 	return r, nil
 }
@@ -59,6 +67,9 @@ func (r reservationRepo) prep(res storage.Reservation) storage.Reservation {
 	if res.DecayState == "" {
 		res.DecayState = storage.DecayActive
 	}
+	if res.DecayStateAt.IsZero() {
+		res.DecayStateAt = res.CreatedAt
+	}
 	res.TenantID = r.tenantID
 	return res
 }
@@ -67,10 +78,11 @@ func (r reservationRepo) prep(res storage.Reservation) storage.Reservation {
 func (r reservationRepo) insert(ctx context.Context, x execer, res storage.Reservation) error {
 	_, err := x.ExecContext(ctx, r.rb(
 		`INSERT INTO reservations (`+reservationCols+`)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		res.ID, res.TenantID, res.ItemID, nullStr(res.GiverName), nullStr(res.GiverEmail),
 		res.Quantity, res.TokenHash, fmtTime(res.CreatedAt),
-		fmtTime(res.LastActivityAt), boolToInt(res.IsGroup), res.DecayState)
+		fmtTime(res.LastActivityAt), boolToInt(res.IsGroup), res.DecayState,
+		fmtTime(res.DecayStateAt), res.DecayReleaseTokenHash, res.DecayKeepTokenHash)
 	return err
 }
 
@@ -90,7 +102,8 @@ func (r reservationRepo) CreateWithinCapacity(ctx context.Context, res storage.R
 	err := r.withItemLock(ctx, res.ItemID, func(tx *sql.Tx) error {
 		var total int
 		if err := tx.QueryRowContext(ctx, r.rb(
-			`SELECT COALESCE(SUM(quantity), 0) FROM reservations WHERE tenant_id = ? AND item_id = ?`),
+			`SELECT COALESCE(SUM(quantity), 0) FROM reservations
+			  WHERE tenant_id = ? AND item_id = ? AND decay_state != 'expired'`),
 			r.tenantID, res.ItemID).Scan(&total); err != nil {
 			return err
 		}

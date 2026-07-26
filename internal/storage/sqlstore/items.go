@@ -144,7 +144,7 @@ func (r itemRepo) ReservedQuantity(ctx context.Context, itemID string) (int, err
 	var n sql.NullInt64
 	if err := r.db.QueryRowContext(ctx, r.rb(
 		`SELECT COALESCE(SUM(quantity), 0) FROM reservations
-		  WHERE tenant_id = ? AND item_id = ?`),
+		  WHERE tenant_id = ? AND item_id = ? AND decay_state != 'expired'`),
 		r.tenantID, itemID).Scan(&n); err != nil {
 		return 0, err
 	}
@@ -182,7 +182,7 @@ func (r itemRepo) ReservedQuantitiesByList(ctx context.Context, listID string) (
 		`SELECT res.item_id, COALESCE(SUM(res.quantity), 0)
 		   FROM reservations res
 		   JOIN items it ON it.tenant_id = res.tenant_id AND it.id = res.item_id
-		  WHERE res.tenant_id = ? AND it.list_id = ?
+		  WHERE res.tenant_id = ? AND it.list_id = ? AND res.decay_state != 'expired'
 		  GROUP BY res.item_id`), r.tenantID, listID)
 	if err != nil {
 		return nil, err

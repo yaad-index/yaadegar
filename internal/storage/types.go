@@ -77,11 +77,13 @@ type Tenant struct {
 }
 
 // User is an owner within a tenant. The authentication mechanism is deferred to
-// a later ADR (ADR-0002 §4); this is the persisted identity only.
+// a later ADR (ADR-0002 §4); this is the persisted identity only. Email is used
+// server-side (e.g. decay notices) and may be empty until real auth lands.
 type User struct {
 	ID        string
 	TenantID  string
 	Name      string
+	Email     string
 	CreatedAt time.Time
 }
 
@@ -95,9 +97,12 @@ type List struct {
 	Visibility Visibility
 	ShareSlug  string
 	EventDate  *time.Time // date-only; nil = none. After it, the list auto-disables.
-	DecayDays  int        // 0 = decay off
-	Active     bool
-	CreatedAt  time.Time
+	// DecayDays is the reservation-decay period override: nil inherits the
+	// instance default, 0 means off, N means N days. The nil/-1 encoding is
+	// handled entirely in the storage scan/insert path.
+	DecayDays *int
+	Active    bool
+	CreatedAt time.Time
 	// ItemCount is a derived read field: the number of items on the list. It is
 	// populated by reads (Get/GetBySlug/List) and left zero by Create.
 	ItemCount int
@@ -119,13 +124,12 @@ type Item struct {
 }
 
 // ReservationDecayState tracks a reservation through the stale-reservation decay
-// flow. Only `active` is set by reservation creation; the transitions are driven
-// by later decay work.
+// flow: active → reserver_notified → expired, with a "keep" click returning it to
+// active. Only `active` is set at creation.
 type ReservationDecayState string
 
 const (
 	DecayActive           ReservationDecayState = "active"
-	DecayOwnerNotified    ReservationDecayState = "owner_notified"
 	DecayReserverNotified ReservationDecayState = "reserver_notified"
 	DecayExpired          ReservationDecayState = "expired"
 )
@@ -149,6 +153,32 @@ type Reservation struct {
 	IsGroup bool
 	// DecayState is the stale-reservation lifecycle state; `active` at creation.
 	DecayState ReservationDecayState
+	// DecayStateAt stamps when DecayState was last set; it drives the grace and
+	// expire windows. Defaults to CreatedAt.
+	DecayStateAt time.Time
+	// DecayReleaseTokenHash / DecayKeepTokenHash are the hashes of the one-click
+	// release and keep tokens minted at reserver_notified (empty = none). The raw
+	// tokens are emailed once and never stored (like the capability token).
+	DecayReleaseTokenHash string
+	DecayKeepTokenHash    string
+}
+
+// DecayCandidate is a reservation that the decay sweep may need to advance, with
+// the list's decay period joined in. Returned by the (system-level, cross-tenant)
+// Store.DecayCandidates read; the actual transition is applied tenant-scoped.
+type DecayCandidate struct {
+	TenantID       string
+	ReservationID  string
+	ItemID         string
+	ItemName       string
+	GiverEmail     *string // reserver's email (optional)
+	DecayState     ReservationDecayState
+	LastActivityAt time.Time
+	DecayStateAt   time.Time
+	// DecayDays is the list's period override (nil = inherit the instance
+	// default). The sweeper resolves the effective period; it never compares this
+	// raw value.
+	DecayDays *int
 }
 
 // Contribution is a giver's pledge toward co-buying an item. ContactEmail is

@@ -24,7 +24,7 @@ func (s *Server) CreateList(ctx context.Context, req gen.CreateListRequestObject
 		Title:      req.Body.Title,
 		Visibility: fromGenVisibility(req.Body.Visibility),
 		EventDate:  fromGenDate(req.Body.EventDate),
-		DecayDays:  derefOr(req.Body.DecayDays, 30),
+		DecayDays:  req.Body.DecayDays, // nil (absent) = inherit the instance default
 		Active:     true,
 	})
 	if err != nil {
@@ -106,7 +106,7 @@ func (s *Server) UpdateList(ctx context.Context, req gen.UpdateListRequestObject
 		l.EventDate = fromGenDate(req.Body.EventDate)
 	}
 	if req.Body.DecayDays != nil {
-		l.DecayDays = *req.Body.DecayDays
+		l.DecayDays = req.Body.DecayDays
 	}
 	if req.Body.Active != nil {
 		l.Active = *req.Body.Active

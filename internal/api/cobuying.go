@@ -8,6 +8,7 @@ import (
 	"github.com/yaad-index/yaadegar/internal/api/gen"
 	"github.com/yaad-index/yaadegar/internal/email"
 	"github.com/yaad-index/yaadegar/internal/storage"
+	"github.com/yaad-index/yaadegar/internal/token"
 )
 
 // MinMatchContributions is the named rule: co-buying is for splitting, so a match
@@ -65,7 +66,7 @@ func (s *Server) CreateContribution(ctx context.Context, req gen.CreateContribut
 		}, nil
 	}
 
-	raw, hash, err := newCapabilityToken()
+	raw, hash, err := token.New()
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +245,7 @@ func (s *Server) ConfirmMatch(ctx context.Context, req gen.ConfirmMatchRequestOb
 		}
 		return nil, err
 	}
-	c, err := ts.Contributions().ByTokenHash(ctx, hashToken(raw))
+	c, err := ts.Contributions().ByTokenHash(ctx, token.Hash(raw))
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			return confirmUnauthorized("invalid capability token"), nil
@@ -324,7 +325,7 @@ func (s *Server) contributionByToken(ctx context.Context, ts storage.TenantStore
 	if raw == "" {
 		return storage.Contribution{}, errTokenUnauthorized
 	}
-	c, err := ts.Contributions().ByTokenHash(ctx, hashToken(raw))
+	c, err := ts.Contributions().ByTokenHash(ctx, token.Hash(raw))
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			return storage.Contribution{}, errTokenUnauthorized

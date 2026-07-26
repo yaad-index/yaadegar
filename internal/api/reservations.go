@@ -3,9 +3,11 @@ package api
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/yaad-index/yaadegar/internal/api/gen"
 	"github.com/yaad-index/yaadegar/internal/storage"
+	"github.com/yaad-index/yaadegar/internal/token"
 )
 
 // CreateReservation claims units of an item on the anonymous giver surface and
@@ -56,7 +58,7 @@ func (s *Server) CreateReservation(ctx context.Context, req gen.CreateReservatio
 		}
 	}
 
-	raw, hash, err := newCapabilityToken()
+	raw, hash, err := token.New()
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +106,7 @@ func (s *Server) ReleaseReservation(ctx context.Context, req gen.ReleaseReservat
 		}, nil
 	}
 
-	res, err := ts.Reservations().ByTokenHash(ctx, hashToken(raw))
+	res, err := ts.Reservations().ByTokenHash(ctx, token.Hash(raw))
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			return gen.ReleaseReservation401ApplicationProblemPlusJSONResponse{
@@ -129,4 +131,82 @@ func (s *Server) ReleaseReservation(ctx context.Context, req gen.ReleaseReservat
 		return nil, err
 	}
 	return gen.ReleaseReservation204Response{}, nil
+}
+
+// ReleaseByDecayToken releases a stale reservation via the one-click decay-release
+// token emailed to the reserver. The token is single-use and stops working once
+// the reservation is released or has auto-expired.
+func (s *Server) ReleaseByDecayToken(ctx context.Context, req gen.ReleaseByDecayTokenRequestObject) (gen.ReleaseByDecayTokenResponseObject, error) {
+	ts, _, ok := s.tenantStore(ctx)
+	if !ok {
+		return nil, errMissingContext
+	}
+	if req.Body == nil || req.Body.Token == "" {
+		return gen.ReleaseByDecayToken404ApplicationProblemPlusJSONResponse{
+			NotFoundApplicationProblemPlusJSONResponse: notFound("invalid release token"),
+		}, nil
+	}
+	res, err := ts.Reservations().ByDecayReleaseTokenHash(ctx, token.Hash(req.Body.Token))
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return gen.ReleaseByDecayToken404ApplicationProblemPlusJSONResponse{
+				NotFoundApplicationProblemPlusJSONResponse: notFound("invalid release token"),
+			}, nil
+		}
+		return nil, err
+	}
+	if res.DecayState == storage.DecayExpired {
+		return gen.ReleaseByDecayToken410ApplicationProblemPlusJSONResponse(
+			problemDetail(410, "this reservation has already expired"),
+		), nil
+	}
+	if err := ts.Reservations().Delete(ctx, res.ID); err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return gen.ReleaseByDecayToken404ApplicationProblemPlusJSONResponse{
+				NotFoundApplicationProblemPlusJSONResponse: notFound("reservation not found"),
+			}, nil
+		}
+		return nil, err
+	}
+	return gen.ReleaseByDecayToken204Response{}, nil
+}
+
+// KeepByDecayToken renews a stale reservation via the one-click decay-keep token:
+// it resets the decay clock and invalidates both one-click tokens. Single-use;
+// 410 once the reservation has auto-expired.
+func (s *Server) KeepByDecayToken(ctx context.Context, req gen.KeepByDecayTokenRequestObject) (gen.KeepByDecayTokenResponseObject, error) {
+	ts, _, ok := s.tenantStore(ctx)
+	if !ok {
+		return nil, errMissingContext
+	}
+	if req.Body == nil || req.Body.Token == "" {
+		return gen.KeepByDecayToken404ApplicationProblemPlusJSONResponse{
+			NotFoundApplicationProblemPlusJSONResponse: notFound("invalid keep token"),
+		}, nil
+	}
+	res, err := ts.Reservations().ByDecayKeepTokenHash(ctx, token.Hash(req.Body.Token))
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return gen.KeepByDecayToken404ApplicationProblemPlusJSONResponse{
+				NotFoundApplicationProblemPlusJSONResponse: notFound("invalid keep token"),
+			}, nil
+		}
+		return nil, err
+	}
+	if res.DecayState == storage.DecayExpired {
+		return gen.KeepByDecayToken410ApplicationProblemPlusJSONResponse(
+			problemDetail(410, "this reservation has already expired"),
+		), nil
+	}
+	moved, err := ts.Reservations().Renew(ctx, res.ID, time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	if !moved {
+		// State changed under us (already renewed or expired) — the link is spent.
+		return gen.KeepByDecayToken410ApplicationProblemPlusJSONResponse(
+			problemDetail(410, "this link is no longer valid"),
+		), nil
+	}
+	return gen.KeepByDecayToken204Response{}, nil
 }

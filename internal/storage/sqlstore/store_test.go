@@ -35,6 +35,8 @@ func mkTenant(t *testing.T, st storage.Store, subdomain string) storage.Tenant {
 	return ten
 }
 
+func iptr(i int) *int { return &i }
+
 func TestMigrate_Idempotent(t *testing.T) {
 	st := newTestStore(t)
 	// newTestStore already migrated once; a second call must be a no-op.
