@@ -42,3 +42,7 @@ func notFound(detail string) gen.NotFoundApplicationProblemPlusJSONResponse {
 func badRequest(detail string) gen.BadRequestApplicationProblemPlusJSONResponse {
 	return gen.BadRequestApplicationProblemPlusJSONResponse(problemDetail(http.StatusBadRequest, detail))
 }
+
+func unauthorized(detail string) gen.UnauthorizedApplicationProblemPlusJSONResponse {
+	return gen.UnauthorizedApplicationProblemPlusJSONResponse(problemDetail(http.StatusUnauthorized, detail))
+}

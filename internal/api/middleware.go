@@ -77,6 +77,19 @@ func (s *Server) requireOwner(next http.Handler) http.Handler {
 	})
 }
 
+// captureCapabilityToken lifts the X-Capability-Token header into the request
+// context. The token is modeled as an apiKey security scheme in the spec, so it
+// is not bound into the generated request objects; giver handlers read it from
+// context (validated per-object against the stored hash).
+func captureCapabilityToken(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if tok := strings.TrimSpace(r.Header.Get("X-Capability-Token")); tok != "" {
+			r = r.WithContext(withCapToken(r.Context(), tok))
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func bearerToken(r *http.Request) string {
 	if rest, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
 		return strings.TrimSpace(rest)

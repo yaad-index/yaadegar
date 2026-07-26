@@ -107,6 +107,12 @@ func (r itemRepo) ListByList(ctx context.Context, listID string, p storage.Page)
 }
 
 func (r itemRepo) Update(ctx context.Context, it storage.Item) (storage.Item, error) {
+	// Keep the wanted quantity at least 1, consistent with Create — a zero would
+	// make the item permanently unreservable (reserved 0 + any qty always exceeds
+	// the wanted 0).
+	if it.QuantityWanted < 1 {
+		it.QuantityWanted = 1
+	}
 	amount, currency := priceCols(it.Price)
 	res, err := r.db.ExecContext(ctx, r.rb(
 		`UPDATE items SET name = ?, url = ?, image_url = ?, price_amount_minor = ?,

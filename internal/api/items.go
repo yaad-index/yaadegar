@@ -8,17 +8,18 @@ import (
 	"github.com/yaad-index/yaadegar/internal/storage"
 )
 
-// itemAvailability derives a single item's availability from its aggregates.
-func (s *Server) itemAvailability(ctx context.Context, ts storage.TenantStore, it storage.Item) (storage.Availability, error) {
+// itemState derives a single item's availability and reserved quantity from its
+// aggregates (both owner-visible; neither carries identity).
+func (s *Server) itemState(ctx context.Context, ts storage.TenantStore, it storage.Item) (storage.Availability, int, error) {
 	reserved, err := ts.Items().ReservedQuantity(ctx, it.ID)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	funded, err := ts.Items().FundedAmount(ctx, it.ID)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
-	return deriveAvailability(it.QuantityWanted, reserved, funded), nil
+	return deriveAvailability(it.QuantityWanted, reserved, funded), reserved, nil
 }
 
 func (s *Server) CreateItem(ctx context.Context, req gen.CreateItemRequestObject) (gen.CreateItemResponseObject, error) {
@@ -31,12 +32,11 @@ func (s *Server) CreateItem(ctx context.Context, req gen.CreateItemRequestObject
 			BadRequestApplicationProblemPlusJSONResponse: badRequest("missing request body"),
 		}, nil
 	}
-	// The item's list must exist within this tenant. The spec offers no 404 on
-	// this operation, so a missing list is reported as a 400 (follow-up: add 404).
+	// The item's list must exist within this tenant.
 	if _, err := ts.Lists().Get(ctx, req.ListId); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
-			return gen.CreateItem400ApplicationProblemPlusJSONResponse{
-				BadRequestApplicationProblemPlusJSONResponse: badRequest("list not found"),
+			return gen.CreateItem404ApplicationProblemPlusJSONResponse{
+				NotFoundApplicationProblemPlusJSONResponse: notFound("list not found"),
 			}, nil
 		}
 		return nil, err
@@ -55,11 +55,11 @@ func (s *Server) CreateItem(ctx context.Context, req gen.CreateItemRequestObject
 	if err != nil {
 		return nil, err
 	}
-	avail, err := s.itemAvailability(ctx, ts, created)
+	avail, reserved, err := s.itemState(ctx, ts, created)
 	if err != nil {
 		return nil, err
 	}
-	return gen.CreateItem201JSONResponse(toGenItem(created, avail)), nil
+	return gen.CreateItem201JSONResponse(toGenItem(created, avail, reserved)), nil
 }
 
 func (s *Server) ListItems(ctx context.Context, req gen.ListItemsRequestObject) (gen.ListItemsResponseObject, error) {
@@ -90,7 +90,7 @@ func (s *Server) ListItems(ctx context.Context, req gen.ListItemsRequestObject) 
 	out := make([]gen.Item, 0, len(items))
 	for _, it := range items {
 		avail := deriveAvailability(it.QuantityWanted, reserved[it.ID], funded[it.ID])
-		out = append(out, toGenItem(it, avail))
+		out = append(out, toGenItem(it, avail, reserved[it.ID]))
 	}
 	return gen.ListItems200JSONResponse(gen.ItemPage{
 		Items:  &out,
@@ -144,11 +144,11 @@ func (s *Server) UpdateItem(ctx context.Context, req gen.UpdateItemRequestObject
 	if err != nil {
 		return nil, err
 	}
-	avail, err := s.itemAvailability(ctx, ts, updated)
+	avail, reserved, err := s.itemState(ctx, ts, updated)
 	if err != nil {
 		return nil, err
 	}
-	return gen.UpdateItem200JSONResponse(toGenItem(updated, avail)), nil
+	return gen.UpdateItem200JSONResponse(toGenItem(updated, avail, reserved)), nil
 }
 
 func (s *Server) DeleteItem(ctx context.Context, req gen.DeleteItemRequestObject) (gen.DeleteItemResponseObject, error) {

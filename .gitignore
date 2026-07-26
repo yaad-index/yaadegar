@@ -1,0 +1,8 @@
+# Built binary (Makefile `build` target outputs ./yaadegar). Root-anchored so it
+# never matches the cmd/yaadegar package directory.
+/yaadegar
+
+# Local databases and SQLite sidecar files (e.g. the default file:yaadegar.db).
+*.db
+*.db-wal
+*.db-shm
