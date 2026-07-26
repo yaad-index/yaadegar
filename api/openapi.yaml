@@ -324,6 +324,11 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+        "410":
+          description: The list is no longer active (past its event date or disabled).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
 
   /public/reservations/{reservationId}:
     parameters:
@@ -428,6 +433,11 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409":
           description: The item is already fully funded or reserved.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "410":
+          description: The list is no longer active (past its event date or disabled).
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }

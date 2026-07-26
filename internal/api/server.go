@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/yaad-index/yaadegar/internal/api/gen"
+	"github.com/yaad-index/yaadegar/internal/clock"
 	"github.com/yaad-index/yaadegar/internal/email"
 	"github.com/yaad-index/yaadegar/internal/storage"
 )
@@ -17,6 +18,7 @@ type Server struct {
 	store      storage.Store
 	baseDomain string
 	email      email.Sender
+	clock      clock.Clock
 	logger     *slog.Logger
 }
 
@@ -32,18 +34,24 @@ type Options struct {
 	// Email delivers co-buying handshake notifications. Defaults to a logging
 	// sender (observable, never silent) when nil.
 	Email email.Sender
+	// Clock supplies "now" for time-gated checks (event-dated auto-disable).
+	// Defaults to the real clock when nil.
+	Clock clock.Clock
 }
 
 // NewHandler builds the full HTTP handler: the generated strict router wrapped in
 // tenant-resolution and owner-auth middleware. It serves both surfaces and
 // /healthz.
 func NewHandler(store storage.Store, opts Options) http.Handler {
-	s := &Server{store: store, baseDomain: opts.BaseDomain, email: opts.Email, logger: opts.Logger}
+	s := &Server{store: store, baseDomain: opts.BaseDomain, email: opts.Email, clock: opts.Clock, logger: opts.Logger}
 	if s.logger == nil {
 		s.logger = slog.Default()
 	}
 	if s.email == nil {
 		s.email = email.NewLogSender(s.logger)
+	}
+	if s.clock == nil {
+		s.clock = clock.Real{}
 	}
 
 	strict := gen.NewStrictHandlerWithOptions(s, nil, gen.StrictHTTPServerOptions{

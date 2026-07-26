@@ -42,11 +42,16 @@ func (s *Server) CreateContribution(ctx context.Context, req gen.CreateContribut
 	}
 
 	list, err := ts.Lists().GetBySlug(ctx, req.ShareSlug)
-	if err != nil || !list.Active {
-		if err == nil || errors.Is(err, storage.ErrNotFound) {
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
 			return contribNotFound("list not found"), nil
 		}
 		return nil, err
+	}
+	if listDisabled(list, s.clock.Now()) {
+		return gen.CreateContribution410ApplicationProblemPlusJSONResponse(
+			problemDetail(410, "this list is no longer active"),
+		), nil
 	}
 	item, err := ts.Items().Get(ctx, req.ItemId)
 	if err != nil || item.ListID != list.ID {

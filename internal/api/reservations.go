@@ -29,10 +29,10 @@ func (s *Server) CreateReservation(ctx context.Context, req gen.CreateReservatio
 		}
 		return nil, err
 	}
-	if !list.Active {
-		return gen.CreateReservation404ApplicationProblemPlusJSONResponse{
-			NotFoundApplicationProblemPlusJSONResponse: notFound("list not found"),
-		}, nil
+	if listDisabled(list, s.clock.Now()) {
+		return gen.CreateReservation410ApplicationProblemPlusJSONResponse(
+			problemDetail(410, "this list is no longer active"),
+		), nil
 	}
 
 	item, err := ts.Items().Get(ctx, req.ItemId)
