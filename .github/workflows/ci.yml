@@ -24,6 +24,11 @@ jobs:
       - name: Build
         run: go build ./...
 
+      # Regenerate from api/openapi.yaml (oapi-codegen pinned in go.mod) and fail
+      # if the checked-in generated code drifts from the spec — they must match.
+      - name: Verify generated code is in sync with the spec
+        run: make verify-generate
+
       - name: Vet
         run: go vet ./...
 
