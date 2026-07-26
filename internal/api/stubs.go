@@ -7,8 +7,7 @@ import (
 )
 
 // Operations outside the scope of this build return errNotImplemented, which the
-// response error handler renders as 501. These land in later issues:
-//   - reservations, co-buying contributions, matches → #6/#7
+// response error handler renders as 501:
 //   - custom domains → later owner-surface work
 //   - item URL previews (server-side scrape) → later
 //
@@ -24,21 +23,5 @@ func (s *Server) AddDomain(context.Context, gen.AddDomainRequestObject) (gen.Add
 }
 
 func (s *Server) PreviewItem(context.Context, gen.PreviewItemRequestObject) (gen.PreviewItemResponseObject, error) {
-	return nil, errNotImplemented
-}
-
-func (s *Server) CreateContribution(context.Context, gen.CreateContributionRequestObject) (gen.CreateContributionResponseObject, error) {
-	return nil, errNotImplemented
-}
-
-func (s *Server) GetContribution(context.Context, gen.GetContributionRequestObject) (gen.GetContributionResponseObject, error) {
-	return nil, errNotImplemented
-}
-
-func (s *Server) WithdrawContribution(context.Context, gen.WithdrawContributionRequestObject) (gen.WithdrawContributionResponseObject, error) {
-	return nil, errNotImplemented
-}
-
-func (s *Server) ConfirmMatch(context.Context, gen.ConfirmMatchRequestObject) (gen.ConfirmMatchResponseObject, error) {
 	return nil, errNotImplemented
 }

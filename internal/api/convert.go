@@ -114,6 +114,40 @@ func toGenUser(u storage.User, t storage.Tenant) gen.User {
 	}
 }
 
+// toGenContribution maps a stored contribution to its giver-facing view. It
+// carries no other party's contact — only this contribution's own fields.
+func toGenContribution(c storage.Contribution) gen.Contribution {
+	return gen.Contribution{
+		Id:      ptr(c.ID),
+		ItemId:  ptr(c.ItemID),
+		Pledged: toGenMoney(&c.Pledged),
+		Status:  ptr(gen.ContributionStatus(c.Status)),
+		MatchId: c.MatchID,
+	}
+}
+
+// toGenMatch maps a match. Contacts are populated ONLY when the match is
+// both_confirmed — this is the serialization-boundary enforcement of the
+// reveal-only-after-mutual-confirmation rule (ADR-0002 §6). Before that, no
+// contact is emitted regardless of what the caller passes.
+func toGenMatch(m storage.Match, contacts []string) gen.Match {
+	ids := m.ContributionIDs
+	g := gen.Match{
+		Id:              ptr(m.ID),
+		ItemId:          ptr(m.ItemID),
+		State:           ptr(gen.MatchState(m.State)),
+		ContributionIds: &ids,
+	}
+	if m.State == storage.MatchBothConfirmed {
+		emails := make([]openapi_types.Email, 0, len(contacts))
+		for _, e := range contacts {
+			emails = append(emails, openapi_types.Email(e))
+		}
+		g.Contacts = &emails
+	}
+	return g
+}
+
 // deriveAvailability turns storage aggregates into the public availability state.
 // A funded pledge means co-buying; a fully-reserved item (claimed units meet or
 // exceed the wanted quantity) means reserved; otherwise units remain, so it is

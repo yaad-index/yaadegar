@@ -126,13 +126,9 @@ func TestReserverIdentityIsHidden(t *testing.T) {
 
 func TestOutOfScopeOpsReturn501(t *testing.T) {
 	h := newHarness(t)
-	list := h.createList("L")
-	item := h.createItem(*list.Id, "I", 1)
 
-	// Co-buying contribution (public, #7) is still stubbed.
-	resp, _ := h.req(http.MethodPost,
-		"/public/"+*list.ShareSlug+"/items/"+*item.Id+"/contributions", h.ownerHost(), "",
-		map[string]any{"pledged": map[string]any{"amount_minor": 1000, "currency": "EUR"}, "contact_email": "g@example.com"})
+	// Custom domains (owner) are still stubbed.
+	resp, _ := h.req(http.MethodGet, "/api/v1/domains", h.ownerHost(), h.ownerToken(), nil)
 	assert.Equal(t, http.StatusNotImplemented, resp.StatusCode)
 	assert.Equal(t, "application/problem+json", resp.Header.Get("Content-Type"))
 
