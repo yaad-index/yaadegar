@@ -13,13 +13,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The server serves /healthz and shuts down cleanly when its context is
-// cancelled — the skeleton lifecycle later issues build on.
+// testHandler is a minimal stand-in for the real API handler: it serves the
+// liveness route so the lifecycle tests stay independent of internal/api.
+func testHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write([]byte("ok\n"))
+	})
+	return mux
+}
+
+// The server serves its handler and shuts down cleanly when its context is
+// cancelled — the lifecycle later issues build on.
 func TestServer_ServesHealthzThenShutsDown(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
-	s := New("", slog.New(slog.DiscardHandler))
+	s := New("", testHandler(), slog.New(slog.DiscardHandler))
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- s.Serve(ctx, ln) }()
@@ -40,12 +51,12 @@ func TestServer_ServesHealthzThenShutsDown(t *testing.T) {
 	}
 }
 
-// An unknown path is a 404 — only /healthz is wired in the skeleton.
+// An unknown path is a 404 through the served handler.
 func TestServer_UnknownRouteIs404(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
-	s := New("", slog.New(slog.DiscardHandler))
+	s := New("", testHandler(), slog.New(slog.DiscardHandler))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _ = s.Serve(ctx, ln) }()

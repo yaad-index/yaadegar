@@ -1,7 +1,7 @@
-// Package server is the yaadegar HTTP API server. Per ADR-0001 yaadegar is
-// API-first; this skeleton wires the server lifecycle (graceful start + shutdown)
-// and a single operational liveness route. Feature routes, the storage
-// repository interface, and request handlers land in later issues.
+// Package server owns the yaadegar HTTP lifecycle: graceful start and shutdown
+// around an injected handler. The handler itself (routing, tenancy, auth, the
+// API surface) is built by internal/api and passed in, keeping this package
+// concerned only with process lifecycle.
 package server
 
 import (
@@ -23,28 +23,16 @@ type Server struct {
 	logger *slog.Logger
 }
 
-// New builds a server bound to addr. The mux carries only /healthz for now
-// (operational liveness — not a feature route); feature routes are wired in
-// later issues.
-func New(addr string, logger *slog.Logger) *Server {
+// New builds a server bound to addr that serves the given handler.
+func New(addr string, handler http.Handler, logger *slog.Logger) *Server {
 	return &Server{
 		http: &http.Server{
 			Addr:              addr,
-			Handler:           routes(),
+			Handler:           handler,
 			ReadHeaderTimeout: 10 * time.Second,
 		},
 		logger: logger,
 	}
-}
-
-// routes builds the HTTP handler. v1 exposes only the liveness endpoint.
-func routes() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		_, _ = w.Write([]byte("ok\n"))
-	})
-	return mux
 }
 
 // Run listens on the configured address and serves until ctx is cancelled, then

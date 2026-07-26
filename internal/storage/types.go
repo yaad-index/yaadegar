@@ -98,6 +98,9 @@ type List struct {
 	DecayDays  int        // 0 = decay off
 	Active     bool
 	CreatedAt  time.Time
+	// ItemCount is a derived read field: the number of items on the list. It is
+	// populated by reads (Get/GetBySlug/List) and left zero by Create.
+	ItemCount int
 }
 
 // Item is one entry on a list. Nil pointers are absent optional fields.
