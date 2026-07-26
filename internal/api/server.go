@@ -56,8 +56,10 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 	mux := http.NewServeMux()
 	gen.HandlerFromMux(strict, mux)
 
-	// Middleware order (outermost first): resolve tenant, then enforce owner auth.
+	// Middleware order (outermost first): resolve tenant, enforce owner auth, then
+	// lift any capability token into context for the giver handlers.
 	var h http.Handler = mux
+	h = captureCapabilityToken(h)
 	h = s.requireOwner(h)
 	h = s.resolveTenant(h)
 	return h

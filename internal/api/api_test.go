@@ -48,9 +48,9 @@ func newHarness(t *testing.T) *harness {
 	return &harness{t: t, h: h, store: store, tenant: tenant, owner: owner}
 }
 
-// req issues a request through the handler. host sets the Host header (tenant
-// routing); token, if non-empty, is sent as a bearer token.
-func (h *harness) req(method, path, host, token string, body any) (*http.Response, []byte) {
+// reqH issues a request through the handler with arbitrary headers. host sets
+// the Host header (tenant routing).
+func (h *harness) reqH(method, path, host string, headers map[string]string, body any) (*http.Response, []byte) {
 	h.t.Helper()
 	var r io.Reader
 	if body != nil {
@@ -64,12 +64,22 @@ func (h *harness) req(method, path, host, token string, body any) (*http.Respons
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+	for k, v := range headers {
+		req.Header.Set(k, v)
 	}
 	rec := &responseRecorder{header: http.Header{}, body: &bytes.Buffer{}}
 	h.h.ServeHTTP(rec, req)
 	return rec.result(), rec.body.Bytes()
+}
+
+// req issues a request; token, if non-empty, is sent as a bearer token.
+func (h *harness) req(method, path, host, token string, body any) (*http.Response, []byte) {
+	h.t.Helper()
+	headers := map[string]string{}
+	if token != "" {
+		headers["Authorization"] = "Bearer " + token
+	}
+	return h.reqH(method, path, host, headers, body)
 }
 
 // ownerHost / ownerToken are the defaults for the seeded tenant+owner.

@@ -11,26 +11,34 @@ import (
 type reservationRepo struct{ baseRepo }
 
 const reservationCols = `id, tenant_id, item_id, giver_name, giver_email,
-	quantity, token_hash, created_at`
+	quantity, token_hash, created_at, last_activity_at, is_group, decay_state`
 
 func scanReservation(s scanner) (storage.Reservation, error) {
 	var (
-		r          storage.Reservation
-		giverName  sql.NullString
-		giverEmail sql.NullString
-		createdAt  string
+		r            storage.Reservation
+		giverName    sql.NullString
+		giverEmail   sql.NullString
+		createdAt    string
+		lastActivity string
+		isGroup      int
 	)
 	if err := s.Scan(&r.ID, &r.TenantID, &r.ItemID, &giverName, &giverEmail,
-		&r.Quantity, &r.TokenHash, &createdAt); err != nil {
+		&r.Quantity, &r.TokenHash, &createdAt, &lastActivity, &isGroup, &r.DecayState); err != nil {
 		return storage.Reservation{}, err
 	}
 	ts, err := parseTime(createdAt)
 	if err != nil {
 		return storage.Reservation{}, err
 	}
+	la, err := parseTime(lastActivity)
+	if err != nil {
+		return storage.Reservation{}, err
+	}
 	r.GiverName = strPtr(giverName)
 	r.GiverEmail = strPtr(giverEmail)
 	r.CreatedAt = ts
+	r.LastActivityAt = la
+	r.IsGroup = isGroup != 0
 	return r, nil
 }
 
@@ -44,12 +52,20 @@ func (r reservationRepo) Create(ctx context.Context, res storage.Reservation) (s
 	if res.CreatedAt.IsZero() {
 		res.CreatedAt = nowTime()
 	}
+	if res.LastActivityAt.IsZero() {
+		res.LastActivityAt = res.CreatedAt
+	}
+	if res.DecayState == "" {
+		res.DecayState = storage.DecayActive
+	}
 	res.TenantID = r.tenantID
 
 	_, err := r.db.ExecContext(ctx, r.rb(
-		`INSERT INTO reservations (`+reservationCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
+		`INSERT INTO reservations (`+reservationCols+`)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		res.ID, res.TenantID, res.ItemID, nullStr(res.GiverName), nullStr(res.GiverEmail),
-		res.Quantity, res.TokenHash, fmtTime(res.CreatedAt))
+		res.Quantity, res.TokenHash, fmtTime(res.CreatedAt),
+		fmtTime(res.LastActivityAt), boolToInt(res.IsGroup), res.DecayState)
 	if err != nil {
 		if r.d.isUniqueViolation(err) {
 			return storage.Reservation{}, storage.ErrConflict

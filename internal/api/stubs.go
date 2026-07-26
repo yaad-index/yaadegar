@@ -27,14 +27,6 @@ func (s *Server) PreviewItem(context.Context, gen.PreviewItemRequestObject) (gen
 	return nil, errNotImplemented
 }
 
-func (s *Server) CreateReservation(context.Context, gen.CreateReservationRequestObject) (gen.CreateReservationResponseObject, error) {
-	return nil, errNotImplemented
-}
-
-func (s *Server) ReleaseReservation(context.Context, gen.ReleaseReservationRequestObject) (gen.ReleaseReservationResponseObject, error) {
-	return nil, errNotImplemented
-}
-
 func (s *Server) CreateContribution(context.Context, gen.CreateContributionRequestObject) (gen.CreateContributionResponseObject, error) {
 	return nil, errNotImplemented
 }

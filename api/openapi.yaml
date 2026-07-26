@@ -167,6 +167,7 @@ paths:
               schema: { $ref: "#/components/schemas/Item" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /api/v1/items/{itemId}:
     parameters:
@@ -639,6 +640,11 @@ components:
         priority: { type: integer }
         quantity_wanted: { type: integer }
         availability: { $ref: "#/components/schemas/ItemAvailability" }
+        reserved_quantity:
+          type: integer
+          description: >
+            How many units are reserved (owner view). This is a count only and
+            never identifies who reserved them (ADR-0002 §5).
 
     ItemPage:
       type: object

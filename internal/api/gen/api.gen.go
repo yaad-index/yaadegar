@@ -214,10 +214,13 @@ type Item struct {
 	Note         *string           `json:"note,omitempty"`
 
 	// Price An exact monetary amount as minor units plus ISO-4217 currency.
-	Price          *Money  `json:"price,omitempty"`
-	Priority       *int    `json:"priority,omitempty"`
-	QuantityWanted *int    `json:"quantity_wanted,omitempty"`
-	Url            *string `json:"url,omitempty"`
+	Price          *Money `json:"price,omitempty"`
+	Priority       *int   `json:"priority,omitempty"`
+	QuantityWanted *int   `json:"quantity_wanted,omitempty"`
+
+	// ReservedQuantity How many units are reserved (owner view). This is a count only and never identifies who reserved them (ADR-0002 §5).
+	ReservedQuantity *int    `json:"reserved_quantity,omitempty"`
+	Url              *string `json:"url,omitempty"`
 }
 
 // ItemAvailability Availability only. Never reveals who reserved or is buying.
@@ -1858,6 +1861,22 @@ func (response CreateItem401ApplicationProblemPlusJSONResponse) VisitCreateItemR
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateItem404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response CreateItem404ApplicationProblemPlusJSONResponse) VisitCreateItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
 	_, err := buf.WriteTo(w)
 	return err
 }

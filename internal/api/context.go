@@ -17,6 +17,7 @@ type ctxKey int
 const (
 	tenantCtxKey ctxKey = iota
 	ownerCtxKey
+	capTokenCtxKey
 )
 
 // withTenant returns ctx carrying the resolved tenant for the request.
@@ -39,4 +40,17 @@ func withOwner(ctx context.Context, u storage.User) context.Context {
 func ownerFromContext(ctx context.Context) (storage.User, bool) {
 	u, ok := ctx.Value(ownerCtxKey).(storage.User)
 	return u, ok
+}
+
+// withCapToken carries the raw capability token from the X-Capability-Token
+// header (the token is modeled as an apiKey security scheme, so it is not bound
+// into the generated request objects — the middleware stashes it here instead).
+func withCapToken(ctx context.Context, token string) context.Context {
+	return context.WithValue(ctx, capTokenCtxKey, token)
+}
+
+// capTokenFromContext returns the raw capability token, if the request carried one.
+func capTokenFromContext(ctx context.Context) string {
+	tok, _ := ctx.Value(capTokenCtxKey).(string)
+	return tok
 }

@@ -118,6 +118,18 @@ type Item struct {
 	CreatedAt      time.Time
 }
 
+// ReservationDecayState tracks a reservation through the stale-reservation decay
+// flow. Only `active` is set by reservation creation; the transitions are driven
+// by later decay work.
+type ReservationDecayState string
+
+const (
+	DecayActive           ReservationDecayState = "active"
+	DecayOwnerNotified    ReservationDecayState = "owner_notified"
+	DecayReserverNotified ReservationDecayState = "reserver_notified"
+	DecayExpired          ReservationDecayState = "expired"
+)
+
 // Reservation is an anonymous giver's claim on an item. GiverName/GiverEmail are
 // server-side only (decay reminders) and never shown to others (ADR-0002 §5).
 // TokenHash is a hash of the one-time capability token — never the raw token
@@ -131,6 +143,12 @@ type Reservation struct {
 	Quantity   int
 	TokenHash  string
 	CreatedAt  time.Time
+	// LastActivityAt seeds the decay clock; set to CreatedAt on creation.
+	LastActivityAt time.Time
+	// IsGroup marks a reservation opened as part of group co-buying (#7).
+	IsGroup bool
+	// DecayState is the stale-reservation lifecycle state; `active` at creation.
+	DecayState ReservationDecayState
 }
 
 // Contribution is a giver's pledge toward co-buying an item. ContactEmail is

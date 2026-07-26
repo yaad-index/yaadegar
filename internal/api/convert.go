@@ -62,20 +62,22 @@ func toGenList(l storage.List) gen.List {
 	}
 }
 
-// toGenItem maps a stored item plus its derived availability to the owner Item.
-// The availability is a state only — no reserver identity is ever carried here.
-func toGenItem(it storage.Item, avail storage.Availability) gen.Item {
+// toGenItem maps a stored item plus its derived availability and reserved count
+// to the owner Item. Both are aggregates — a state and a count — and carry no
+// reserver identity (ADR-0002 §5).
+func toGenItem(it storage.Item, avail storage.Availability, reservedQty int) gen.Item {
 	return gen.Item{
-		Id:             ptr(it.ID),
-		ListId:         ptr(it.ListID),
-		Name:           ptr(it.Name),
-		Url:            it.URL,
-		ImageUrl:       it.ImageURL,
-		Price:          toGenMoney(it.Price),
-		Note:           it.Note,
-		Priority:       ptr(it.Priority),
-		QuantityWanted: ptr(it.QuantityWanted),
-		Availability:   ptr(gen.ItemAvailability(avail)),
+		Id:               ptr(it.ID),
+		ListId:           ptr(it.ListID),
+		Name:             ptr(it.Name),
+		Url:              it.URL,
+		ImageUrl:         it.ImageURL,
+		Price:            toGenMoney(it.Price),
+		Note:             it.Note,
+		Priority:         ptr(it.Priority),
+		QuantityWanted:   ptr(it.QuantityWanted),
+		Availability:     ptr(gen.ItemAvailability(avail)),
+		ReservedQuantity: ptr(reservedQty),
 	}
 }
 
