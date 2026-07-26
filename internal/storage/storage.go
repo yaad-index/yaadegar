@@ -148,6 +148,11 @@ type ReservationRepo interface {
 // ContributionRepo persists co-buying pledges within the bound tenant.
 type ContributionRepo interface {
 	Create(ctx context.Context, c Contribution) (Contribution, error)
+	// CreateWithinCapacity atomically inserts a contribution only if the item's
+	// total non-terminal pledged amount would not exceed priceMinor; otherwise
+	// ErrCapacityExceeded (ErrNotFound if the item is gone). Shares the item lock
+	// with reserve so contribute cannot overfund under concurrency.
+	CreateWithinCapacity(ctx context.Context, c Contribution, priceMinor int64) (Contribution, error)
 	Get(ctx context.Context, id string) (Contribution, error)
 	ByTokenHash(ctx context.Context, tokenHash string) (Contribution, error)
 	ListByItem(ctx context.Context, itemID string) ([]Contribution, error)

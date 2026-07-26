@@ -367,6 +367,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ContributionCreated" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409":
           description: The item is already fully funded or reserved.
@@ -446,6 +447,11 @@ paths:
               schema: { $ref: "#/components/schemas/Match" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The match is already resolved (both-confirmed or declined).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
 
 components:
   securitySchemes:

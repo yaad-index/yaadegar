@@ -54,6 +54,36 @@ func TestCreateWithinCapacity(t *testing.T) {
 	assert.Equal(t, 3, total)
 }
 
+// TestContributeWithinCapacity mirrors the reservation guard for contributions:
+// pledges accumulate up to the item price, and one that would overfund is
+// rejected atomically.
+func TestContributeWithinCapacity(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+	ts, _, list := seedList(t, st)
+	item, err := ts.Items().Create(ctx, storage.Item{ListID: list.ID, Name: "Machine"})
+	require.NoError(t, err)
+	const price = int64(40000)
+
+	mk := func(minor int64, tok string) error {
+		_, err := ts.Contributions().CreateWithinCapacity(ctx, storage.Contribution{
+			ItemID:       item.ID,
+			Pledged:      storage.Money{AmountMinor: minor, Currency: "EUR"},
+			ContactEmail: tok + "@example.com",
+			TokenHash:    tok,
+		}, price)
+		return err
+	}
+
+	require.NoError(t, mk(20000, "c1"))
+	require.NoError(t, mk(20000, "c2")) // exactly covers
+	assert.ErrorIs(t, mk(1, "c3"), storage.ErrCapacityExceeded)
+
+	funded, err := ts.Items().FundedAmount(ctx, item.ID)
+	require.NoError(t, err)
+	assert.Equal(t, price, funded.AmountMinor)
+}
+
 // TestCreateWithinCapacityConcurrent is the anti-oversell proof: many goroutines
 // race to reserve a limited item; the atomic guard admits exactly the wanted
 // quantity and rejects the rest with ErrCapacityExceeded — no oversell.

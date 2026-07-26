@@ -16,6 +16,7 @@ import (
 
 	"github.com/yaad-index/yaadegar/internal/api"
 	"github.com/yaad-index/yaadegar/internal/api/gen"
+	"github.com/yaad-index/yaadegar/internal/email"
 	"github.com/yaad-index/yaadegar/internal/storage"
 	"github.com/yaad-index/yaadegar/internal/storage/sqlstore"
 )
@@ -28,6 +29,7 @@ type harness struct {
 	store  storage.Store
 	tenant storage.Tenant
 	owner  storage.User
+	email  *email.FakeSender
 }
 
 func newHarness(t *testing.T) *harness {
@@ -44,8 +46,13 @@ func newHarness(t *testing.T) *harness {
 	owner, err := store.ForTenant(tenant).Users().Create(ctx, storage.User{Name: "Alice"})
 	require.NoError(t, err)
 
-	h := api.NewHandler(store, api.Options{BaseDomain: baseDomain, Logger: slog.New(slog.DiscardHandler)})
-	return &harness{t: t, h: h, store: store, tenant: tenant, owner: owner}
+	fake := &email.FakeSender{}
+	h := api.NewHandler(store, api.Options{
+		BaseDomain: baseDomain,
+		Logger:     slog.New(slog.DiscardHandler),
+		Email:      fake,
+	})
+	return &harness{t: t, h: h, store: store, tenant: tenant, owner: owner, email: fake}
 }
 
 // reqH issues a request through the handler with arbitrary headers. host sets

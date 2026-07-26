@@ -46,3 +46,7 @@ func badRequest(detail string) gen.BadRequestApplicationProblemPlusJSONResponse 
 func unauthorized(detail string) gen.UnauthorizedApplicationProblemPlusJSONResponse {
 	return gen.UnauthorizedApplicationProblemPlusJSONResponse(problemDetail(http.StatusUnauthorized, detail))
 }
+
+func conflict(detail string) gen.ConflictApplicationProblemPlusJSONResponse {
+	return gen.ConflictApplicationProblemPlusJSONResponse(problemDetail(http.StatusConflict, detail))
+}

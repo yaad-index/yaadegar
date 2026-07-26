@@ -2109,6 +2109,20 @@ func (response ConfirmMatch404ApplicationProblemPlusJSONResponse) VisitConfirmMa
 	return err
 }
 
+type ConfirmMatch409ApplicationProblemPlusJSONResponse Problem
+
+func (response ConfirmMatch409ApplicationProblemPlusJSONResponse) VisitConfirmMatchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ReleaseReservationRequestObject struct {
 	ReservationId string `json:"reservationId"`
 }
@@ -2229,6 +2243,22 @@ func (response CreateContribution201JSONResponse) VisitCreateContributionRespons
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateContribution400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response CreateContribution400ApplicationProblemPlusJSONResponse) VisitCreateContributionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
 }
