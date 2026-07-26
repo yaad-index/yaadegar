@@ -109,11 +109,20 @@ type ItemRepo interface {
 	Update(ctx context.Context, it Item) (Item, error)
 	Delete(ctx context.Context, id string) error
 
-	// ReservedQuantity sums active reservations on an item, so #5 can derive
+	// ReservedQuantity sums active reservations on an item, so callers can derive
 	// availability without an N+1 read.
 	ReservedQuantity(ctx context.Context, itemID string) (int, error)
 	// FundedAmount sums non-terminal contribution pledges on an item.
 	FundedAmount(ctx context.Context, itemID string) (Money, error)
+
+	// ReservedQuantitiesByList returns reserved quantity per item for every item
+	// on a list, in one query — the batch form used to derive availability across
+	// a whole list without N+1 reads. Items with no reservations are absent from
+	// the map (treat as zero).
+	ReservedQuantitiesByList(ctx context.Context, listID string) (map[string]int, error)
+	// FundedAmountsByList returns funded amount per item for every item on a list,
+	// in one query. Items with no contributions are absent from the map.
+	FundedAmountsByList(ctx context.Context, listID string) (map[string]Money, error)
 }
 
 // ReservationRepo persists reservations within the bound tenant.

@@ -168,3 +168,64 @@ func (r itemRepo) FundedAmount(ctx context.Context, itemID string) (storage.Mone
 	}
 	return storage.Money{AmountMinor: amount, Currency: currency.String}, nil
 }
+
+// ReservedQuantitiesByList returns reserved quantity per item across a list in
+// one grouped query (batch form of ReservedQuantity — avoids N+1).
+func (r itemRepo) ReservedQuantitiesByList(ctx context.Context, listID string) (map[string]int, error) {
+	rows, err := r.db.QueryContext(ctx, r.rb(
+		`SELECT res.item_id, COALESCE(SUM(res.quantity), 0)
+		   FROM reservations res
+		   JOIN items it ON it.tenant_id = res.tenant_id AND it.id = res.item_id
+		  WHERE res.tenant_id = ? AND it.list_id = ?
+		  GROUP BY res.item_id`), r.tenantID, listID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := map[string]int{}
+	for rows.Next() {
+		var (
+			itemID string
+			qty    int
+		)
+		if err := rows.Scan(&itemID, &qty); err != nil {
+			return nil, err
+		}
+		out[itemID] = qty
+	}
+	return out, rows.Err()
+}
+
+// FundedAmountsByList returns funded amount per item across a list in one grouped
+// query (batch form of FundedAmount).
+func (r itemRepo) FundedAmountsByList(ctx context.Context, listID string) (map[string]storage.Money, error) {
+	rows, err := r.db.QueryContext(ctx, r.rb(
+		`SELECT con.item_id, COALESCE(SUM(con.pledged_amount_minor), 0), MAX(con.pledged_currency)
+		   FROM contributions con
+		   JOIN items it ON it.tenant_id = con.tenant_id AND it.id = con.item_id
+		  WHERE con.tenant_id = ? AND it.list_id = ? AND con.status IN (?, ?, ?)
+		  GROUP BY con.item_id`),
+		r.tenantID, listID,
+		string(storage.ContributionPending),
+		string(storage.ContributionMatched),
+		string(storage.ContributionConfirmed))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := map[string]storage.Money{}
+	for rows.Next() {
+		var (
+			itemID   string
+			amount   int64
+			currency sql.NullString
+		)
+		if err := rows.Scan(&itemID, &amount, &currency); err != nil {
+			return nil, err
+		}
+		out[itemID] = storage.Money{AmountMinor: amount, Currency: currency.String}
+	}
+	return out, rows.Err()
+}

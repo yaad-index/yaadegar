@@ -19,7 +19,10 @@ import (
 	"github.com/alecthomas/kong"
 	kongyaml "github.com/alecthomas/kong-yaml"
 
+	"github.com/yaad-index/yaadegar/internal/api"
 	"github.com/yaad-index/yaadegar/internal/server"
+	"github.com/yaad-index/yaadegar/internal/storage"
+	"github.com/yaad-index/yaadegar/internal/storage/sqlstore"
 )
 
 // version is the build version, overridden at link time via -ldflags.
@@ -36,18 +39,37 @@ type CLI struct {
 
 // ServeCmd runs the HTTP server until interrupted.
 type ServeCmd struct {
-	HTTPAddr string `name:"http-addr" default:":8080" env:"YAADEGAR_HTTP_ADDR" help:"HTTP listen address."`
+	HTTPAddr      string `name:"http-addr" default:":8080" env:"YAADEGAR_HTTP_ADDR" help:"HTTP listen address."`
+	StorageDriver string `name:"storage-driver" default:"sqlite" enum:"sqlite,postgres" env:"YAADEGAR_STORAGE_DRIVER" help:"Storage driver."`
+	StorageDSN    string `name:"storage-dsn" default:"file:yaadegar.db" env:"YAADEGAR_STORAGE_DSN" help:"Storage DSN: a SQLite file path/URI or a Postgres connection URL."`
+	BaseDomain    string `name:"base-domain" env:"YAADEGAR_BASE_DOMAIN" help:"Host suffix under which tenant subdomains live (e.g. example.wish.list). Hosts outside it are treated as custom domains."`
 }
 
-// Run wires the server and serves until SIGINT/SIGTERM, then shuts down cleanly.
+// Run opens and migrates storage, builds the API handler, and serves until
+// SIGINT/SIGTERM, then shuts down cleanly.
 func (c *ServeCmd) Run(cli *CLI) error {
 	logger := newLogger(cli.LogLevel)
-	logger.Info("yaadegar starting", "version", version, "http_addr", c.HTTPAddr)
+	logger.Info("yaadegar starting",
+		"version", version, "http_addr", c.HTTPAddr, "storage_driver", c.StorageDriver)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	return server.New(c.HTTPAddr, logger).Run(ctx)
+	store, err := sqlstore.Open(ctx, storage.Config{
+		Driver: storage.Driver(c.StorageDriver),
+		DSN:    c.StorageDSN,
+	})
+	if err != nil {
+		return fmt.Errorf("open storage: %w", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	if err := store.Migrate(ctx); err != nil {
+		return fmt.Errorf("migrate storage: %w", err)
+	}
+
+	handler := api.NewHandler(store, api.Options{BaseDomain: c.BaseDomain, Logger: logger})
+	return server.New(c.HTTPAddr, handler, logger).Run(ctx)
 }
 
 // VersionCmd prints the build version and exits.

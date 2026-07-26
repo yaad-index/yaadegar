@@ -10,8 +10,15 @@ import (
 
 type listRepo struct{ baseRepo }
 
+// listCols are the physical list columns, used for INSERT.
 const listCols = `id, tenant_id, owner_id, title, visibility, share_slug,
 	event_date, decay_days, active, created_at`
+
+// listSelectCols is listCols plus the derived item_count (a correlated subquery),
+// used for reads so a list carries its item count without an N+1 count query.
+const listSelectCols = listCols + `,
+	(SELECT COUNT(*) FROM items
+	  WHERE items.tenant_id = lists.tenant_id AND items.list_id = lists.id) AS item_count`
 
 // scanner is satisfied by both *sql.Row and *sql.Rows.
 type scanner interface{ Scan(dest ...any) error }
@@ -24,7 +31,7 @@ func scanList(s scanner) (storage.List, error) {
 		createdAt string
 	)
 	if err := s.Scan(&l.ID, &l.TenantID, &l.OwnerID, &l.Title, &l.Visibility,
-		&l.ShareSlug, &eventDate, &l.DecayDays, &active, &createdAt); err != nil {
+		&l.ShareSlug, &eventDate, &l.DecayDays, &active, &createdAt, &l.ItemCount); err != nil {
 		return storage.List{}, err
 	}
 	ed, err := datePtr(eventDate)
@@ -75,7 +82,7 @@ func (r listRepo) Create(ctx context.Context, l storage.List) (storage.List, err
 
 func (r listRepo) get(ctx context.Context, cond string, arg string) (storage.List, error) {
 	row := r.db.QueryRowContext(ctx, r.rb(
-		`SELECT `+listCols+` FROM lists WHERE tenant_id = ? AND `+cond), r.tenantID, arg)
+		`SELECT `+listSelectCols+` FROM lists WHERE tenant_id = ? AND `+cond), r.tenantID, arg)
 	l, err := scanList(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -103,7 +110,7 @@ func (r listRepo) List(ctx context.Context, ownerID string, p storage.Page) ([]s
 	}
 
 	rows, err := r.db.QueryContext(ctx, r.rb(
-		`SELECT `+listCols+` FROM lists
+		`SELECT `+listSelectCols+` FROM lists
 		  WHERE tenant_id = ? AND owner_id = ?
 		  ORDER BY created_at DESC, id
 		  LIMIT ? OFFSET ?`),
