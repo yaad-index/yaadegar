@@ -23,6 +23,10 @@ type dialect interface {
 	// isUniqueViolation reports whether err is a unique-constraint conflict, so
 	// repositories can translate it to storage.ErrConflict.
 	isUniqueViolation(err error) bool
+	// forUpdate is the row-locking clause appended to a SELECT to serialize
+	// concurrent capacity checks on that row. Postgres uses "FOR UPDATE"; SQLite
+	// has no such clause (it serializes writers via a single connection).
+	forUpdate() string
 }
 
 type sqliteDialect struct{}
@@ -30,6 +34,7 @@ type sqliteDialect struct{}
 func (sqliteDialect) driverName() string       { return "sqlite" }
 func (sqliteDialect) rebind(q string) string   { return q } // '?' is native
 func (sqliteDialect) migrationsSubdir() string { return "migrations/sqlite" }
+func (sqliteDialect) forUpdate() string        { return "" } // serialized via a single connection
 
 func (sqliteDialect) isUniqueViolation(err error) bool {
 	var se *sqlite.Error
@@ -46,6 +51,7 @@ type postgresDialect struct{}
 
 func (postgresDialect) driverName() string       { return "pgx" }
 func (postgresDialect) migrationsSubdir() string { return "migrations/postgres" }
+func (postgresDialect) forUpdate() string        { return " FOR UPDATE" }
 
 // rebind rewrites each '?' to a positional $N placeholder. Yaadegar never emits
 // a literal '?' inside string literals, so a straight scan is safe.

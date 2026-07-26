@@ -42,7 +42,8 @@ func scanReservation(s scanner) (storage.Reservation, error) {
 	return r, nil
 }
 
-func (r reservationRepo) Create(ctx context.Context, res storage.Reservation) (storage.Reservation, error) {
+// prep fills server-set defaults and binds the tenant.
+func (r reservationRepo) prep(res storage.Reservation) storage.Reservation {
 	if res.ID == "" {
 		res.ID = newID()
 	}
@@ -59,17 +60,52 @@ func (r reservationRepo) Create(ctx context.Context, res storage.Reservation) (s
 		res.DecayState = storage.DecayActive
 	}
 	res.TenantID = r.tenantID
+	return res
+}
 
-	_, err := r.db.ExecContext(ctx, r.rb(
+// insert writes a prepared reservation via x (a *sql.DB or *sql.Tx).
+func (r reservationRepo) insert(ctx context.Context, x execer, res storage.Reservation) error {
+	_, err := x.ExecContext(ctx, r.rb(
 		`INSERT INTO reservations (`+reservationCols+`)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		res.ID, res.TenantID, res.ItemID, nullStr(res.GiverName), nullStr(res.GiverEmail),
 		res.Quantity, res.TokenHash, fmtTime(res.CreatedAt),
 		fmtTime(res.LastActivityAt), boolToInt(res.IsGroup), res.DecayState)
-	if err != nil {
+	return err
+}
+
+func (r reservationRepo) Create(ctx context.Context, res storage.Reservation) (storage.Reservation, error) {
+	res = r.prep(res)
+	if err := r.insert(ctx, r.db, res); err != nil {
 		if r.d.isUniqueViolation(err) {
 			return storage.Reservation{}, storage.ErrConflict
 		}
+		return storage.Reservation{}, err
+	}
+	return res, nil
+}
+
+func (r reservationRepo) CreateWithinCapacity(ctx context.Context, res storage.Reservation, wantedQty int) (storage.Reservation, error) {
+	res = r.prep(res)
+	err := r.withItemLock(ctx, res.ItemID, func(tx *sql.Tx) error {
+		var total int
+		if err := tx.QueryRowContext(ctx, r.rb(
+			`SELECT COALESCE(SUM(quantity), 0) FROM reservations WHERE tenant_id = ? AND item_id = ?`),
+			r.tenantID, res.ItemID).Scan(&total); err != nil {
+			return err
+		}
+		if total+res.Quantity > wantedQty {
+			return storage.ErrCapacityExceeded
+		}
+		if err := r.insert(ctx, tx, res); err != nil {
+			if r.d.isUniqueViolation(err) {
+				return storage.ErrConflict
+			}
+			return err
+		}
+		return nil
+	})
+	if err != nil {
 		return storage.Reservation{}, err
 	}
 	return res, nil

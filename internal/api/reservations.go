@@ -56,30 +56,31 @@ func (s *Server) CreateReservation(ctx context.Context, req gen.CreateReservatio
 		}
 	}
 
-	// A reservation may not push the claimed total past the wanted quantity.
-	reserved, err := ts.Items().ReservedQuantity(ctx, item.ID)
-	if err != nil {
-		return nil, err
-	}
-	if reserved+qty > item.QuantityWanted {
-		return gen.CreateReservation409ApplicationProblemPlusJSONResponse(
-			problemDetail(409, "the item is already fully reserved"),
-		), nil
-	}
-
 	raw, hash, err := newCapabilityToken()
 	if err != nil {
 		return nil, err
 	}
-	res, err := ts.Reservations().Create(ctx, storage.Reservation{
+	// The capacity check and insert are atomic (closes the reserve oversell race):
+	// a reservation past quantity_wanted returns ErrCapacityExceeded → 409.
+	res, err := ts.Reservations().CreateWithinCapacity(ctx, storage.Reservation{
 		ItemID:     item.ID,
 		GiverName:  giverName,
 		GiverEmail: giverEmail,
 		Quantity:   qty,
 		TokenHash:  hash,
 		DecayState: storage.DecayActive,
-	})
+	}, item.QuantityWanted)
 	if err != nil {
+		if errors.Is(err, storage.ErrCapacityExceeded) {
+			return gen.CreateReservation409ApplicationProblemPlusJSONResponse(
+				problemDetail(409, "the item is already fully reserved"),
+			), nil
+		}
+		if errors.Is(err, storage.ErrNotFound) {
+			return gen.CreateReservation404ApplicationProblemPlusJSONResponse{
+				NotFoundApplicationProblemPlusJSONResponse: notFound("item not found"),
+			}, nil
+		}
 		return nil, err
 	}
 	return gen.CreateReservation201JSONResponse(gen.ReservationCreated{
