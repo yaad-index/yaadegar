@@ -1,0 +1,760 @@
+openapi: 3.1.0
+info:
+  title: Yaadegar API
+  version: 0.1.0
+  description: >
+    Yaadegar is a self-hosted, API-first gift registry. This is the first-draft
+    contract (see docs/adr/0002-api-design.md). Two surfaces share one API: an
+    authenticated owner surface under /api/v1, and a mostly-anonymous giver
+    surface under /public reached via a list's opaque share_slug. The tenant is
+    resolved from the request Host header and is implicit in every path.
+  license:
+    name: MIT
+
+servers:
+  - url: https://{tenant}
+    description: A tenant, addressed by its subdomain or custom domain (Host header).
+    variables:
+      tenant:
+        default: example.wish.list
+
+tags:
+  - name: lists
+    description: Owner-managed wishlists.
+  - name: items
+    description: Items within a list.
+  - name: public
+    description: Anonymous giver surface (view, reserve, co-buy) via share_slug.
+  - name: domains
+    description: Tenant subdomain and custom-domain management.
+  - name: ops
+    description: Operational endpoints.
+
+paths:
+  /healthz:
+    get:
+      operationId: getHealthz
+      tags: [ops]
+      summary: Liveness probe
+      security: []
+      responses:
+        "200":
+          description: Service is live.
+          content:
+            text/plain:
+              schema: { type: string, example: "ok" }
+
+  /api/v1/me:
+    get:
+      operationId: getCurrentUser
+      tags: [lists]
+      summary: Get the current owner/tenant
+      responses:
+        "200":
+          description: The authenticated user and their tenant.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/lists:
+    get:
+      operationId: listLists
+      tags: [lists]
+      summary: List the owner's lists
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: A page of the owner's lists.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ListPage" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      operationId: createList
+      tags: [lists]
+      summary: Create a list
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ListCreate" }
+      responses:
+        "201":
+          description: The created list.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/List" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/lists/{listId}:
+    parameters:
+      - $ref: "#/components/parameters/ListId"
+    get:
+      operationId: getList
+      tags: [lists]
+      summary: Get a list (owner view)
+      responses:
+        "200":
+          description: The list, owner view (includes reservation availability).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/List" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateList
+      tags: [lists]
+      summary: Update a list
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ListUpdate" }
+      responses:
+        "200":
+          description: The updated list.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/List" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteList
+      tags: [lists]
+      summary: Delete a list
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/lists/{listId}/items:
+    parameters:
+      - $ref: "#/components/parameters/ListId"
+    get:
+      operationId: listItems
+      tags: [items]
+      summary: List items in a list
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: A page of items.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ItemPage" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      operationId: createItem
+      tags: [items]
+      summary: Add an item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ItemCreate" }
+      responses:
+        "201":
+          description: The created item.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Item" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/items/{itemId}:
+    parameters:
+      - $ref: "#/components/parameters/ItemId"
+    patch:
+      operationId: updateItem
+      tags: [items]
+      summary: Update an item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ItemUpdate" }
+      responses:
+        "200":
+          description: The updated item.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Item" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteItem
+      tags: [items]
+      summary: Delete an item
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/item-previews:
+    post:
+      operationId: previewItem
+      tags: [items]
+      summary: Fetch item metadata from a product URL (browser auto-add)
+      description: >
+        Server-side scrape of a product page (OpenGraph / Twitter cards / JSON-LD)
+        returning a draft item the client can review before creating. Never
+        creates an item itself; the client POSTs the confirmed draft to /items.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url: { type: string, format: uri }
+      responses:
+        "200":
+          description: Best-effort scraped draft. Fields may be null if not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ItemDraft" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422":
+          description: The URL could not be fetched or parsed; fall back to manual entry.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /api/v1/domains:
+    get:
+      operationId: listDomains
+      tags: [domains]
+      summary: List the tenant's custom domains
+      responses:
+        "200":
+          description: The tenant's domains and their verification/TLS status.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Domain" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      operationId: addDomain
+      tags: [domains]
+      summary: Add a custom domain (bring-your-own-domain)
+      description: >
+        Registers a custom hostname for the tenant and returns the CNAME target
+        to point it at. TLS is provisioned on-demand once the CNAME verifies
+        (deferred feature; see ADR-0001).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [hostname]
+              properties:
+                hostname: { type: string, example: gifts.example.com }
+      responses:
+        "201":
+          description: The registered (unverified) domain.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Domain" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /public/{shareSlug}:
+    parameters:
+      - $ref: "#/components/parameters/ShareSlug"
+    get:
+      operationId: getPublicList
+      tags: [public]
+      summary: View a shared list (anonymous)
+      security: []
+      description: >
+        Public read view of a list by its share_slug. Shows items and each item's
+        availability (available / reserved / being co-bought) but never who
+        reserved or is buying. Disabled lists (past event_date, or inactive)
+        return 410.
+      responses:
+        "200":
+          description: The public list view.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicList" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "410":
+          description: The list is no longer active (past its event date or disabled).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /public/{shareSlug}/items/{itemId}/reservations:
+    parameters:
+      - $ref: "#/components/parameters/ShareSlug"
+      - $ref: "#/components/parameters/ItemId"
+    post:
+      operationId: createReservation
+      tags: [public]
+      summary: Reserve an item (anonymous giver)
+      security: []
+      description: >
+        Claims an item so nobody duplicates the gift. Optional name/email are used
+        only server-side (e.g. decay reminders) and are never shown to others.
+        Returns a one-time capability token to later release the reservation.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReservationCreate" }
+      responses:
+        "201":
+          description: Reservation created; token returned once.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReservationCreated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The item is already fully reserved.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /public/reservations/{reservationId}:
+    parameters:
+      - name: reservationId
+        in: path
+        required: true
+        schema: { type: string }
+    delete:
+      operationId: releaseReservation
+      tags: [public]
+      summary: Release a reservation (anonymous giver)
+      description: Requires the capability token returned at creation.
+      security:
+        - capabilityToken: []
+      responses:
+        "204": { description: Released. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /public/{shareSlug}/items/{itemId}/contributions:
+    parameters:
+      - $ref: "#/components/parameters/ShareSlug"
+      - $ref: "#/components/parameters/ItemId"
+    post:
+      operationId: createContribution
+      tags: [public]
+      summary: Pledge a share toward co-buying an item
+      security: []
+      description: >
+        Opt-in group gifting. The giver pledges a share of the price and provides
+        a contact that is revealed ONLY if a two-sided match forms and both
+        parties confirm. Returns a capability token to poll/confirm/withdraw later.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ContributionCreate" }
+      responses:
+        "201":
+          description: Contribution recorded; token returned once. May include a proposed match.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContributionCreated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The item is already fully funded or reserved.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /public/contributions/{contributionId}:
+    parameters:
+      - name: contributionId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getContribution
+      tags: [public]
+      summary: Get a contribution and any pending match (anonymous giver)
+      description: >
+        Lets a contributor discover a match proposed after their pledge — the
+        server also emails them a link out-of-band, but this endpoint is the
+        pollable path so EITHER party (including the first pledger) can find the
+        match_id to confirm. Requires the capability token.
+      security:
+        - capabilityToken: []
+      responses:
+        "200":
+          description: The contribution, including match_id when a match is pending.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Contribution" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: withdrawContribution
+      tags: [public]
+      summary: Withdraw a contribution (anonymous giver)
+      description: >
+        Withdraw a pledge before a match is confirmed. Requires the capability
+        token. Once a match is both_confirmed, withdrawal is no longer allowed (409).
+      security:
+        - capabilityToken: []
+      responses:
+        "204": { description: Withdrawn. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /public/matches/{matchId}/confirm:
+    parameters:
+      - name: matchId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: confirmMatch
+      tags: [public]
+      summary: Confirm or decline a proposed co-buying match
+      description: >
+        Each matched contributor confirms via their capability token. Contacts are
+        revealed to each other only after BOTH confirm; a decline dissolves the match.
+      security:
+        - capabilityToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [confirm, decline] }
+      responses:
+        "200":
+          description: The updated match state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Match" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+components:
+  securitySchemes:
+    ownerBearer:
+      type: http
+      scheme: bearer
+      description: Owner-surface bearer token.
+    capabilityToken:
+      type: apiKey
+      in: header
+      name: X-Capability-Token
+      description: >
+        One-time capability token returned when a giver's object (reservation or
+        contribution) was created. Scopes the caller to that object only.
+
+  parameters:
+    ListId:
+      name: listId
+      in: path
+      required: true
+      schema: { type: string }
+    ItemId:
+      name: itemId
+      in: path
+      required: true
+      schema: { type: string }
+    ShareSlug:
+      name: shareSlug
+      in: path
+      required: true
+      schema: { type: string }
+      description: A list's opaque, unguessable share slug.
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    Offset:
+      name: offset
+      in: query
+      schema: { type: integer, minimum: 0, default: 0 }
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid credentials.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    BadRequest:
+      description: The request body failed validation.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    NotFound:
+      description: The resource does not exist (or is not visible to the caller).
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Conflict:
+      description: The request conflicts with current state.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+
+  schemas:
+    Problem:
+      type: object
+      description: RFC 9457 problem detail.
+      properties:
+        type: { type: string, default: "about:blank" }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+
+    Money:
+      type: object
+      description: An exact monetary amount as minor units plus ISO-4217 currency.
+      required: [amount_minor, currency]
+      properties:
+        amount_minor: { type: integer, description: "Amount in minor units (e.g. cents)." }
+        currency: { type: string, minLength: 3, maxLength: 3, example: EUR }
+
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        tenant:
+          type: object
+          properties:
+            id: { type: string }
+            subdomain: { type: string, example: alice }
+
+    ListVisibility:
+      type: string
+      enum: [public, unlisted, private]
+
+    ListCreate:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string }
+        visibility: { $ref: "#/components/schemas/ListVisibility" }
+        event_date:
+          type: [string, "null"]
+          format: date
+          description: Optional. After this date the list auto-disables (read-only).
+        decay_days:
+          type: integer
+          minimum: 0
+          default: 30
+          description: Days a reservation may sit before the owner-first decay check fires (0 = off).
+
+    ListUpdate:
+      type: object
+      properties:
+        title: { type: string }
+        visibility: { $ref: "#/components/schemas/ListVisibility" }
+        event_date: { type: [string, "null"], format: date }
+        decay_days: { type: integer, minimum: 0 }
+        active: { type: boolean }
+
+    List:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        visibility: { $ref: "#/components/schemas/ListVisibility" }
+        share_slug: { type: string }
+        event_date: { type: [string, "null"], format: date }
+        decay_days: { type: integer }
+        active: { type: boolean }
+        item_count: { type: integer }
+        created_at: { type: string, format: date-time }
+
+    ListPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/List" }
+        total: { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }
+
+    ItemAvailability:
+      type: string
+      enum: [available, reserved, co_buying, purchased]
+      description: Availability only. Never reveals who reserved or is buying.
+
+    ItemDraft:
+      type: object
+      description: Scraped/proposed item fields (any may be null).
+      properties:
+        name: { type: [string, "null"] }
+        url: { type: [string, "null"], format: uri }
+        image_url: { type: [string, "null"], format: uri }
+        price: { $ref: "#/components/schemas/Money" }
+
+    ItemCreate:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        url: { type: [string, "null"], format: uri }
+        image_url: { type: [string, "null"], format: uri }
+        price: { $ref: "#/components/schemas/Money" }
+        note: { type: [string, "null"] }
+        priority: { type: integer, minimum: 0, default: 0 }
+        quantity_wanted: { type: integer, minimum: 1, default: 1 }
+
+    ItemUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        url: { type: [string, "null"], format: uri }
+        image_url: { type: [string, "null"], format: uri }
+        price: { $ref: "#/components/schemas/Money" }
+        note: { type: [string, "null"] }
+        priority: { type: integer, minimum: 0 }
+        quantity_wanted: { type: integer, minimum: 1 }
+
+    Item:
+      type: object
+      properties:
+        id: { type: string }
+        list_id: { type: string }
+        name: { type: string }
+        url: { type: [string, "null"], format: uri }
+        image_url: { type: [string, "null"], format: uri }
+        price: { $ref: "#/components/schemas/Money" }
+        note: { type: [string, "null"] }
+        priority: { type: integer }
+        quantity_wanted: { type: integer }
+        availability: { $ref: "#/components/schemas/ItemAvailability" }
+
+    ItemPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Item" }
+        total: { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }
+
+    PublicItem:
+      type: object
+      description: An item as a giver sees it — availability only, no reserver identity.
+      properties:
+        id: { type: string }
+        name: { type: string }
+        url: { type: [string, "null"], format: uri }
+        image_url: { type: [string, "null"], format: uri }
+        price: { $ref: "#/components/schemas/Money" }
+        note: { type: [string, "null"] }
+        availability: { $ref: "#/components/schemas/ItemAvailability" }
+        amount_funded: { $ref: "#/components/schemas/Money" }
+
+    PublicList:
+      type: object
+      properties:
+        title: { type: string }
+        event_date: { type: [string, "null"], format: date }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/PublicItem" }
+
+    ReservationCreate:
+      type: object
+      properties:
+        giver_name: { type: [string, "null"] }
+        giver_email: { type: [string, "null"], format: email }
+        quantity: { type: integer, minimum: 1, default: 1 }
+
+    ReservationCreated:
+      type: object
+      properties:
+        reservation_id: { type: string }
+        capability_token:
+          type: string
+          description: Returned once. Store it to release the reservation later.
+
+    ContributionStatus:
+      type: string
+      enum: [pending, matched, confirmed, declined, withdrawn]
+
+    ContributionCreate:
+      type: object
+      required: [pledged, contact_email]
+      properties:
+        pledged:
+          allOf:
+            - $ref: "#/components/schemas/Money"
+          description: The share this giver pledges toward the item's price.
+        giver_name: { type: [string, "null"] }
+        contact_email:
+          type: string
+          format: email
+          description: Revealed to a co-buyer only after a mutually-confirmed match.
+
+    Contribution:
+      type: object
+      description: A giver's pledge toward co-buying an item (giver-facing view).
+      properties:
+        id: { type: string }
+        item_id: { type: string }
+        pledged: { $ref: "#/components/schemas/Money" }
+        status: { $ref: "#/components/schemas/ContributionStatus" }
+        match_id:
+          type: [string, "null"]
+          description: Set when a match involving this contribution is pending; POST it to confirm.
+
+    ContributionCreated:
+      type: object
+      properties:
+        contribution_id: { type: string }
+        capability_token: { type: string, description: "Returned once." }
+        match:
+          oneOf:
+            - { $ref: "#/components/schemas/Match" }
+            - { type: "null" }
+          description: A proposed match if this pledge completed funding; else null.
+
+    MatchState:
+      type: string
+      enum: [proposed, both_confirmed, done, declined]
+
+    Match:
+      type: object
+      description: A co-buying handshake between contributions on one item.
+      properties:
+        id: { type: string }
+        item_id: { type: string }
+        state: { $ref: "#/components/schemas/MatchState" }
+        contribution_ids:
+          type: array
+          items: { type: string }
+        contacts:
+          type: array
+          description: Populated only once state is both_confirmed.
+          items: { type: string, format: email }
+
+    Domain:
+      type: object
+      properties:
+        id: { type: string }
+        hostname: { type: string }
+        cname_target: { type: string, description: "Point your CNAME here." }
+        verified: { type: boolean }
+        tls_status: { type: string, enum: [none, pending, active] }
+
+security:
+  - ownerBearer: []

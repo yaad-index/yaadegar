@@ -13,3 +13,7 @@ supersedes the old one (and mark the old one `Superseded by ADR-XXXX`).
 
 - [ADR-0001: Foundations](0001-foundations.md) — API-first, Go backend, pluggable
   storage, multi-tenant routing, MIT/open-source. **Status: Accepted.**
+- [ADR-0002: API design](0002-api-design.md) — two surfaces (owner `/api/v1`,
+  public `/public`), Host-header tenancy, bearer + capability-token auth,
+  reservation anonymity, opt-in co-buying handshake, RFC 9457 errors. Contract in
+  [`api/openapi.yaml`](../../api/openapi.yaml). **Status: Accepted.**
