@@ -1,0 +1,12 @@
+# oapi-codegen configuration. api/openapi.yaml is the source of truth; this
+# generates Go types and a strict net/http server interface into api.gen.go.
+# Regenerate with `make generate`; CI fails if the output drifts from the spec.
+package: gen
+output: api.gen.go
+generate:
+  models: true
+  std-http-server: true
+  strict-server: true
+output-options:
+  # Keep the generated file stable and self-documenting.
+  skip-prune: false
