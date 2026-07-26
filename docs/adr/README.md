@@ -17,3 +17,8 @@ supersedes the old one (and mark the old one `Superseded by ADR-XXXX`).
   public `/public`), Host-header tenancy, bearer + capability-token auth,
   reservation anonymity, opt-in co-buying handshake, RFC 9457 errors. Contract in
   [`api/openapi.yaml`](../../api/openapi.yaml). **Status: Accepted.**
+- [ADR-0003: Storage layer and structural tenant isolation](0003-storage-and-tenant-isolation.md)
+  — one repository interface over two drivers (SQLite dev/test, Postgres prod)
+  sharing a `database/sql` body via a dialect shim; tenant isolation by
+  construction (`Store.ForTenant`); hashed capability tokens; embedded per-dialect
+  migrations. **Status: Accepted.**
