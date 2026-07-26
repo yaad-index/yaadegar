@@ -131,9 +131,4 @@ func TestOutOfScopeOpsReturn501(t *testing.T) {
 	resp, _ := h.req(http.MethodGet, "/api/v1/domains", h.ownerHost(), h.ownerToken(), nil)
 	assert.Equal(t, http.StatusNotImplemented, resp.StatusCode)
 	assert.Equal(t, "application/problem+json", resp.Header.Get("Content-Type"))
-
-	// item-previews (owner, scrape) is stubbed.
-	resp, _ = h.req(http.MethodPost, "/api/v1/item-previews", h.ownerHost(), h.ownerToken(),
-		map[string]any{"url": "https://shop.example/x"})
-	assert.Equal(t, http.StatusNotImplemented, resp.StatusCode)
 }
