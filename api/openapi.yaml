@@ -33,6 +33,7 @@ tags:
 paths:
   /healthz:
     get:
+      operationId: getHealthz
       tags: [ops]
       summary: Liveness probe
       security: []
@@ -45,6 +46,7 @@ paths:
 
   /api/v1/me:
     get:
+      operationId: getCurrentUser
       tags: [lists]
       summary: Get the current owner/tenant
       responses:
@@ -57,6 +59,7 @@ paths:
 
   /api/v1/lists:
     get:
+      operationId: listLists
       tags: [lists]
       summary: List the owner's lists
       parameters:
@@ -70,6 +73,7 @@ paths:
               schema: { $ref: "#/components/schemas/ListPage" }
         "401": { $ref: "#/components/responses/Unauthorized" }
     post:
+      operationId: createList
       tags: [lists]
       summary: Create a list
       requestBody:
@@ -90,6 +94,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/ListId"
     get:
+      operationId: getList
       tags: [lists]
       summary: Get a list (owner view)
       responses:
@@ -101,6 +106,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
     patch:
+      operationId: updateList
       tags: [lists]
       summary: Update a list
       requestBody:
@@ -118,6 +124,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
     delete:
+      operationId: deleteList
       tags: [lists]
       summary: Delete a list
       responses:
@@ -129,6 +136,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/ListId"
     get:
+      operationId: listItems
       tags: [items]
       summary: List items in a list
       parameters:
@@ -143,6 +151,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
     post:
+      operationId: createItem
       tags: [items]
       summary: Add an item
       requestBody:
@@ -163,6 +172,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/ItemId"
     patch:
+      operationId: updateItem
       tags: [items]
       summary: Update an item
       requestBody:
@@ -179,6 +189,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
     delete:
+      operationId: deleteItem
       tags: [items]
       summary: Delete an item
       responses:
@@ -188,6 +199,7 @@ paths:
 
   /api/v1/item-previews:
     post:
+      operationId: previewItem
       tags: [items]
       summary: Fetch item metadata from a product URL (browser auto-add)
       description: >
@@ -218,6 +230,7 @@ paths:
 
   /api/v1/domains:
     get:
+      operationId: listDomains
       tags: [domains]
       summary: List the tenant's custom domains
       responses:
@@ -230,6 +243,7 @@ paths:
                 items: { $ref: "#/components/schemas/Domain" }
         "401": { $ref: "#/components/responses/Unauthorized" }
     post:
+      operationId: addDomain
       tags: [domains]
       summary: Add a custom domain (bring-your-own-domain)
       description: >
@@ -258,6 +272,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/ShareSlug"
     get:
+      operationId: getPublicList
       tags: [public]
       summary: View a shared list (anonymous)
       security: []
@@ -284,6 +299,7 @@ paths:
       - $ref: "#/components/parameters/ShareSlug"
       - $ref: "#/components/parameters/ItemId"
     post:
+      operationId: createReservation
       tags: [public]
       summary: Reserve an item (anonymous giver)
       security: []
@@ -315,12 +331,12 @@ paths:
         required: true
         schema: { type: string }
     delete:
+      operationId: releaseReservation
       tags: [public]
       summary: Release a reservation (anonymous giver)
-      security: []
       description: Requires the capability token returned at creation.
-      parameters:
-        - $ref: "#/components/parameters/CapabilityToken"
+      security:
+        - capabilityToken: []
       responses:
         "204": { description: Released. }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -331,13 +347,14 @@ paths:
       - $ref: "#/components/parameters/ShareSlug"
       - $ref: "#/components/parameters/ItemId"
     post:
+      operationId: createContribution
       tags: [public]
       summary: Pledge a share toward co-buying an item
       security: []
       description: >
         Opt-in group gifting. The giver pledges a share of the price and provides
         a contact that is revealed ONLY if a two-sided match forms and both
-        parties confirm. Returns a capability token to confirm/withdraw later.
+        parties confirm. Returns a capability token to poll/confirm/withdraw later.
       requestBody:
         required: true
         content:
@@ -356,6 +373,46 @@ paths:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
 
+  /public/contributions/{contributionId}:
+    parameters:
+      - name: contributionId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getContribution
+      tags: [public]
+      summary: Get a contribution and any pending match (anonymous giver)
+      description: >
+        Lets a contributor discover a match proposed after their pledge — the
+        server also emails them a link out-of-band, but this endpoint is the
+        pollable path so EITHER party (including the first pledger) can find the
+        match_id to confirm. Requires the capability token.
+      security:
+        - capabilityToken: []
+      responses:
+        "200":
+          description: The contribution, including match_id when a match is pending.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Contribution" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: withdrawContribution
+      tags: [public]
+      summary: Withdraw a contribution (anonymous giver)
+      description: >
+        Withdraw a pledge before a match is confirmed. Requires the capability
+        token. Once a match is both_confirmed, withdrawal is no longer allowed (409).
+      security:
+        - capabilityToken: []
+      responses:
+        "204": { description: Withdrawn. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
   /public/matches/{matchId}/confirm:
     parameters:
       - name: matchId
@@ -363,14 +420,14 @@ paths:
         required: true
         schema: { type: string }
     post:
+      operationId: confirmMatch
       tags: [public]
       summary: Confirm or decline a proposed co-buying match
-      security: []
       description: >
         Each matched contributor confirms via their capability token. Contacts are
         revealed to each other only after BOTH confirm; a decline dissolves the match.
-      parameters:
-        - $ref: "#/components/parameters/CapabilityToken"
+      security:
+        - capabilityToken: []
       requestBody:
         required: true
         content:
@@ -395,6 +452,13 @@ components:
       type: http
       scheme: bearer
       description: Owner-surface bearer token.
+    capabilityToken:
+      type: apiKey
+      in: header
+      name: X-Capability-Token
+      description: >
+        One-time capability token returned when a giver's object (reservation or
+        contribution) was created. Scopes the caller to that object only.
 
   parameters:
     ListId:
@@ -413,12 +477,6 @@ components:
       required: true
       schema: { type: string }
       description: A list's opaque, unguessable share slug.
-    CapabilityToken:
-      name: X-Capability-Token
-      in: header
-      required: true
-      schema: { type: string }
-      description: One-time capability token returned when the object was created.
     Limit:
       name: limit
       in: query
@@ -629,6 +687,10 @@ components:
           type: string
           description: Returned once. Store it to release the reservation later.
 
+    ContributionStatus:
+      type: string
+      enum: [pending, matched, confirmed, declined, withdrawn]
+
     ContributionCreate:
       type: object
       required: [pledged, contact_email]
@@ -642,6 +704,18 @@ components:
           type: string
           format: email
           description: Revealed to a co-buyer only after a mutually-confirmed match.
+
+    Contribution:
+      type: object
+      description: A giver's pledge toward co-buying an item (giver-facing view).
+      properties:
+        id: { type: string }
+        item_id: { type: string }
+        pledged: { $ref: "#/components/schemas/Money" }
+        status: { $ref: "#/components/schemas/ContributionStatus" }
+        match_id:
+          type: [string, "null"]
+          description: Set when a match involving this contribution is pending; POST it to confirm.
 
     ContributionCreated:
       type: object

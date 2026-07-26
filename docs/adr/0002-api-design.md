@@ -56,6 +56,14 @@ The domain has three distinct actors, which shapes the surface:
    party confirms via their capability token; only after **both** confirm are the
    contacts revealed to each other and the item marked as being co-bought. No
    contact leaks before mutual confirmation.
+   - **Match discovery (both parties, incl. the first pledger).** A match is
+     created *after* the completing pledge, so the earlier pledger isn't holding
+     the `match_id`. Matches are therefore delivered **out-of-band by email** (each
+     party gets a link carrying their `match_id`), **and** a contributor can
+     **poll** `GET /public/contributions/{id}` (with their capability token) to see
+     a pending `match_id`. So either party can always reach the confirm step —
+     neither is stranded. A contribution can be **withdrawn** (`DELETE`) any time
+     before the match is `both_confirmed`.
 
 7. **Error shape: RFC 9457 (problem+json).** All errors return
    `application/problem+json` with `type`, `title`, `status`, `detail`. This keeps
