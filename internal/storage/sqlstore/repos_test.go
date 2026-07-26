@@ -37,7 +37,7 @@ func TestListCRUD(t *testing.T) {
 		Title:      "Wedding",
 		Visibility: storage.VisibilityUnlisted,
 		EventDate:  &event,
-		DecayDays:  14,
+		DecayDays:  iptr(14),
 		Active:     true,
 	})
 	require.NoError(t, err)
@@ -50,7 +50,8 @@ func TestListCRUD(t *testing.T) {
 	assert.Equal(t, storage.VisibilityUnlisted, got.Visibility)
 	require.NotNil(t, got.EventDate)
 	assert.Equal(t, "2027-03-14", got.EventDate.Format("2006-01-02"))
-	assert.Equal(t, 14, got.DecayDays)
+	require.NotNil(t, got.DecayDays)
+	assert.Equal(t, 14, *got.DecayDays)
 	assert.True(t, got.Active)
 
 	// Resolve by slug (public surface path).

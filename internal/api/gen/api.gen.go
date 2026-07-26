@@ -272,8 +272,10 @@ type ItemUpdate struct {
 
 // List defines model for List.
 type List struct {
-	Active     *bool               `json:"active,omitempty"`
-	CreatedAt  *time.Time          `json:"created_at,omitempty"`
+	Active    *bool      `json:"active,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+
+	// DecayDays The decay-period override; null means inheriting the instance default.
 	DecayDays  *int                `json:"decay_days,omitempty"`
 	EventDate  *openapi_types.Date `json:"event_date,omitempty"`
 	Id         *string             `json:"id,omitempty"`
@@ -285,7 +287,7 @@ type List struct {
 
 // ListCreate defines model for ListCreate.
 type ListCreate struct {
-	// DecayDays Days a reservation may sit before the owner-first decay check fires (0 = off).
+	// DecayDays Reservation-decay period override. Omit (or null) to inherit the instance default; 0 means off (this list never decays); N means a reservation may sit N days before the reserver is asked to keep or release it.
 	DecayDays *int `json:"decay_days,omitempty"`
 
 	// EventDate Optional. After this date the list auto-disables (read-only).
@@ -439,6 +441,16 @@ type ListItemsParams struct {
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// KeepByDecayTokenJSONBody defines parameters for KeepByDecayToken.
+type KeepByDecayTokenJSONBody struct {
+	Token string `json:"token"`
+}
+
+// ReleaseByDecayTokenJSONBody defines parameters for ReleaseByDecayToken.
+type ReleaseByDecayTokenJSONBody struct {
+	Token string `json:"token"`
+}
+
 // ConfirmMatchJSONBody defines parameters for ConfirmMatch.
 type ConfirmMatchJSONBody struct {
 	Decision ConfirmMatchJSONBodyDecision `json:"decision"`
@@ -464,6 +476,12 @@ type UpdateListJSONRequestBody = ListUpdate
 
 // CreateItemJSONRequestBody defines body for CreateItem for application/json ContentType.
 type CreateItemJSONRequestBody = ItemCreate
+
+// KeepByDecayTokenJSONRequestBody defines body for KeepByDecayToken for application/json ContentType.
+type KeepByDecayTokenJSONRequestBody KeepByDecayTokenJSONBody
+
+// ReleaseByDecayTokenJSONRequestBody defines body for ReleaseByDecayToken for application/json ContentType.
+type ReleaseByDecayTokenJSONRequestBody ReleaseByDecayTokenJSONBody
 
 // ConfirmMatchJSONRequestBody defines body for ConfirmMatch for application/json ContentType.
 type ConfirmMatchJSONRequestBody ConfirmMatchJSONBody
@@ -524,6 +542,12 @@ type ServerInterface interface {
 	// GetContribution Get a contribution and any pending match (anonymous giver)
 	// (GET /public/contributions/{contributionId})
 	GetContribution(w http.ResponseWriter, r *http.Request, contributionId string)
+	// KeepByDecayToken Renew a stale reservation via its one-click decay token (anonymous)
+	// (POST /public/decay-keep)
+	KeepByDecayToken(w http.ResponseWriter, r *http.Request)
+	// ReleaseByDecayToken Release a stale reservation via its one-click decay token (anonymous)
+	// (POST /public/decay-release)
+	ReleaseByDecayToken(w http.ResponseWriter, r *http.Request)
 	// ConfirmMatch Confirm or decline a proposed co-buying match
 	// (POST /public/matches/{matchId}/confirm)
 	ConfirmMatch(w http.ResponseWriter, r *http.Request, matchId string)
@@ -943,6 +967,34 @@ func (siw *ServerInterfaceWrapper) GetContribution(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
+// KeepByDecayToken operation middleware
+func (siw *ServerInterfaceWrapper) KeepByDecayToken(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.KeepByDecayToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReleaseByDecayToken operation middleware
+func (siw *ServerInterfaceWrapper) ReleaseByDecayToken(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReleaseByDecayToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ConfirmMatch operation middleware
 func (siw *ServerInterfaceWrapper) ConfirmMatch(w http.ResponseWriter, r *http.Request) {
 
@@ -1228,6 +1280,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/public/{shareSlug}", wrapper.GetPublicList)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/public/{shareSlug}/items/{itemId}/reservations", wrapper.CreateReservation)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/public/reservations/{reservationId}", wrapper.ReleaseReservation)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/public/decay-release", wrapper.ReleaseByDecayToken)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/public/decay-keep", wrapper.KeepByDecayToken)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/public/{shareSlug}/items/{itemId}/contributions", wrapper.CreateContribution)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/public/contributions/{contributionId}", wrapper.WithdrawContribution)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/public/contributions/{contributionId}", wrapper.GetContribution)
@@ -2054,6 +2108,98 @@ func (response GetContribution404ApplicationProblemPlusJSONResponse) VisitGetCon
 	return err
 }
 
+type KeepByDecayTokenRequestObject struct {
+	Body *KeepByDecayTokenJSONRequestBody
+}
+
+type KeepByDecayTokenResponseObject interface {
+	VisitKeepByDecayTokenResponse(w http.ResponseWriter) error
+}
+
+type KeepByDecayToken204Response struct {
+}
+
+func (response KeepByDecayToken204Response) VisitKeepByDecayTokenResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type KeepByDecayToken404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response KeepByDecayToken404ApplicationProblemPlusJSONResponse) VisitKeepByDecayTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type KeepByDecayToken410ApplicationProblemPlusJSONResponse Problem
+
+func (response KeepByDecayToken410ApplicationProblemPlusJSONResponse) VisitKeepByDecayTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReleaseByDecayTokenRequestObject struct {
+	Body *ReleaseByDecayTokenJSONRequestBody
+}
+
+type ReleaseByDecayTokenResponseObject interface {
+	VisitReleaseByDecayTokenResponse(w http.ResponseWriter) error
+}
+
+type ReleaseByDecayToken204Response struct {
+}
+
+func (response ReleaseByDecayToken204Response) VisitReleaseByDecayTokenResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type ReleaseByDecayToken404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response ReleaseByDecayToken404ApplicationProblemPlusJSONResponse) VisitReleaseByDecayTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReleaseByDecayToken410ApplicationProblemPlusJSONResponse Problem
+
+func (response ReleaseByDecayToken410ApplicationProblemPlusJSONResponse) VisitReleaseByDecayTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ConfirmMatchRequestObject struct {
 	MatchId string `json:"matchId"`
 	Body    *ConfirmMatchJSONRequestBody
@@ -2397,6 +2543,12 @@ type StrictServerInterface interface {
 	// GetContribution Get a contribution and any pending match (anonymous giver)
 	// (GET /public/contributions/{contributionId})
 	GetContribution(ctx context.Context, request GetContributionRequestObject) (GetContributionResponseObject, error)
+	// KeepByDecayToken Renew a stale reservation via its one-click decay token (anonymous)
+	// (POST /public/decay-keep)
+	KeepByDecayToken(ctx context.Context, request KeepByDecayTokenRequestObject) (KeepByDecayTokenResponseObject, error)
+	// ReleaseByDecayToken Release a stale reservation via its one-click decay token (anonymous)
+	// (POST /public/decay-release)
+	ReleaseByDecayToken(ctx context.Context, request ReleaseByDecayTokenRequestObject) (ReleaseByDecayTokenResponseObject, error)
 	// ConfirmMatch Confirm or decline a proposed co-buying match
 	// (POST /public/matches/{matchId}/confirm)
 	ConfirmMatch(ctx context.Context, request ConfirmMatchRequestObject) (ConfirmMatchResponseObject, error)
@@ -2893,6 +3045,68 @@ func (sh *strictHandler) GetContribution(w http.ResponseWriter, r *http.Request,
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetContributionResponseObject); ok {
 		if err := validResponse.VisitGetContributionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// KeepByDecayToken operation middleware
+func (sh *strictHandler) KeepByDecayToken(w http.ResponseWriter, r *http.Request) {
+	var request KeepByDecayTokenRequestObject
+
+	var body KeepByDecayTokenJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.KeepByDecayToken(ctx, request.(KeepByDecayTokenRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "KeepByDecayToken")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(KeepByDecayTokenResponseObject); ok {
+		if err := validResponse.VisitKeepByDecayTokenResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ReleaseByDecayToken operation middleware
+func (sh *strictHandler) ReleaseByDecayToken(w http.ResponseWriter, r *http.Request) {
+	var request ReleaseByDecayTokenRequestObject
+
+	var body ReleaseByDecayTokenJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ReleaseByDecayToken(ctx, request.(ReleaseByDecayTokenRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReleaseByDecayToken")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ReleaseByDecayTokenResponseObject); ok {
+		if err := validResponse.VisitReleaseByDecayTokenResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

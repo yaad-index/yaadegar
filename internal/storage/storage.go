@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 // Sentinel errors drivers must return so callers can branch without depending on
@@ -67,6 +68,13 @@ type Store interface {
 	// repository reached through it filters and stamps tenant_id from t.ID; there
 	// is no unscoped repository.
 	ForTenant(t Tenant) TenantStore
+
+	// DecayCandidates returns non-expired reservations on active, decaying lists
+	// (decay_days > 0) across all tenants — the input to a decay sweep. This is a
+	// trusted system-level read (the sweeper), the same class of unscoped
+	// operation as Migrate; the transition it drives is applied tenant-scoped via
+	// ForTenant. Each candidate carries its tenant id and the list's decay period.
+	DecayCandidates(ctx context.Context) ([]DecayCandidate, error)
 
 	// Ping verifies connectivity.
 	Ping(ctx context.Context) error
@@ -141,8 +149,27 @@ type ReservationRepo interface {
 	Get(ctx context.Context, id string) (Reservation, error)
 	// ByTokenHash looks a reservation up by the hash of its capability token.
 	ByTokenHash(ctx context.Context, tokenHash string) (Reservation, error)
+	// ByDecayReleaseTokenHash / ByDecayKeepTokenHash look a reservation up by the
+	// hash of its one-click release / keep token.
+	ByDecayReleaseTokenHash(ctx context.Context, tokenHash string) (Reservation, error)
+	ByDecayKeepTokenHash(ctx context.Context, tokenHash string) (Reservation, error)
 	ListByItem(ctx context.Context, itemID string) ([]Reservation, error)
 	Delete(ctx context.Context, id string) error
+
+	// The decay transitions below are each row-locked and idempotent: they act
+	// only if the reservation is still in the expected source state, returning
+	// false (no error) otherwise — so concurrent sweeps/keeps/releases are safe
+	// no-ops, and a caller must gate any email on a true return.
+
+	// MarkReserverNotified moves active → reserver_notified, stamping decay_state_at
+	// and the minted keep/release token hashes.
+	MarkReserverNotified(ctx context.Context, reservationID string, at time.Time, keepTokenHash, releaseTokenHash string) (bool, error)
+	// MarkExpired moves reserver_notified → expired, leaving the token hashes in
+	// place (a late click resolves to 410, not 404).
+	MarkExpired(ctx context.Context, reservationID string, at time.Time) (bool, error)
+	// Renew moves reserver_notified → active on a "keep" click: it resets the decay
+	// clock (last_activity_at, decay_state_at) and clears both one-click tokens.
+	Renew(ctx context.Context, reservationID string, at time.Time) (bool, error)
 }
 
 // ContributionRepo persists co-buying pledges within the bound tenant.

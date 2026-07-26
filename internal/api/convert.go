@@ -55,7 +55,7 @@ func toGenList(l storage.List) gen.List {
 		Visibility: ptr(gen.ListVisibility(l.Visibility)),
 		ShareSlug:  ptr(l.ShareSlug),
 		EventDate:  toGenDate(l.EventDate),
-		DecayDays:  ptr(l.DecayDays),
+		DecayDays:  l.DecayDays, // *int: nil = inheriting the instance default
 		Active:     ptr(l.Active),
 		ItemCount:  ptr(l.ItemCount),
 		CreatedAt:  ptr(l.CreatedAt),

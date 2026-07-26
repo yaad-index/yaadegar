@@ -15,11 +15,15 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/alecthomas/kong"
 	kongyaml "github.com/alecthomas/kong-yaml"
 
 	"github.com/yaad-index/yaadegar/internal/api"
+	"github.com/yaad-index/yaadegar/internal/clock"
+	"github.com/yaad-index/yaadegar/internal/decay"
+	"github.com/yaad-index/yaadegar/internal/email"
 	"github.com/yaad-index/yaadegar/internal/server"
 	"github.com/yaad-index/yaadegar/internal/storage"
 	"github.com/yaad-index/yaadegar/internal/storage/sqlstore"
@@ -43,6 +47,11 @@ type ServeCmd struct {
 	StorageDriver string `name:"storage-driver" default:"sqlite" enum:"sqlite,postgres" env:"YAADEGAR_STORAGE_DRIVER" help:"Storage driver."`
 	StorageDSN    string `name:"storage-dsn" default:"file:yaadegar.db" env:"YAADEGAR_STORAGE_DSN" help:"Storage DSN: a SQLite file path/URI or a Postgres connection URL."`
 	BaseDomain    string `name:"base-domain" env:"YAADEGAR_BASE_DOMAIN" help:"Host suffix under which tenant subdomains live (e.g. example.wish.list). Hosts outside it are treated as custom domains."`
+
+	DecaySweepInterval  time.Duration `name:"decay-sweep-interval" default:"15m" env:"YAADEGAR_DECAY_SWEEP_INTERVAL" help:"How often the reservation-decay sweeper runs (0 disables it)."`
+	DecayDefaultDays    int           `name:"decay-default-days" default:"0" env:"YAADEGAR_DECAY_DEFAULT_DAYS" help:"Instance-default decay period in days (0 = off) for lists that do not override it."`
+	DecayResponseWindow time.Duration `name:"decay-response-window" default:"48h" env:"YAADEGAR_DECAY_RESPONSE_WINDOW" help:"How long the reserver has to keep/release a stale reservation before it auto-expires."`
+	DecayLinkBase       string        `name:"decay-link-base" env:"YAADEGAR_DECAY_LINK_BASE" help:"Base URL for the one-click keep/release links in reserver decay emails."`
 }
 
 // Run opens and migrates storage, builds the API handler, and serves until
@@ -68,8 +77,38 @@ func (c *ServeCmd) Run(cli *CLI) error {
 		return fmt.Errorf("migrate storage: %w", err)
 	}
 
-	handler := api.NewHandler(store, api.Options{BaseDomain: c.BaseDomain, Logger: logger})
+	sender := email.NewLogSender(logger)
+	handler := api.NewHandler(store, api.Options{BaseDomain: c.BaseDomain, Logger: logger, Email: sender})
+
+	// Run the reservation-decay sweeper on a ticker alongside the server.
+	sweeper := decay.NewSweeper(store, sender, clock.Real{}, decay.Config{
+		DefaultDecayDays: c.DecayDefaultDays,
+		ResponseWindow:   c.DecayResponseWindow,
+		LinkBase:         c.DecayLinkBase,
+	}, logger)
+	go runSweeper(ctx, sweeper, c.DecaySweepInterval, logger)
+
 	return server.New(c.HTTPAddr, handler, logger).Run(ctx)
+}
+
+// runSweeper runs the decay sweep on interval until ctx is cancelled. A
+// non-positive interval disables it.
+func runSweeper(ctx context.Context, s *decay.Sweeper, interval time.Duration, logger *slog.Logger) {
+	if interval <= 0 {
+		return
+	}
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if err := s.Sweep(ctx); err != nil {
+				logger.Error("decay sweep failed", "err", err)
+			}
+		}
+	}
 }
 
 // VersionCmd prints the build version and exits.

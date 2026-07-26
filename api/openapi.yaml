@@ -343,6 +343,63 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /public/decay-release:
+    post:
+      operationId: releaseByDecayToken
+      tags: [public]
+      summary: Release a stale reservation via its one-click decay token (anonymous)
+      security: []
+      description: >
+        Releases the reservation identified by a one-click decay-release token,
+        emailed to the reserver when their reservation goes stale. Single-use: the
+        token stops working once the reservation is released or auto-expires.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "204": { description: Released. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "410":
+          description: The reservation already expired; the link is no longer valid.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /public/decay-keep:
+    post:
+      operationId: keepByDecayToken
+      tags: [public]
+      summary: Renew a stale reservation via its one-click decay token (anonymous)
+      security: []
+      description: >
+        Renews (keeps) the reservation identified by a one-click decay-keep token,
+        emailed to the reserver alongside the release link. Resets the decay clock
+        and invalidates both one-click tokens. Single-use: the token stops working
+        once used or once the reservation auto-expires.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "204": { description: Renewed. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "410":
+          description: The reservation already expired; the link is no longer valid.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
   /public/{shareSlug}/items/{itemId}/contributions:
     parameters:
       - $ref: "#/components/parameters/ShareSlug"
@@ -559,10 +616,13 @@ components:
           format: date
           description: Optional. After this date the list auto-disables (read-only).
         decay_days:
-          type: integer
+          type: [integer, "null"]
           minimum: 0
-          default: 30
-          description: Days a reservation may sit before the owner-first decay check fires (0 = off).
+          description: >
+            Reservation-decay period override. Omit (or null) to inherit the
+            instance default; 0 means off (this list never decays); N means a
+            reservation may sit N days before the reserver is asked to keep or
+            release it.
 
     ListUpdate:
       type: object
@@ -570,7 +630,7 @@ components:
         title: { type: string }
         visibility: { $ref: "#/components/schemas/ListVisibility" }
         event_date: { type: [string, "null"], format: date }
-        decay_days: { type: integer, minimum: 0 }
+        decay_days: { type: [integer, "null"], minimum: 0 }
         active: { type: boolean }
 
     List:
@@ -581,7 +641,9 @@ components:
         visibility: { $ref: "#/components/schemas/ListVisibility" }
         share_slug: { type: string }
         event_date: { type: [string, "null"], format: date }
-        decay_days: { type: integer }
+        decay_days:
+          type: [integer, "null"]
+          description: The decay-period override; null means inheriting the instance default.
         active: { type: boolean }
         item_count: { type: integer }
         created_at: { type: string, format: date-time }

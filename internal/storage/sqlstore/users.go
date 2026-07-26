@@ -19,8 +19,8 @@ func (r userRepo) Create(ctx context.Context, u storage.User) (storage.User, err
 	}
 	u.TenantID = r.tenantID
 	_, err := r.db.ExecContext(ctx, r.rb(
-		`INSERT INTO users (id, tenant_id, name, created_at) VALUES (?, ?, ?, ?)`),
-		u.ID, u.TenantID, u.Name, fmtTime(u.CreatedAt))
+		`INSERT INTO users (id, tenant_id, name, email, created_at) VALUES (?, ?, ?, ?, ?)`),
+		u.ID, u.TenantID, u.Name, u.Email, fmtTime(u.CreatedAt))
 	if err != nil {
 		return storage.User{}, err
 	}
@@ -29,14 +29,14 @@ func (r userRepo) Create(ctx context.Context, u storage.User) (storage.User, err
 
 func (r userRepo) Get(ctx context.Context, id string) (storage.User, error) {
 	row := r.db.QueryRowContext(ctx, r.rb(
-		`SELECT id, tenant_id, name, created_at
+		`SELECT id, tenant_id, name, email, created_at
 		   FROM users WHERE tenant_id = ? AND id = ?`), r.tenantID, id)
 
 	var (
 		u         storage.User
 		createdAt string
 	)
-	if err := row.Scan(&u.ID, &u.TenantID, &u.Name, &createdAt); err != nil {
+	if err := row.Scan(&u.ID, &u.TenantID, &u.Name, &u.Email, &createdAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.User{}, storage.ErrNotFound
 		}
