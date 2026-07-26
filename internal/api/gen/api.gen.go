@@ -2439,6 +2439,20 @@ func (response CreateContribution409ApplicationProblemPlusJSONResponse) VisitCre
 	return err
 }
 
+type CreateContribution410ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateContribution410ApplicationProblemPlusJSONResponse) VisitCreateContributionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateReservationRequestObject struct {
 	ShareSlug ShareSlug `json:"shareSlug"`
 	ItemId    ItemId    `json:"itemId"`
@@ -2489,6 +2503,20 @@ func (response CreateReservation409ApplicationProblemPlusJSONResponse) VisitCrea
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateReservation410ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateReservation410ApplicationProblemPlusJSONResponse) VisitCreateReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
 	_, err := buf.WriteTo(w)
 	return err
 }

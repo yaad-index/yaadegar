@@ -31,7 +31,7 @@ func (s *Server) GetPublicList(ctx context.Context, req gen.GetPublicListRequest
 
 	// A disabled list, or one past its event date, is Gone — the share link no
 	// longer serves it (ADR-0002: the public view returns 410 for these).
-	if !list.Active || (list.EventDate != nil && list.EventDate.Before(startOfToday())) {
+	if listDisabled(list, s.clock.Now()) {
 		return gen.GetPublicList410ApplicationProblemPlusJSONResponse(
 			problemDetail(http.StatusGone, "this list is no longer active"),
 		), nil
@@ -58,9 +58,17 @@ func (s *Server) GetPublicList(ctx context.Context, req gen.GetPublicListRequest
 	}), nil
 }
 
-// startOfToday is midnight UTC today; event dates are compared against it so a
+// listDisabled reports whether a list is effectively disabled for the giver
+// surface: explicitly inactive, or strictly past its event date. Computed lazily
+// at request time (no per-row state), so it is always correct with no lag. An
+// open-ended list (nil event date) never disables on time.
+func listDisabled(l storage.List, now time.Time) bool {
+	return !l.Active || (l.EventDate != nil && l.EventDate.Before(startOfDay(now)))
+}
+
+// startOfDay is midnight UTC of now; event dates are compared against it so a
 // list stays live through its whole event day and disables the day after.
-func startOfToday() time.Time {
-	n := time.Now().UTC()
-	return time.Date(n.Year(), n.Month(), n.Day(), 0, 0, 0, 0, time.UTC)
+func startOfDay(now time.Time) time.Time {
+	u := now.UTC()
+	return time.Date(u.Year(), u.Month(), u.Day(), 0, 0, 0, 0, time.UTC)
 }

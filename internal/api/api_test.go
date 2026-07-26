@@ -10,18 +10,24 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/yaad-index/yaadegar/internal/api"
 	"github.com/yaad-index/yaadegar/internal/api/gen"
+	"github.com/yaad-index/yaadegar/internal/clock"
 	"github.com/yaad-index/yaadegar/internal/email"
 	"github.com/yaad-index/yaadegar/internal/storage"
 	"github.com/yaad-index/yaadegar/internal/storage/sqlstore"
 )
 
 const baseDomain = "example.test"
+
+// testClockStart is the fake "now" every harness starts at; time-gated tests move
+// it via h.clk.
+var testClockStart = time.Date(2027, 6, 15, 12, 0, 0, 0, time.UTC)
 
 type harness struct {
 	t      *testing.T
@@ -30,6 +36,7 @@ type harness struct {
 	tenant storage.Tenant
 	owner  storage.User
 	email  *email.FakeSender
+	clk    *clock.Fake
 }
 
 func newHarness(t *testing.T) *harness {
@@ -47,12 +54,14 @@ func newHarness(t *testing.T) *harness {
 	require.NoError(t, err)
 
 	fake := &email.FakeSender{}
+	clk := clock.NewFake(testClockStart)
 	h := api.NewHandler(store, api.Options{
 		BaseDomain: baseDomain,
 		Logger:     slog.New(slog.DiscardHandler),
 		Email:      fake,
+		Clock:      clk,
 	})
-	return &harness{t: t, h: h, store: store, tenant: tenant, owner: owner, email: fake}
+	return &harness{t: t, h: h, store: store, tenant: tenant, owner: owner, email: fake, clk: clk}
 }
 
 // reqH issues a request through the handler with arbitrary headers. host sets
