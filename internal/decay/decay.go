@@ -10,6 +10,7 @@ package decay
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -98,12 +99,21 @@ func (s *Sweeper) step(ctx context.Context, now time.Time, c storage.DecayCandid
 		if err != nil {
 			return err
 		}
-		moved, err := res.MarkReserverNotified(ctx, c.ReservationID, now, keepHash, releaseHash)
-		if err != nil {
-			return err
+		// Gate the state-advance on a successful send: notify the reserver FIRST
+		// and advance only if it went through, so a transient SMTP failure leaves
+		// the reservation active (retried next sweep) rather than advancing and
+		// later silently auto-expiring with the reserver never notified (#39).
+		if err := s.notifyReserver(ctx, c, keepRaw, releaseRaw); err != nil {
+			return nil // logged by notifyReserver; retried next sweep
 		}
-		if moved {
-			s.notifyReserver(ctx, c, keepRaw, releaseRaw)
+		// Send succeeded → advance and store the token hashes. MarkReserverNotified
+		// stays the row-locked single-winner so the advance can't double. Rare
+		// case: if this DB write fails after a successful send, the emailed links
+		// are dead and the next sweep re-sends with fresh tokens — low harm,
+		// intentional. (A future multi-instance sweeper could double-SEND before
+		// one node advances; single-instance is clean.)
+		if _, err := res.MarkReserverNotified(ctx, c.ReservationID, now, keepHash, releaseHash); err != nil {
+			return err
 		}
 
 	case storage.DecayReserverNotified:
@@ -120,12 +130,15 @@ func (s *Sweeper) step(ctx context.Context, now time.Time, c storage.DecayCandid
 	return nil
 }
 
-// notifyReserver emails the reserver once with both one-click links. The email
-// names the item; no owner is contacted at any point.
-func (s *Sweeper) notifyReserver(ctx context.Context, c storage.DecayCandidate, keepRaw, releaseRaw string) {
+// notifyReserver emails the reserver once with both one-click links, returning an
+// error if it could not be sent — the caller gates the state-advance on this. A
+// reservation with no reserver email can't be notified, so it is treated as a
+// send failure (it stays active rather than advancing toward a silent expiry).
+// The email names the item; no owner is contacted at any point.
+func (s *Sweeper) notifyReserver(ctx context.Context, c storage.DecayCandidate, keepRaw, releaseRaw string) error {
 	if c.GiverEmail == nil || *c.GiverEmail == "" {
-		s.logger.Warn("decay: reserver has no email", "reservation", c.ReservationID)
-		return
+		s.logger.Warn("decay: reserver has no email; not advancing", "reservation", c.ReservationID)
+		return fmt.Errorf("decay: reservation %s has no reserver email", c.ReservationID)
 	}
 	keepLink := s.cfg.LinkBase + "/decay-keep?token=" + keepRaw
 	releaseLink := s.cfg.LinkBase + "/decay-release?token=" + releaseRaw
@@ -137,5 +150,7 @@ func (s *Sweeper) notifyReserver(ctx context.Context, c storage.DecayCandidate, 
 		Body:    body,
 	}); err != nil {
 		s.logger.Error("decay reserver email failed", "err", err, "reservation", c.ReservationID)
+		return err
 	}
+	return nil
 }

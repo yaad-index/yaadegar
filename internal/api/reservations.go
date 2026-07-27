@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/yaad-index/yaadegar/internal/api/gen"
 	"github.com/yaad-index/yaadegar/internal/storage"
@@ -198,7 +197,7 @@ func (s *Server) KeepByDecayToken(ctx context.Context, req gen.KeepByDecayTokenR
 			problemDetail(410, "this reservation has already expired"),
 		), nil
 	}
-	moved, err := ts.Reservations().Renew(ctx, res.ID, time.Now().UTC())
+	moved, err := ts.Reservations().Renew(ctx, res.ID, s.clock.Now())
 	if err != nil {
 		return nil, err
 	}

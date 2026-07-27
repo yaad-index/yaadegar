@@ -54,6 +54,15 @@ type ServeCmd struct {
 	DecayLinkBase       string        `name:"decay-link-base" env:"YAADEGAR_DECAY_LINK_BASE" help:"Base URL for the one-click keep/release links in reserver decay emails."`
 
 	DomainCNAMETarget string `name:"domain-cname-target" env:"YAADEGAR_DOMAIN_CNAME_TARGET" help:"Hostname that owners point a custom domain's CNAME at (returned by add-domain)."`
+
+	// SMTP config. If SMTPHost is empty the server logs emails instead of sending
+	// them (dev default). Secrets (SMTPPassword) come from the environment.
+	SMTPHost     string `name:"smtp-host" env:"YAADEGAR_SMTP_HOST" help:"SMTP server host. Empty logs emails instead of sending (dev default)."`
+	SMTPPort     int    `name:"smtp-port" default:"587" env:"YAADEGAR_SMTP_PORT" help:"SMTP server port (587 STARTTLS, 465 implicit TLS)."`
+	SMTPUsername string `name:"smtp-username" env:"YAADEGAR_SMTP_USERNAME" help:"SMTP auth username (relay-with-auth, e.g. a Gmail address + app password)."`
+	SMTPPassword string `name:"smtp-password" env:"YAADEGAR_SMTP_PASSWORD" help:"SMTP auth password (use an app password; provide via the environment)."`
+	SMTPFrom     string `name:"smtp-from" env:"YAADEGAR_SMTP_FROM" help:"Envelope/header From address for outgoing mail."`
+	SMTPTLSMode  string `name:"smtp-tls-mode" default:"starttls" enum:"starttls,tls,none" env:"YAADEGAR_SMTP_TLS_MODE" help:"TLS mode: starttls (587, required), tls (465 implicit), or none (plaintext, loopback only)."`
 }
 
 // Run opens and migrates storage, builds the API handler, and serves until
@@ -79,7 +88,10 @@ func (c *ServeCmd) Run(cli *CLI) error {
 		return fmt.Errorf("migrate storage: %w", err)
 	}
 
-	sender := email.NewLogSender(logger)
+	sender, err := buildSender(c, logger)
+	if err != nil {
+		return fmt.Errorf("configure email sender: %w", err)
+	}
 	handler := api.NewHandler(store, api.Options{
 		BaseDomain:        c.BaseDomain,
 		Logger:            logger,
@@ -96,6 +108,24 @@ func (c *ServeCmd) Run(cli *CLI) error {
 	go runSweeper(ctx, sweeper, c.DecaySweepInterval, logger)
 
 	return server.New(c.HTTPAddr, handler, logger).Run(ctx)
+}
+
+// buildSender returns the real SMTP sender when an SMTP host is configured, and
+// the log-only sender (dev default) otherwise. The same sender backs both the API
+// handler and the decay sweeper.
+func buildSender(c *ServeCmd, logger *slog.Logger) (email.Sender, error) {
+	if c.SMTPHost == "" {
+		logger.Info("email: no SMTP host configured, logging emails instead of sending")
+		return email.NewLogSender(logger), nil
+	}
+	return email.NewSMTPSender(email.SMTPConfig{
+		Host:     c.SMTPHost,
+		Port:     c.SMTPPort,
+		Username: c.SMTPUsername,
+		Password: c.SMTPPassword,
+		From:     c.SMTPFrom,
+		TLSMode:  email.TLSMode(c.SMTPTLSMode),
+	}, logger)
 }
 
 // runSweeper runs the decay sweep on interval until ctx is cancelled. A

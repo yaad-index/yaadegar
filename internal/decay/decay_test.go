@@ -20,6 +20,7 @@ import (
 const giverEmail = "giver@example.com"
 
 type fixture struct {
+	store    storage.Store
 	ts       storage.TenantStore
 	item     storage.Item
 	resID    string
@@ -62,10 +63,18 @@ func setup(t *testing.T, t0 time.Time, listDecayDays *int, instanceDefaultDays i
 		LinkBase:         "https://alice.example.test",
 	}, slog.New(slog.DiscardHandler))
 
-	return &fixture{ts: ts, item: item, resID: res.ID, sweeper: sweeper, fakeMail: fakeMail, clk: clk}
+	return &fixture{store: store, ts: ts, item: item, resID: res.ID, sweeper: sweeper, fakeMail: fakeMail, clk: clk}
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// failingSender always fails, standing in for a transient SMTP outage.
+type failingSender struct{ calls int }
+
+func (f *failingSender) Send(context.Context, email.Message) error {
+	f.calls++
+	return assert.AnError
+}
 
 func (f *fixture) state(t *testing.T) storage.ReservationDecayState {
 	t.Helper()
@@ -114,6 +123,34 @@ func TestDecayEscalation(t *testing.T) {
 
 	require.NoError(t, f.sweeper.Sweep(ctx)) // terminal
 	assert.Len(t, f.fakeMail.Sent(), 1)
+}
+
+// TestDecaySendFailureHoldsActive: a transient send failure must NOT advance the
+// reservation — it stays active and is retried on the next sweep (#39), so a
+// reserver is never silently expired without notice. Once the send succeeds, the
+// state advances.
+func TestDecaySendFailureHoldsActive(t *testing.T) {
+	ctx := context.Background()
+	t0 := time.Date(2027, 1, 1, 12, 0, 0, 0, time.UTC)
+	f := setup(t, t0, ptr(30), 0)
+
+	// Rewire the sweeper with a failing sender against the same store.
+	failer := &failingSender{}
+	sweeper := decay.NewSweeper(f.store, failer, f.clk, decay.Config{
+		DefaultDecayDays: 0,
+		ResponseWindow:   24 * time.Hour,
+		LinkBase:         "https://alice.example.test",
+	}, slog.New(slog.DiscardHandler))
+
+	f.clk.Set(t0.Add(31 * 24 * time.Hour))
+	require.NoError(t, sweeper.Sweep(ctx)) // one failed candidate is logged, not fatal
+	assert.Equal(t, storage.DecayActive, f.state(t), "send failure must not advance state")
+	assert.Positive(t, failer.calls)
+
+	// A subsequent sweep with a working sender advances and notifies.
+	require.NoError(t, f.sweeper.Sweep(ctx))
+	assert.Equal(t, storage.DecayReserverNotified, f.state(t))
+	require.Len(t, f.fakeMail.Sent(), 1)
 }
 
 // TestDecayInheritsInstanceDefault: list override is nil, instance default is 30
