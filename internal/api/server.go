@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/yaad-index/yaadegar/internal/api/gen"
+	"github.com/yaad-index/yaadegar/internal/auth"
 	"github.com/yaad-index/yaadegar/internal/clock"
 	"github.com/yaad-index/yaadegar/internal/email"
 	"github.com/yaad-index/yaadegar/internal/preview"
@@ -22,6 +23,7 @@ type Server struct {
 	clock             clock.Clock
 	previewer         *preview.Previewer
 	resolver          Resolver
+	auth              *auth.Service
 	domainCNAMETarget string
 	logger            *slog.Logger
 }
@@ -47,6 +49,11 @@ type Options struct {
 	// Resolver does DNS TXT lookups for custom-domain verification. Defaults to
 	// the system resolver when nil; tests inject a fake.
 	Resolver Resolver
+	// Auth is the validated authentication core (ADR-0005): the owner-auth
+	// middleware and the login handler use it. It is required — NewHandler panics
+	// if nil, since the owner surface must never fall open (the fail-closed
+	// construction lives in NewService, called at startup).
+	Auth *auth.Service
 	// DomainCNAMETarget is the hostname owners point their custom domain's CNAME
 	// at; returned by addDomain.
 	DomainCNAMETarget string
@@ -56,6 +63,9 @@ type Options struct {
 // tenant-resolution and owner-auth middleware. It serves both surfaces and
 // /healthz.
 func NewHandler(store storage.Store, opts Options) http.Handler {
+	if opts.Auth == nil {
+		panic("api: Options.Auth is required (owner surface must not fall open)")
+	}
 	s := &Server{
 		store:             store,
 		baseDomain:        opts.BaseDomain,
@@ -63,6 +73,7 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 		clock:             opts.Clock,
 		previewer:         opts.Previewer,
 		resolver:          opts.Resolver,
+		auth:              opts.Auth,
 		domainCNAMETarget: opts.DomainCNAMETarget,
 		logger:            opts.Logger,
 	}

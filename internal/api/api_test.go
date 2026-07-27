@@ -17,6 +17,7 @@ import (
 
 	"github.com/yaad-index/yaadegar/internal/api"
 	"github.com/yaad-index/yaadegar/internal/api/gen"
+	"github.com/yaad-index/yaadegar/internal/auth"
 	"github.com/yaad-index/yaadegar/internal/clock"
 	"github.com/yaad-index/yaadegar/internal/email"
 	"github.com/yaad-index/yaadegar/internal/preview"
@@ -25,6 +26,9 @@ import (
 )
 
 const baseDomain = "example.test"
+
+// testJWTSecret is a fixed >=32-byte signing secret for the test auth service.
+const testJWTSecret = "test-jwt-secret-of-sufficient-length-0123456789"
 
 // testClockStart is the fake "now" every harness starts at; time-gated tests move
 // it via h.clk.
@@ -40,6 +44,7 @@ type harness struct {
 	clk      *clock.Fake
 	preview  *preview.FakeFetcher
 	resolver *fakeResolver
+	authSvc  *auth.Service
 }
 
 func newHarness(t *testing.T) *harness {
@@ -60,6 +65,8 @@ func newHarness(t *testing.T) *harness {
 	clk := clock.NewFake(testClockStart)
 	pf := &preview.FakeFetcher{} // hermetic: no real network in API tests
 	fr := &fakeResolver{txt: map[string][]string{}}
+	authSvc, err := auth.NewService(auth.Config{JWTSecret: testJWTSecret, PasswordEnabled: true}, clk)
+	require.NoError(t, err)
 	h := api.NewHandler(store, api.Options{
 		BaseDomain:        baseDomain,
 		Logger:            slog.New(slog.DiscardHandler),
@@ -67,9 +74,10 @@ func newHarness(t *testing.T) *harness {
 		Clock:             clk,
 		Previewer:         preview.New(pf),
 		Resolver:          fr,
+		Auth:              authSvc,
 		DomainCNAMETarget: "cname.yaadegar.test",
 	})
-	return &harness{t: t, h: h, store: store, tenant: tenant, owner: owner, email: fake, clk: clk, preview: pf, resolver: fr}
+	return &harness{t: t, h: h, store: store, tenant: tenant, owner: owner, email: fake, clk: clk, preview: pf, resolver: fr, authSvc: authSvc}
 }
 
 // reqH issues a request through the handler with arbitrary headers. host sets
@@ -106,9 +114,23 @@ func (h *harness) req(method, path, host, token string, body any) (*http.Respons
 	return h.reqH(method, path, host, headers, body)
 }
 
-// ownerHost / ownerToken are the defaults for the seeded tenant+owner.
-func (h *harness) ownerHost() string  { return "alice." + baseDomain }
-func (h *harness) ownerToken() string { return h.owner.ID }
+// ownerHost / ownerToken are the defaults for the seeded tenant+owner. ownerToken
+// mints a real session JWT for the seeded owner via the test auth service (the
+// same fake clock backs issue + validate, so expiry stays consistent).
+func (h *harness) ownerHost() string { return "alice." + baseDomain }
+func (h *harness) ownerToken() string {
+	return h.tokenFor(h.owner.ID, h.tenant.ID)
+}
+
+// tokenFor mints an owner JWT for an arbitrary user/tenant, for cross-tenant and
+// negative auth tests.
+func (h *harness) tokenFor(userID, tenantID string) string {
+	tok, err := h.authSvc.Issuer().Issue(auth.Principal{
+		UserID: userID, TenantID: tenantID, Role: auth.RoleOwner,
+	})
+	require.NoError(h.t, err)
+	return tok
+}
 
 // --- a tiny ResponseWriter recorder (avoids httptest server networking) ---
 

@@ -76,15 +76,19 @@ type Tenant struct {
 	CreatedAt time.Time
 }
 
-// User is an owner within a tenant. The authentication mechanism is deferred to
-// a later ADR (ADR-0002 §4); this is the persisted identity only. Email is used
-// server-side (e.g. decay notices) and may be empty until real auth lands.
+// User is an owner within a tenant. Email is used server-side (e.g. decay notices)
+// and may be empty. Username/PasswordHash back the password login method (ADR-0005):
+// Username is the per-tenant login handle (nil = none), PasswordHash is the
+// argon2id PHC-encoded hash (empty = no password credential, e.g. an
+// OAuth/magic-link-only account). The plaintext password is never stored.
 type User struct {
-	ID        string
-	TenantID  string
-	Name      string
-	Email     string
-	CreatedAt time.Time
+	ID           string
+	TenantID     string
+	Name         string
+	Email        string
+	Username     *string
+	PasswordHash string
+	CreatedAt    time.Time
 }
 
 // List is an owner's wishlist. ShareSlug is the opaque, unguessable handle used

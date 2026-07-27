@@ -45,7 +45,7 @@ func TestTenantScopingThroughAPI(t *testing.T) {
 	require.NoError(t, err)
 	ownerB, err := h.store.ForTenant(tenB).Users().Create(ctx, storage.User{Name: "Bob"})
 	require.NoError(t, err)
-	bobHost, bobTok := "bob."+baseDomain, ownerB.ID
+	bobHost, bobTok := "bob."+baseDomain, h.tokenFor(ownerB.ID, tenB.ID)
 
 	// Bob cannot see Alice's list by id.
 	resp, _ := h.req(http.MethodGet, "/api/v1/lists/"+*list.Id, bobHost, bobTok, nil)

@@ -27,6 +27,8 @@ tags:
     description: Anonymous giver surface (view, reserve, co-buy) via share_slug.
   - name: domains
     description: Tenant subdomain and custom-domain management.
+  - name: auth
+    description: Owner authentication (login).
   - name: ops
     description: Operational endpoints.
 
@@ -43,6 +45,36 @@ paths:
           content:
             text/plain:
               schema: { type: string, example: "ok" }
+
+  /api/v1/auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Log in with a username and password
+      description: >
+        Exchanges username+password credentials for a session access token (a
+        signed JWT presented as a Bearer token on subsequent owner-surface
+        requests). Unauthenticated; the tenant is resolved from the Host header.
+        Available only when the password login method is enabled on the instance.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Authentication succeeded; a session access token is returned.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: Password login is not enabled on this instance.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
 
   /api/v1/me:
     get:
@@ -653,6 +685,25 @@ components:
           properties:
             id: { type: string }
             subdomain: { type: string, example: alice }
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string, minLength: 1 }
+        password: { type: string, minLength: 1 }
+
+    LoginResponse:
+      type: object
+      required: [access_token, token_type, expires_in]
+      properties:
+        access_token:
+          type: string
+          description: "Signed JWT to present as `Authorization: Bearer <token>`."
+        token_type: { type: string, enum: [Bearer], example: Bearer }
+        expires_in:
+          type: integer
+          description: Access-token lifetime in seconds.
 
     ListVisibility:
       type: string
