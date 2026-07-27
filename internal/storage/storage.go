@@ -103,6 +103,9 @@ type TenantStore interface {
 type UserRepo interface {
 	Create(ctx context.Context, u User) (User, error)
 	Get(ctx context.Context, id string) (User, error)
+	// ByUsername looks a user up by their per-tenant login handle, for password
+	// authentication. Returns ErrNotFound when no user has that username.
+	ByUsername(ctx context.Context, username string) (User, error)
 }
 
 // ListRepo persists lists within the bound tenant.

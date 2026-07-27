@@ -44,17 +44,20 @@ func (s *Server) tenantForHost(ctx context.Context, host string) (storage.Tenant
 	return s.store.TenantByCustomDomain(ctx, host)
 }
 
-// requireOwner enforces owner authentication on the owner surface (/api/v1/*).
-// The public surface and /healthz pass through untouched.
+// requireOwner enforces owner authentication on the owner surface (/api/v1/*),
+// resolving the principal from a validated JWT (ADR-0005). The public surface,
+// /healthz, and the unauthenticated auth endpoints (/api/v1/auth/*, e.g. login)
+// pass through untouched.
 //
-// STUB — NOT SECURE. Until the owner-auth ADR lands, the bearer token is treated
-// as the owner's user id and merely validated against the tenant. User ids are
-// not secrets, so this grants access to anyone who knows one; it exists only so
-// owner-scoped endpoints have a concrete principal. A real token→identity
-// mechanism replaces this before MVP (tracked separately).
+// Two load-bearing checks: the token is validated with the algorithm pinned to
+// HS256 (auth.Issuer rejects alg:none / any mismatch), and the token's tenant
+// claim must equal the Host-resolved tenant — a token minted for one tenant is
+// rejected on another tenant's host (no cross-tenant replay). In Cut A1 every
+// issued token is an owner token; the superadmin admin-surface carve-out lands
+// with A2.
 func (s *Server) requireOwner(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/api/v1/") {
+		if !strings.HasPrefix(r.URL.Path, "/api/v1/") || strings.HasPrefix(r.URL.Path, "/api/v1/auth/") {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -68,7 +71,18 @@ func (s *Server) requireOwner(next http.Handler) http.Handler {
 			writeProblem(w, http.StatusUnauthorized, "missing bearer token")
 			return
 		}
-		owner, err := s.store.ForTenant(tenant).Users().Get(r.Context(), token)
+		principal, err := s.auth.Issuer().Validate(token)
+		if err != nil {
+			writeProblem(w, http.StatusUnauthorized, "invalid or expired token")
+			return
+		}
+		// Tenant-match invariant: the token must belong to the tenant addressed by
+		// the request Host. This is the cross-tenant-replay guard.
+		if principal.TenantID != tenant.ID {
+			writeProblem(w, http.StatusUnauthorized, "token does not match this tenant")
+			return
+		}
+		owner, err := s.store.ForTenant(tenant).Users().Get(r.Context(), principal.UserID)
 		if err != nil {
 			writeProblem(w, http.StatusUnauthorized, "invalid credentials")
 			return

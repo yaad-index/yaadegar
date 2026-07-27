@@ -21,6 +21,7 @@ import (
 	kongyaml "github.com/alecthomas/kong-yaml"
 
 	"github.com/yaad-index/yaadegar/internal/api"
+	"github.com/yaad-index/yaadegar/internal/auth"
 	"github.com/yaad-index/yaadegar/internal/clock"
 	"github.com/yaad-index/yaadegar/internal/decay"
 	"github.com/yaad-index/yaadegar/internal/email"
@@ -54,6 +55,13 @@ type ServeCmd struct {
 	DecayLinkBase       string        `name:"decay-link-base" env:"YAADEGAR_DECAY_LINK_BASE" help:"Base URL for the one-click keep/release links in reserver decay emails."`
 
 	DomainCNAMETarget string `name:"domain-cname-target" env:"YAADEGAR_DOMAIN_CNAME_TARGET" help:"Hostname that owners point a custom domain's CNAME at (returned by add-domain)."`
+
+	// Auth config (ADR-0005). The JWT secret is a secret and comes from the
+	// environment only. At least one login method must be enabled and configured or
+	// the instance refuses to start.
+	AuthJWTSecret       string        `name:"auth-jwt-secret" env:"YAADEGAR_AUTH_JWT_SECRET" help:"JWT signing secret (HS256), >=32 bytes. Required; from the environment. The instance refuses to start if missing or too short."`
+	AuthPasswordEnabled bool          `name:"auth-password-enabled" default:"true" env:"YAADEGAR_AUTH_PASSWORD_ENABLED" help:"Enable username+password login (the first login method; magic-link and OAuth land later)."`
+	AuthAccessTTL       time.Duration `name:"auth-access-ttl" default:"12h" env:"YAADEGAR_AUTH_ACCESS_TTL" help:"Access-token lifetime; re-login on expiry (refresh tokens are a later cut)."`
 
 	// SMTP config. If SMTPHost is empty the server logs emails instead of sending
 	// them (dev default). Secrets (SMTPPassword) come from the environment.
@@ -92,10 +100,24 @@ func (c *ServeCmd) Run(cli *CLI) error {
 	if err != nil {
 		return fmt.Errorf("configure email sender: %w", err)
 	}
+
+	// Fail-closed: the owner surface must never fall open. NewService validates the
+	// signing secret and the at-least-one-method-enabled invariant; a violation
+	// aborts startup with a clear, actionable error (ADR-0005 §4).
+	authService, err := auth.NewService(auth.Config{
+		JWTSecret:       c.AuthJWTSecret,
+		AccessTTL:       c.AuthAccessTTL,
+		PasswordEnabled: c.AuthPasswordEnabled,
+	}, clock.Real{})
+	if err != nil {
+		return err
+	}
+
 	handler := api.NewHandler(store, api.Options{
 		BaseDomain:        c.BaseDomain,
 		Logger:            logger,
 		Email:             sender,
+		Auth:              authService,
 		DomainCNAMETarget: c.DomainCNAMETarget,
 	})
 
