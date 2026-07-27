@@ -46,7 +46,7 @@ func setup(t *testing.T, t0 time.Time, listDecayDays *int, instanceDefaultDays i
 	ts := store.ForTenant(tenant)
 	owner, err := ts.Users().Create(ctx, storage.User{Name: "Alice", Email: "owner@example.com"})
 	require.NoError(t, err)
-	list, err := ts.Lists().Create(ctx, storage.List{OwnerID: owner.ID, Title: "List", DecayDays: listDecayDays, Active: true})
+	list, err := ts.Lists().Create(ctx, storage.List{Title: "List", DecayDays: listDecayDays, Active: true}, owner.ID)
 	require.NoError(t, err)
 	item, err := ts.Items().Create(ctx, storage.Item{ListID: list.ID, Name: "Blender", QuantityWanted: 1})
 	require.NoError(t, err)

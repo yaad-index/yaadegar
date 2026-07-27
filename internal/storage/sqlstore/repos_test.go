@@ -21,7 +21,7 @@ func seedList(t *testing.T, st storage.Store) (storage.TenantStore, storage.User
 	ts := st.ForTenant(ten)
 	owner, err := ts.Users().Create(ctx, storage.User{Name: "Alice"})
 	require.NoError(t, err)
-	list, err := ts.Lists().Create(ctx, storage.List{OwnerID: owner.ID, Title: "Birthday"})
+	list, err := ts.Lists().Create(ctx, storage.List{Title: "Birthday"}, owner.ID)
 	require.NoError(t, err)
 	return ts, owner, list
 }
@@ -33,13 +33,12 @@ func TestListCRUD(t *testing.T) {
 
 	event := time.Date(2027, 3, 14, 0, 0, 0, 0, time.UTC)
 	created, err := ts.Lists().Create(ctx, storage.List{
-		OwnerID:    owner.ID,
 		Title:      "Wedding",
 		Visibility: storage.VisibilityUnlisted,
 		EventDate:  &event,
 		DecayDays:  iptr(14),
 		Active:     true,
-	})
+	}, owner.ID)
 	require.NoError(t, err)
 	assert.NotEmpty(t, created.ID)
 	assert.NotEmpty(t, created.ShareSlug, "slug auto-generated when empty")

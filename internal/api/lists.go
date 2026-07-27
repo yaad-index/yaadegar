@@ -20,17 +20,28 @@ func (s *Server) CreateList(ctx context.Context, req gen.CreateListRequestObject
 		}, nil
 	}
 	created, err := ts.Lists().Create(ctx, storage.List{
-		OwnerID:    owner.ID,
 		Title:      req.Body.Title,
 		Visibility: fromGenVisibility(req.Body.Visibility),
 		EventDate:  fromGenDate(req.Body.EventDate),
 		DecayDays:  req.Body.DecayDays, // nil (absent) = inherit the instance default
 		Active:     true,
-	})
+	}, owner.ID)
 	if err != nil {
 		return nil, err
 	}
 	return gen.CreateList201JSONResponse(toGenList(created)), nil
+}
+
+// ownsList reports whether the request's authenticated owner owns listID — the
+// owner-surface authorization check (ADR-0005 §7). It is called only by the
+// authenticated owner handlers; the public/giver surface (public.go, share-slug
+// reads, reserve, contribute) never gates on ownership.
+func (s *Server) ownsList(ctx context.Context, ts storage.TenantStore, listID string) (bool, error) {
+	owner, ok := ownerFromContext(ctx)
+	if !ok {
+		return false, errMissingContext
+	}
+	return ts.Lists().IsOwner(ctx, listID, owner.ID)
 }
 
 func (s *Server) ListLists(ctx context.Context, req gen.ListListsRequestObject) (gen.ListListsResponseObject, error) {
@@ -70,6 +81,15 @@ func (s *Server) GetList(ctx context.Context, req gen.GetListRequestObject) (gen
 		}
 		return nil, err
 	}
+	owned, err := s.ownsList(ctx, ts, req.ListId)
+	if err != nil {
+		return nil, err
+	}
+	if !owned {
+		return gen.GetList403ApplicationProblemPlusJSONResponse{
+			ForbiddenApplicationProblemPlusJSONResponse: forbidden("not an owner of this list"),
+		}, nil
+	}
 	return gen.GetList200JSONResponse(toGenList(l)), nil
 }
 
@@ -91,6 +111,15 @@ func (s *Server) UpdateList(ctx context.Context, req gen.UpdateListRequestObject
 			}, nil
 		}
 		return nil, err
+	}
+	owned, err := s.ownsList(ctx, ts, req.ListId)
+	if err != nil {
+		return nil, err
+	}
+	if !owned {
+		return gen.UpdateList403ApplicationProblemPlusJSONResponse{
+			ForbiddenApplicationProblemPlusJSONResponse: forbidden("not an owner of this list"),
+		}, nil
 	}
 
 	// Merge-patch: a present field is applied; an absent one is left as-is. Because
@@ -123,6 +152,25 @@ func (s *Server) DeleteList(ctx context.Context, req gen.DeleteListRequestObject
 	ts, _, ok := s.tenantStore(ctx)
 	if !ok {
 		return nil, errMissingContext
+	}
+	// Resolve existence first (404) so a non-owner gets 403, not a leak-free 404,
+	// only for a list that truly exists.
+	if _, err := ts.Lists().Get(ctx, req.ListId); err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return gen.DeleteList404ApplicationProblemPlusJSONResponse{
+				NotFoundApplicationProblemPlusJSONResponse: notFound("list not found"),
+			}, nil
+		}
+		return nil, err
+	}
+	owned, err := s.ownsList(ctx, ts, req.ListId)
+	if err != nil {
+		return nil, err
+	}
+	if !owned {
+		return gen.DeleteList403ApplicationProblemPlusJSONResponse{
+			ForbiddenApplicationProblemPlusJSONResponse: forbidden("not an owner of this list"),
+		}, nil
 	}
 	if err := ts.Lists().Delete(ctx, req.ListId); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {

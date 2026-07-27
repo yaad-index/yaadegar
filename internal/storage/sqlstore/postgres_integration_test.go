@@ -64,9 +64,8 @@ func TestPostgres_RoundTripAndIsolation(t *testing.T) {
 	owner, err := as.Users().Create(ctx, storage.User{Name: "Alice"})
 	require.NoError(t, err)
 	list, err := as.Lists().Create(ctx, storage.List{
-		OwnerID: owner.ID,
-		Title:   "PG list",
-	})
+		Title: "PG list",
+	}, owner.ID)
 	require.NoError(t, err)
 	item, err := as.Items().Create(ctx, storage.Item{
 		ListID: list.ID,

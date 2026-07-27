@@ -95,7 +95,7 @@ func TestBatchAggregatesTenantScoped(t *testing.T) {
 
 	ownerA, err := as.Users().Create(ctx, storage.User{Name: "A"})
 	require.NoError(t, err)
-	listA, err := as.Lists().Create(ctx, storage.List{OwnerID: ownerA.ID, Title: "A"})
+	listA, err := as.Lists().Create(ctx, storage.List{Title: "A"}, ownerA.ID)
 	require.NoError(t, err)
 	itemA, err := as.Items().Create(ctx, storage.Item{ListID: listA.ID, Name: "x"})
 	require.NoError(t, err)

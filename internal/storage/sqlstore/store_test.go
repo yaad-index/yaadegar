@@ -105,7 +105,7 @@ func TestTenantIsolation(t *testing.T) {
 
 	owner, err := as.Users().Create(ctx, storage.User{Name: "Alice"})
 	require.NoError(t, err)
-	list, err := as.Lists().Create(ctx, storage.List{OwnerID: owner.ID, Title: "A's list"})
+	list, err := as.Lists().Create(ctx, storage.List{Title: "A's list"}, owner.ID)
 	require.NoError(t, err)
 	item, err := as.Items().Create(ctx, storage.Item{ListID: list.ID, Name: "A's item"})
 	require.NoError(t, err)
@@ -150,10 +150,9 @@ func TestTenantIsolation(t *testing.T) {
 		ownerB, err := bs.Users().Create(ctx, storage.User{Name: "Bob"})
 		require.NoError(t, err)
 		_, err = bs.Lists().Create(ctx, storage.List{
-			OwnerID:   ownerB.ID,
 			Title:     "B's list",
 			ShareSlug: list.ShareSlug,
-		})
+		}, ownerB.ID)
 		require.NoError(t, err)
 	})
 }
