@@ -215,5 +215,8 @@ type Domain struct {
 	CNAMETarget string
 	Verified    bool
 	TLSStatus   TLSStatus
-	CreatedAt   time.Time
+	// VerificationToken is a stable DNS TXT proof-of-control challenge (ADR-0004
+	// §2). It is not a secret capability: stored plaintext, exposed to the owner.
+	VerificationToken string
+	CreatedAt         time.Time
 }

@@ -20,6 +20,10 @@ var (
 	// insert would push a total past its cap — a reservation beyond quantity_wanted
 	// or a contribution beyond the item price. The check and insert are atomic.
 	ErrCapacityExceeded = errors.New("storage: capacity exceeded")
+	// ErrInvalidSubdomain is returned by CreateTenant for an empty subdomain. The
+	// full format + reserved-name policy is enforced at the provisioning boundary
+	// (see internal/tenant); this is the storage floor.
+	ErrInvalidSubdomain = errors.New("storage: invalid subdomain")
 )
 
 // Driver selects a backing database.

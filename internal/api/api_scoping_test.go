@@ -123,12 +123,3 @@ func TestReserverIdentityIsHidden(t *testing.T) {
 	assert.NotContains(t, string(body), giverName)
 	assert.NotContains(t, string(body), giverEmail)
 }
-
-func TestOutOfScopeOpsReturn501(t *testing.T) {
-	h := newHarness(t)
-
-	// Custom domains (owner) are still stubbed.
-	resp, _ := h.req(http.MethodGet, "/api/v1/domains", h.ownerHost(), h.ownerToken(), nil)
-	assert.Equal(t, http.StatusNotImplemented, resp.StatusCode)
-	assert.Equal(t, "application/problem+json", resp.Header.Get("Content-Type"))
-}

@@ -22,3 +22,7 @@ supersedes the old one (and mark the old one `Superseded by ADR-XXXX`).
   sharing a `database/sql` body via a dialect shim; tenant isolation by
   construction (`Store.ForTenant`); hashed capability tokens; embedded per-dialect
   migrations. **Status: Accepted.**
+- [ADR-0004: Multi-tenant Host routing and custom domains](0004-multi-tenant-routing-and-domains.md)
+  — subdomain + custom-domain routing, DNS TXT-token verification, the
+  verified-only-resolves security invariant, first-add-wins hostname uniqueness,
+  config-driven reserved subdomains, TLS deferred. **Status: Accepted.**

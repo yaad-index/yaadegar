@@ -10,7 +10,8 @@ import (
 
 type domainRepo struct{ baseRepo }
 
-const domainCols = `id, tenant_id, hostname, cname_target, verified, tls_status, created_at`
+const domainCols = `id, tenant_id, hostname, cname_target, verified, tls_status,
+	verification_token, created_at`
 
 func scanDomain(s scanner) (storage.Domain, error) {
 	var (
@@ -19,7 +20,7 @@ func scanDomain(s scanner) (storage.Domain, error) {
 		createdAt string
 	)
 	if err := s.Scan(&d.ID, &d.TenantID, &d.Hostname, &d.CNAMETarget, &verified,
-		&d.TLSStatus, &createdAt); err != nil {
+		&d.TLSStatus, &d.VerificationToken, &createdAt); err != nil {
 		return storage.Domain{}, err
 	}
 	ts, err := parseTime(createdAt)
@@ -44,9 +45,9 @@ func (r domainRepo) Create(ctx context.Context, d storage.Domain) (storage.Domai
 	d.TenantID = r.tenantID
 
 	_, err := r.db.ExecContext(ctx, r.rb(
-		`INSERT INTO domains (`+domainCols+`) VALUES (?, ?, ?, ?, ?, ?, ?)`),
+		`INSERT INTO domains (`+domainCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
 		d.ID, d.TenantID, d.Hostname, d.CNAMETarget, boolToInt(d.Verified),
-		d.TLSStatus, fmtTime(d.CreatedAt))
+		d.TLSStatus, d.VerificationToken, fmtTime(d.CreatedAt))
 	if err != nil {
 		if r.d.isUniqueViolation(err) {
 			return storage.Domain{}, storage.ErrConflict

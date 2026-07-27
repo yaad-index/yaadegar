@@ -52,6 +52,8 @@ type ServeCmd struct {
 	DecayDefaultDays    int           `name:"decay-default-days" default:"0" env:"YAADEGAR_DECAY_DEFAULT_DAYS" help:"Instance-default decay period in days (0 = off) for lists that do not override it."`
 	DecayResponseWindow time.Duration `name:"decay-response-window" default:"48h" env:"YAADEGAR_DECAY_RESPONSE_WINDOW" help:"How long the reserver has to keep/release a stale reservation before it auto-expires."`
 	DecayLinkBase       string        `name:"decay-link-base" env:"YAADEGAR_DECAY_LINK_BASE" help:"Base URL for the one-click keep/release links in reserver decay emails."`
+
+	DomainCNAMETarget string `name:"domain-cname-target" env:"YAADEGAR_DOMAIN_CNAME_TARGET" help:"Hostname that owners point a custom domain's CNAME at (returned by add-domain)."`
 }
 
 // Run opens and migrates storage, builds the API handler, and serves until
@@ -78,7 +80,12 @@ func (c *ServeCmd) Run(cli *CLI) error {
 	}
 
 	sender := email.NewLogSender(logger)
-	handler := api.NewHandler(store, api.Options{BaseDomain: c.BaseDomain, Logger: logger, Email: sender})
+	handler := api.NewHandler(store, api.Options{
+		BaseDomain:        c.BaseDomain,
+		Logger:            logger,
+		Email:             sender,
+		DomainCNAMETarget: c.DomainCNAMETarget,
+	})
 
 	// Run the reservation-decay sweeper on a ticker alongside the server.
 	sweeper := decay.NewSweeper(store, sender, clock.Real{}, decay.Config{
