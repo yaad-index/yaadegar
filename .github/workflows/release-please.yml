@@ -1,0 +1,46 @@
+# Automated semantic-version releases from Conventional Commits (#29).
+#
+# On every push to main, release-please maintains a "release PR" that
+# accumulates the changelog + next version from the conventional-commit
+# history. Merging that PR tags the release (vMAJOR.MINOR.PATCH) and
+# publishes a GitHub Release. Pre-1.0 is expected to start.
+#
+# BRANCH-PROTECTION NOTE (read before cutting the first release):
+# The release PR is opened with GITHUB_TOKEN by default, and GitHub does
+# not trigger workflows for GITHUB_TOKEN-authored events — so the required
+# `check` status will NOT run on the release PR on its own, and it cannot
+# merge until it does. Until a RELEASE_PLEASE_TOKEN secret is added (see
+# below), a maintainer must close and reopen the release PR once: reopening
+# it as a real user fires the pull_request event and `check` runs. See
+# RELEASING.md.
+#
+# ONE-LINE UPGRADE (optional, removes the manual step):
+# Add a RELEASE_PLEASE_TOKEN repo secret — a fine-grained PAT or GitHub App
+# token with `contents: write` + `pull_requests: write`. The token
+# expression below picks it up automatically; no workflow edit needed. The
+# release PR is then authored by that identity, so `check` runs normally and
+# the flow is a plain CI-green + 2-approvals merge like any other PR.
+
+name: release-please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run release-please
+        uses: googleapis/release-please-action@a02a34c4d625f9be7cb89156071d8567266a2445 # v4.2.0
+        with:
+          # Uses the optional RELEASE_PLEASE_TOKEN secret when present (so the
+          # release PR triggers CI), else falls back to the built-in token
+          # (needs the one-time close/reopen per the note above).
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
