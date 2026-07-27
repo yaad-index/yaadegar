@@ -26,3 +26,8 @@ supersedes the old one (and mark the old one `Superseded by ADR-XXXX`).
   — subdomain + custom-domain routing, DNS TXT-token verification, the
   verified-only-resolves security invariant, first-add-wins hostname uniqueness,
   config-driven reserved subdomains, TLS deferred. **Status: Accepted.**
+- [ADR-0005: Owner authentication](0005-owner-authentication.md) — JWT Bearer on the
+  owner surface (public capability-token surface unchanged), three operator-configurable
+  login methods (password, Google OAuth, magic-link) converging on one session issuer,
+  fail-closed at-least-one-method startup invariant, superadmin/owner/guest roles,
+  multi-owner-capable lists. **Status: Proposed.**
