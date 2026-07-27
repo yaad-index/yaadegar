@@ -16,12 +16,14 @@ import (
 // Server implements the generated strict server interface against the storage
 // layer.
 type Server struct {
-	store      storage.Store
-	baseDomain string
-	email      email.Sender
-	clock      clock.Clock
-	previewer  *preview.Previewer
-	logger     *slog.Logger
+	store             storage.Store
+	baseDomain        string
+	email             email.Sender
+	clock             clock.Clock
+	previewer         *preview.Previewer
+	resolver          Resolver
+	domainCNAMETarget string
+	logger            *slog.Logger
 }
 
 var _ gen.StrictServerInterface = (*Server)(nil)
@@ -42,13 +44,28 @@ type Options struct {
 	// Previewer scrapes item drafts from product URLs. Defaults to the
 	// SSRF-guarded fetcher when nil; tests inject one over a fake fetcher.
 	Previewer *preview.Previewer
+	// Resolver does DNS TXT lookups for custom-domain verification. Defaults to
+	// the system resolver when nil; tests inject a fake.
+	Resolver Resolver
+	// DomainCNAMETarget is the hostname owners point their custom domain's CNAME
+	// at; returned by addDomain.
+	DomainCNAMETarget string
 }
 
 // NewHandler builds the full HTTP handler: the generated strict router wrapped in
 // tenant-resolution and owner-auth middleware. It serves both surfaces and
 // /healthz.
 func NewHandler(store storage.Store, opts Options) http.Handler {
-	s := &Server{store: store, baseDomain: opts.BaseDomain, email: opts.Email, clock: opts.Clock, previewer: opts.Previewer, logger: opts.Logger}
+	s := &Server{
+		store:             store,
+		baseDomain:        opts.BaseDomain,
+		email:             opts.Email,
+		clock:             opts.Clock,
+		previewer:         opts.Previewer,
+		resolver:          opts.Resolver,
+		domainCNAMETarget: opts.DomainCNAMETarget,
+		logger:            opts.Logger,
+	}
 	if s.logger == nil {
 		s.logger = slog.Default()
 	}
@@ -60,6 +77,9 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 	}
 	if s.previewer == nil {
 		s.previewer = preview.NewDefault()
+	}
+	if s.resolver == nil {
+		s.resolver = newNetResolver()
 	}
 
 	strict := gen.NewStrictHandlerWithOptions(s, nil, gen.StrictHTTPServerOptions{

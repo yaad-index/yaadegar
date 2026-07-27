@@ -262,12 +262,55 @@ paths:
                 hostname: { type: string, example: gifts.example.com }
       responses:
         "201":
-          description: The registered (unverified) domain.
+          description: >
+            The registered (unverified) domain, including the verification_token
+            to publish as a DNS TXT record at _yaadegar-verify.<hostname>.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Domain" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/domains/{domainId}:
+    parameters:
+      - name: domainId
+        in: path
+        required: true
+        schema: { type: string }
+    delete:
+      operationId: deleteDomain
+      tags: [domains]
+      summary: Remove a custom domain
+      responses:
+        "204": { description: Removed. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/domains/{domainId}/verify:
+    parameters:
+      - name: domainId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: verifyDomain
+      tags: [domains]
+      summary: Check the domain's DNS TXT verification record
+      description: >
+        Looks up the DNS TXT record at _yaadegar-verify.<hostname> and marks the
+        domain verified if it contains the verification_token. Idempotent: an
+        already-verified domain returns verified; a missing or non-matching record
+        returns the domain still unverified (retry after publishing the record) —
+        not an error. Only verified domains route requests to the tenant.
+      responses:
+        "200":
+          description: The domain with its (possibly now-updated) verified state.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Domain" }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        "409": { $ref: "#/components/responses/Conflict" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /public/{shareSlug}:
     parameters:
@@ -839,6 +882,11 @@ components:
         cname_target: { type: string, description: "Point your CNAME here." }
         verified: { type: boolean }
         tls_status: { type: string, enum: [none, pending, active] }
+        verification_token:
+          type: string
+          description: >
+            Publish this as a DNS TXT record at _yaadegar-verify.<hostname>, then
+            call verify. A proof-of-control challenge, not a secret.
 
 security:
   - ownerBearer: []

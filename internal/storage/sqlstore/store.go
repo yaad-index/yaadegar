@@ -74,6 +74,9 @@ func (s *sqlStore) ForTenant(t storage.Tenant) storage.TenantStore {
 }
 
 func (s *sqlStore) CreateTenant(ctx context.Context, t storage.Tenant) (storage.Tenant, error) {
+	if t.Subdomain == "" {
+		return storage.Tenant{}, storage.ErrInvalidSubdomain
+	}
 	if t.ID == "" {
 		t.ID = newID()
 	}

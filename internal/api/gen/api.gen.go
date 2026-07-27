@@ -197,7 +197,10 @@ type Domain struct {
 	Hostname    *string          `json:"hostname,omitempty"`
 	Id          *string          `json:"id,omitempty"`
 	TlsStatus   *DomainTlsStatus `json:"tls_status,omitempty"`
-	Verified    *bool            `json:"verified,omitempty"`
+
+	// VerificationToken Publish this as a DNS TXT record at _yaadegar-verify.<hostname>, then call verify. A proof-of-control challenge, not a secret.
+	VerificationToken *string `json:"verification_token,omitempty"`
+	Verified          *bool   `json:"verified,omitempty"`
 }
 
 // DomainTlsStatus defines model for Domain.TlsStatus.
@@ -500,6 +503,12 @@ type ServerInterface interface {
 	// AddDomain Add a custom domain (bring-your-own-domain)
 	// (POST /api/v1/domains)
 	AddDomain(w http.ResponseWriter, r *http.Request)
+	// DeleteDomain Remove a custom domain
+	// (DELETE /api/v1/domains/{domainId})
+	DeleteDomain(w http.ResponseWriter, r *http.Request, domainId string)
+	// VerifyDomain Check the domain's DNS TXT verification record
+	// (POST /api/v1/domains/{domainId}/verify)
+	VerifyDomain(w http.ResponseWriter, r *http.Request, domainId string)
 	// PreviewItem Fetch item metadata from a product URL (browser auto-add)
 	// (POST /api/v1/item-previews)
 	PreviewItem(w http.ResponseWriter, r *http.Request)
@@ -593,6 +602,58 @@ func (siw *ServerInterfaceWrapper) AddDomain(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AddDomain(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteDomain operation middleware
+func (siw *ServerInterfaceWrapper) DeleteDomain(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "domainId" -------------
+	var domainId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "domainId", r.PathValue("domainId"), &domainId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "domainId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteDomain(w, r, domainId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VerifyDomain operation middleware
+func (siw *ServerInterfaceWrapper) VerifyDomain(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "domainId" -------------
+	var domainId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "domainId", r.PathValue("domainId"), &domainId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "domainId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VerifyDomain(w, r, domainId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1277,6 +1338,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/item-previews", wrapper.PreviewItem)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/domains", wrapper.ListDomains)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/domains", wrapper.AddDomain)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/domains/{domainId}", wrapper.DeleteDomain)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/domains/{domainId}/verify", wrapper.VerifyDomain)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/public/{shareSlug}", wrapper.GetPublicList)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/public/{shareSlug}/items/{itemId}/reservations", wrapper.CreateReservation)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/public/reservations/{reservationId}", wrapper.ReleaseReservation)
@@ -1357,6 +1420,22 @@ func (response AddDomain201JSONResponse) VisitAddDomainResponse(w http.ResponseW
 	return err
 }
 
+type AddDomain400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response AddDomain400ApplicationProblemPlusJSONResponse) VisitAddDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type AddDomain401ApplicationProblemPlusJSONResponse struct {
 	UnauthorizedApplicationProblemPlusJSONResponse
 }
@@ -1385,6 +1464,108 @@ func (response AddDomain409ApplicationProblemPlusJSONResponse) VisitAddDomainRes
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDomainRequestObject struct {
+	DomainId string `json:"domainId"`
+}
+
+type DeleteDomainResponseObject interface {
+	VisitDeleteDomainResponse(w http.ResponseWriter) error
+}
+
+type DeleteDomain204Response struct {
+}
+
+func (response DeleteDomain204Response) VisitDeleteDomainResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteDomain401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteDomain401ApplicationProblemPlusJSONResponse) VisitDeleteDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDomain404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteDomain404ApplicationProblemPlusJSONResponse) VisitDeleteDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyDomainRequestObject struct {
+	DomainId string `json:"domainId"`
+}
+
+type VerifyDomainResponseObject interface {
+	VisitVerifyDomainResponse(w http.ResponseWriter) error
+}
+
+type VerifyDomain200JSONResponse Domain
+
+func (response VerifyDomain200JSONResponse) VisitVerifyDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyDomain401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response VerifyDomain401ApplicationProblemPlusJSONResponse) VisitVerifyDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyDomain404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response VerifyDomain404ApplicationProblemPlusJSONResponse) VisitVerifyDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -2529,6 +2710,12 @@ type StrictServerInterface interface {
 	// AddDomain Add a custom domain (bring-your-own-domain)
 	// (POST /api/v1/domains)
 	AddDomain(ctx context.Context, request AddDomainRequestObject) (AddDomainResponseObject, error)
+	// DeleteDomain Remove a custom domain
+	// (DELETE /api/v1/domains/{domainId})
+	DeleteDomain(ctx context.Context, request DeleteDomainRequestObject) (DeleteDomainResponseObject, error)
+	// VerifyDomain Check the domain's DNS TXT verification record
+	// (POST /api/v1/domains/{domainId}/verify)
+	VerifyDomain(ctx context.Context, request VerifyDomainRequestObject) (VerifyDomainResponseObject, error)
 	// PreviewItem Fetch item metadata from a product URL (browser auto-add)
 	// (POST /api/v1/item-previews)
 	PreviewItem(ctx context.Context, request PreviewItemRequestObject) (PreviewItemResponseObject, error)
@@ -2681,6 +2868,58 @@ func (sh *strictHandler) AddDomain(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(AddDomainResponseObject); ok {
 		if err := validResponse.VisitAddDomainResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteDomain operation middleware
+func (sh *strictHandler) DeleteDomain(w http.ResponseWriter, r *http.Request, domainId string) {
+	var request DeleteDomainRequestObject
+
+	request.DomainId = domainId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteDomain(ctx, request.(DeleteDomainRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteDomain")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteDomainResponseObject); ok {
+		if err := validResponse.VisitDeleteDomainResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// VerifyDomain operation middleware
+func (sh *strictHandler) VerifyDomain(w http.ResponseWriter, r *http.Request, domainId string) {
+	var request VerifyDomainRequestObject
+
+	request.DomainId = domainId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.VerifyDomain(ctx, request.(VerifyDomainRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "VerifyDomain")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(VerifyDomainResponseObject); ok {
+		if err := validResponse.VisitVerifyDomainResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
