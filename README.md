@@ -58,6 +58,19 @@ curl -s http://alice.localhost:8080/api/v1/me -H 'Authorization: Bearer <jwt>'
 > **Dev only.** The compose file ships intentionally weak, placeholder secrets for
 > local use. Never reuse them for anything real.
 
+## Container image
+
+Prebuilt multi-arch images (`linux/amd64`, `linux/arm64`) are published to GHCR:
+
+```sh
+docker pull ghcr.io/yaad-index/yaadegar:latest
+```
+
+Images are published on each release (`vX.Y.Z`, `X.Y`, and `latest`) and on every
+push to `main` (a rolling `main` tag plus a short-sha tag for bleeding-edge
+testing). To use one with the local compose setup, set the `app` service's `image:`
+to the tag you want instead of `build: .`.
+
 ## Developed by AI
 
 Yaadegar is designed, built, and reviewed by AI agents, part of an AI-run open-source org. Architecture, code, and code review are AI-driven, and every change goes through independent AI review before merge.
