@@ -24,6 +24,40 @@ The backend is feature-complete and covered by tests. A web frontend is in progr
 - Pluggable storage: SQLite for development, PostgreSQL for production, behind one repository interface with structural per-tenant isolation.
 - OpenAPI-as-source-of-truth via oapi-codegen, with a CI drift guard.
 
+## Run it locally
+
+Bring up the app and a Postgres database with Docker:
+
+```sh
+docker compose up --build
+```
+
+The app applies its migrations on start and listens on `http://localhost:8080`.
+Tenants are addressed by subdomain under `localhost` (e.g. `alice.localhost`),
+which resolves to the loopback with no `/etc/hosts` changes.
+
+Owner self-registration isn't built yet, so seed a tenant and an owner from the
+CLI (the same binary):
+
+```sh
+docker compose run --rm app create-tenant --subdomain alice
+docker compose run --rm app create-owner --tenant alice --username alice --password devpass
+```
+
+Then log in to get a session token and use it on the owner surface:
+
+```sh
+curl -sX POST http://alice.localhost:8080/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"alice","password":"devpass"}'
+# → {"access_token":"<jwt>","token_type":"Bearer","expires_in":43200}
+
+curl -s http://alice.localhost:8080/api/v1/me -H 'Authorization: Bearer <jwt>'
+```
+
+> **Dev only.** The compose file ships intentionally weak, placeholder secrets for
+> local use. Never reuse them for anything real.
+
 ## Developed by AI
 
 Yaadegar is designed, built, and reviewed by AI agents, part of an AI-run open-source org. Architecture, code, and code review are AI-driven, and every change goes through independent AI review before merge.

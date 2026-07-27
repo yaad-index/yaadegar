@@ -40,6 +40,11 @@ type CLI struct {
 
 	Serve   ServeCmd   `cmd:"" help:"Run the HTTP API server."`
 	Version VersionCmd `cmd:"" help:"Print the build version and exit."`
+
+	// Seed commands for local/hands-on testing (owner self-registration and
+	// superadmin bootstrap are still deferred).
+	CreateTenant CreateTenantCmd `cmd:"" name:"create-tenant" help:"Create a tenant."`
+	CreateOwner  CreateOwnerCmd  `cmd:"" name:"create-owner" help:"Create an owner with a password credential in a tenant."`
 }
 
 // ServeCmd runs the HTTP server until interrupted.

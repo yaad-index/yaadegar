@@ -1,0 +1,11 @@
+# Keep the build context small: the builder only needs the Go sources + module
+# files. Everything below is either not needed to build or regenerated.
+.git
+.github
+*.md
+docs
+Dockerfile
+.dockerignore
+docker-compose.yml
+*.db
+*.db-journal

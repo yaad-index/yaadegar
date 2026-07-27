@@ -1,0 +1,42 @@
+# Local, hands-on Yaadegar: `docker compose up --build` brings up the app + a
+# Postgres database. The app applies its migrations at boot. See the README's
+# "Run it locally" section for seeding a tenant + owner and logging in.
+#
+# ⚠️  DEV ONLY. The secrets below are intentionally weak, committed placeholders
+# for local use — never reuse them for anything real.
+
+services:
+  db:
+    image: postgres:17.2-alpine
+    environment:
+      POSTGRES_USER: yaadegar
+      POSTGRES_PASSWORD: dev-only-postgres-password # DEV ONLY
+      POSTGRES_DB: yaadegar
+    volumes:
+      - yaadegar-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U yaadegar -d yaadegar"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      YAADEGAR_STORAGE_DRIVER: postgres
+      YAADEGAR_STORAGE_DSN: postgres://yaadegar:dev-only-postgres-password@db:5432/yaadegar?sslmode=disable
+      # DEV ONLY — a throwaway signing secret so the instance starts locally.
+      YAADEGAR_AUTH_JWT_SECRET: dev-only-insecure-jwt-signing-secret-change-me
+      YAADEGAR_AUTH_PASSWORD_ENABLED: "true"
+      # Tenants are addressed as <subdomain>.localhost, which resolves to the
+      # loopback in browsers and curl with no /etc/hosts edits.
+      YAADEGAR_BASE_DOMAIN: localhost
+      YAADEGAR_HTTP_ADDR: ":8080"
+    ports:
+      - "8080:8080"
+
+volumes:
+  yaadegar-db:
