@@ -1,0 +1,73 @@
+# Build and publish the container image to GHCR (#57).
+#
+# On a published release, push the versioned tags + `latest` (release-please cuts
+# the releases). On a push to main, push a rolling `main` tag + a short-sha tag for
+# bleeding-edge testing. Images are multi-arch (amd64 + arm64); the binary is
+# CGO-free static so it cross-builds cleanly under buildx.
+#
+# Auth is the built-in GITHUB_TOKEN against ghcr.io — no PAT or extra secret.
+
+name: docker-publish
+
+on:
+  release:
+    types: [published]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/yaad-index/yaadegar
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive tags and labels
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          # Versioned + major.minor + latest on release; a rolling branch tag on
+          # main; a short-sha tag always (bleeding-edge / traceability).
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+            type=ref,event=branch
+            type=sha
+          labels: |
+            org.opencontainers.image.title=Yaadegar
+            org.opencontainers.image.description=API-first, self-hosted gift registry and wishlist.
+            org.opencontainers.image.source=https://github.com/yaad-index/yaadegar
+            org.opencontainers.image.licenses=MIT
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Build and push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
