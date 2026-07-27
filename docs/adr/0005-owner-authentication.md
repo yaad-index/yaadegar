@@ -52,10 +52,11 @@ only in how they *authenticate a user*; they all end at a single
 role, mints the session token(s). Adding or removing a method never touches token
 issuance or the middleware.
 
-- **Username + password.** Passwords are stored only as a strong password-hash
-  (recommended: **bcrypt** via `golang.org/x/crypto/bcrypt` — mature and hard to
-  misuse; **argon2id** is the stronger alternative, noted for the operator/reviewers
-  to choose). The plaintext is never stored or logged.
+- **Username + password.** Passwords are stored only as a strong password-hash —
+  **argon2id** (`golang.org/x/crypto/argon2`, the current OWASP recommendation for a
+  new system: memory-hard, and free of bcrypt's 72-byte silent-truncation footgun).
+  Use a documented preset (OWASP argon2id baseline: ~19 MiB, t=2, p=1) so it is not a
+  tuning burden. The plaintext is never stored or logged.
 - **Magic-link.** A login request emails a **one-time, hashed, short-TTL** token
   link, reusing `internal/token` (raw emailed once, only the SHA-256 hash stored —
   exactly the capability-token pattern) and `internal/email.Sender` (#37). Clicking
@@ -89,32 +90,47 @@ test.
   single-binary process signs and verifies, so a symmetric secret is sufficient and
   simplest; asymmetric (EdDSA/RS256) is noted as a future option only if external
   verification is ever needed.
+- **Algorithm pinning (non-negotiable).** The verifier **pins the accepted algorithm
+  to HS256** and rejects `alg: none` and any algorithm other than HS256 — it never
+  trusts the token's own `alg` header to select the verification method. This closes
+  the classic alg-confusion / none-algorithm JWT attack. Explicit, and pinned by a
+  test.
 - **Secret.** From the environment only (`YAADEGAR_AUTH_JWT_SECRET`), never a config
   file, never inlined — consistent with the project's secrets policy. A minimum
   length is enforced; unset or too-short fails closed at startup (§4).
 - **Claims.** `sub` (user id), `tid` (tenant id), `role` (§7), plus `iss`, `iat`,
   `nbf`, `exp`. The middleware validates signature + `exp`/`nbf` and resolves the
   principal from `sub`/`tid`/`role`.
-- **Tenant-match invariant.** The token's `tid` must equal the tenant resolved from
-  the request Host (ADR-0004). A token minted for tenant A is **rejected** on tenant
-  B's host — no cross-tenant replay. Pinned by a test.
-- **Lifetime + refresh.** A short-lived **access JWT** (recommended ~1h) plus an
-  opaque, **hashed, rotating refresh token** stored server-side via `internal/token`
-  (same crypto as capability tokens). A `/auth/refresh` endpoint trades a valid
-  refresh token for a new access JWT and a rotated refresh token; **logout** deletes
-  the refresh token, giving real revocation while keeping request-time validation
-  stateless. (If the reviewers prefer a smaller first cut, an access-only variant
-  with a moderate TTL and re-login on expiry is a viable v1 fallback — refresh can be
-  its own cut; see Rollout.)
+- **Tenant-match invariant.** For **tenant-bound principals (owners)** on the owner
+  surface, the token's `tid` must equal the tenant resolved from the request Host
+  (ADR-0004): a token minted for tenant A is **rejected** on tenant B's host — no
+  cross-tenant replay. This stays strict on `/api/v1` and is pinned by a test. The
+  instance-level superadmin is the sole carve-out — it is validated by role on a
+  separate non-tenant-scoped surface, never by tenant-match (§6).
+- **Lifetime (v1 = access-only).** Cut A ships a stateless **access JWT** with a
+  moderate TTL (~8–12h) and re-login on expiry — no server-side session store. The
+  accepted tradeoff: no server-side revocation before expiry, bounded by the TTL.
+  Rotating **refresh tokens** (opaque, hashed via `internal/token`, with a
+  `/auth/refresh` endpoint, a shorter access TTL, and `logout` for real revocation)
+  are deferred to **Cut A′** and designed to reuse the capability-token crypto.
 
 ### 6. Role model
 
 - **superadmin** — one instance-level administrator, authenticated via the same
-  methods. Instance-scoped (tenant management / global ops), not tied to a single
-  tenant's list surface. Bootstrapped from configuration (an operator-set superadmin
-  identity), so a fresh instance has an administrator without an open endpoint. Its
-  admin surface is minimal for v1; most superadmin endpoints are deferred, but the
-  role and its issuance land now.
+  enabled login methods. Instance-scoped (tenant management / global ops), not tied to
+  a single tenant.
+  - **Surface + tenant-match carve-out.** Superadmin operates on a **separate,
+    non-tenant-scoped admin surface** (a distinct path prefix), *not* `/api/v1`. Its
+    JWT is instance-scoped — `role=superadmin`, with no tenant-bound `tid` (a
+    sentinel) — and the admin surface authorizes by **role, not tenant-match**. The
+    owner surface keeps the tenant-match invariant strict (§5); the carve-out is only
+    for this instance-level principal. The v1 admin surface is minimal (most endpoints
+    deferred), so this is one small surface + a clear rule.
+  - **Bootstrap.** The superadmin is a configured **identity that logs in through the
+    enabled methods** — a config-set username/email paired with a *hashed* credential,
+    or an OAuth / magic-link identity. A **plaintext password is never stored in
+    config**. This gives a fresh instance an administrator without an open bootstrap
+    endpoint.
 - **list owner** — an authenticated account holder who owns lists within a tenant.
 - **guest** — the public reserver, tiered `full_guest` / `email_confirmed` /
   `registered` per the per-list reserver-identity policy (#19). Guests are not JWT
@@ -140,6 +156,14 @@ reserver tier (#19), and any authenticated principal is exempt. It carries no JW
 changes nothing on the owner surface. #45 implements it; this ADR only fixes the
 boundary.
 
+### 9. Abuse resistance (noted, not built here)
+
+Two abuse vectors are called out for later handling (non-blocking for this ADR, likely
+leaning on the captcha / a rate-limiter): **password-login brute force** (a per-account
+or per-IP rate-limit or lockout) and **magic-link email-bombing** (a send rate-limit so
+the login endpoint can't be used to spam an address). Each auth cut should avoid
+designing these out.
+
 ## Consequences
 
 - The stub middleware and its "bearer = user id" trust are removed before MVP; the
@@ -153,26 +177,27 @@ boundary.
   server gains fail-closed startup validation.
 - Operators must configure at least one method (and the JWT secret) or the instance
   will not start — an intentional, documented behavior change from the stub.
-- Deferred and referenced, not baked out: co-owner API (#25), captcha implementation
-  (#45), guest reserver tiers (#19), and — if the reviewers choose — refresh tokens as
-  a distinct cut.
+- Deferred and referenced, not baked out: refresh tokens + logout/revocation (Cut A′),
+  co-owner API (#25), captcha implementation (#45), and guest reserver tiers (#19).
 
 ### Rollout (proposed implementation cuts)
 
 Reviewed and sized with this ADR; each cut is its own PR (2-of-2), spec-first where it
 touches endpoints:
 
-1. **Cut A — auth core + password + fail-closed startup + multi-owner model.**
-   `internal/auth` (JWT issue/validate, password hashing), the owner-auth middleware
-   replacing the stub + the tenant-match invariant, the role/claims model, the
-   `list_owners` join table (v1 single-owner enforced) + superadmin role & bootstrap,
+1. **Cut A — auth core + password + fail-closed startup + multi-owner model
+   (access-only).** `internal/auth` (JWT issue/validate with **HS256 alg-pinning**,
+   argon2id password hashing), the owner-auth middleware replacing the stub + the
+   tenant-match invariant, the role/claims model, the `list_owners` join table (v1
+   single-owner enforced) + the superadmin role, bootstrap & separate admin surface,
    the auth enable-flags config + JWT secret, and the at-least-one-enabled fail-closed
-   startup check with **password** as the first satisfying method. The foundational,
-   MVP-unblocking cut. (Refresh/logout can ride here or split to Cut A′ if A is too
-   large.)
-2. **Cut B — magic-link login.** Email one-time-token → session, reusing
+   startup check with **password** as the first satisfying method. Access-only session
+   (moderate TTL). The foundational, MVP-unblocking cut.
+2. **Cut A′ — refresh tokens + logout.** Rotating hashed refresh token, `/auth/refresh`,
+   a shorter access TTL, and server-side revocation on logout.
+3. **Cut B — magic-link login.** Email one-time-token → session, reusing
    `internal/token` + `internal/email`; its enable-flag + config validation.
-3. **Cut C — Google OAuth login (#21).** Per-tenant OAuth2/OIDC authorization-code
+4. **Cut C — Google OAuth login (#21).** Per-tenant OAuth2/OIDC authorization-code
    flow, ID-token verification, account link/create; its enable-flag + config
    validation.
 
