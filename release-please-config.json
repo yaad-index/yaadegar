@@ -5,7 +5,8 @@
       "release-type": "go",
       "package-name": "yaadegar",
       "include-v-in-tag": true,
-      "changelog-path": "CHANGELOG.md"
+      "changelog-path": "CHANGELOG.md",
+      "bump-minor-pre-major": true
     }
   }
 }
