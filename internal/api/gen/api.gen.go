@@ -169,6 +169,12 @@ func (e ConfirmMatchJSONBodyDecision) Valid() bool {
 	}
 }
 
+// AdminIdentity defines model for AdminIdentity.
+type AdminIdentity struct {
+	Id       *string `json:"id,omitempty"`
+	Username *string `json:"username,omitempty"`
+}
+
 // Contribution A giver's pledge toward co-buying an item (giver-facing view).
 type Contribution struct {
 	Id     *string `json:"id,omitempty"`
@@ -499,6 +505,9 @@ type ConfirmMatchJSONBody struct {
 // ConfirmMatchJSONBodyDecision defines parameters for ConfirmMatch.
 type ConfirmMatchJSONBodyDecision string
 
+// AdminLoginJSONRequestBody defines body for AdminLogin for application/json ContentType.
+type AdminLoginJSONRequestBody = LoginRequest
+
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
 
@@ -537,6 +546,12 @@ type CreateReservationJSONRequestBody = ReservationCreate
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// AdminLogin Log in as the instance superadmin
+	// (POST /admin/auth/login)
+	AdminLogin(w http.ResponseWriter, r *http.Request)
+	// AdminGetMe The current superadmin
+	// (GET /admin/me)
+	AdminGetMe(w http.ResponseWriter, r *http.Request)
 	// Login Log in with a username and password
 	// (POST /api/v1/auth/login)
 	Login(w http.ResponseWriter, r *http.Request)
@@ -625,6 +640,34 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// AdminLogin operation middleware
+func (siw *ServerInterfaceWrapper) AdminLogin(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminLogin(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminGetMe operation middleware
+func (siw *ServerInterfaceWrapper) AdminGetMe(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminGetMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // Login operation middleware
 func (siw *ServerInterfaceWrapper) Login(w http.ResponseWriter, r *http.Request) {
@@ -1383,6 +1426,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/healthz", wrapper.GetHealthz)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/login", wrapper.Login)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/admin/auth/login", wrapper.AdminLogin)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/admin/me", wrapper.AdminGetMe)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/me", wrapper.GetCurrentUser)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/lists", wrapper.ListLists)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/lists", wrapper.CreateList)
@@ -1420,6 +1465,141 @@ type ForbiddenApplicationProblemPlusJSONResponse Problem
 type NotFoundApplicationProblemPlusJSONResponse Problem
 
 type UnauthorizedApplicationProblemPlusJSONResponse Problem
+
+type AdminLoginRequestObject struct {
+	Body *AdminLoginJSONRequestBody
+}
+
+type AdminLoginResponseObject interface {
+	VisitAdminLoginResponse(w http.ResponseWriter) error
+}
+
+type AdminLogin200JSONResponse LoginResponse
+
+func (response AdminLogin200JSONResponse) VisitAdminLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminLogin400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response AdminLogin400ApplicationProblemPlusJSONResponse) VisitAdminLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminLogin401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response AdminLogin401ApplicationProblemPlusJSONResponse) VisitAdminLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminLogin404ApplicationProblemPlusJSONResponse Problem
+
+func (response AdminLogin404ApplicationProblemPlusJSONResponse) VisitAdminLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetMeRequestObject struct {
+}
+
+type AdminGetMeResponseObject interface {
+	VisitAdminGetMeResponse(w http.ResponseWriter) error
+}
+
+type AdminGetMe200JSONResponse AdminIdentity
+
+func (response AdminGetMe200JSONResponse) VisitAdminGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetMe401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response AdminGetMe401ApplicationProblemPlusJSONResponse) VisitAdminGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetMe403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response AdminGetMe403ApplicationProblemPlusJSONResponse) VisitAdminGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetMe404ApplicationProblemPlusJSONResponse Problem
+
+func (response AdminGetMe404ApplicationProblemPlusJSONResponse) VisitAdminGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type LoginRequestObject struct {
 	Body *LoginJSONRequestBody
@@ -2944,6 +3124,12 @@ func (response CreateReservation410ApplicationProblemPlusJSONResponse) VisitCrea
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// AdminLogin Log in as the instance superadmin
+	// (POST /admin/auth/login)
+	AdminLogin(ctx context.Context, request AdminLoginRequestObject) (AdminLoginResponseObject, error)
+	// AdminGetMe The current superadmin
+	// (GET /admin/me)
+	AdminGetMe(ctx context.Context, request AdminGetMeRequestObject) (AdminGetMeResponseObject, error)
 	// Login Log in with a username and password
 	// (POST /api/v1/auth/login)
 	Login(ctx context.Context, request LoginRequestObject) (LoginResponseObject, error)
@@ -3061,6 +3247,61 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// AdminLogin operation middleware
+func (sh *strictHandler) AdminLogin(w http.ResponseWriter, r *http.Request) {
+	var request AdminLoginRequestObject
+
+	var body AdminLoginJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminLogin(ctx, request.(AdminLoginRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminLogin")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminLoginResponseObject); ok {
+		if err := validResponse.VisitAdminLoginResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminGetMe operation middleware
+func (sh *strictHandler) AdminGetMe(w http.ResponseWriter, r *http.Request) {
+	var request AdminGetMeRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminGetMe(ctx, request.(AdminGetMeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminGetMe")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminGetMeResponseObject); ok {
+		if err := validResponse.VisitAdminGetMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // Login operation middleware

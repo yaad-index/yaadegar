@@ -10,6 +10,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -41,10 +42,10 @@ type CLI struct {
 	Serve   ServeCmd   `cmd:"" help:"Run the HTTP API server."`
 	Version VersionCmd `cmd:"" help:"Print the build version and exit."`
 
-	// Seed commands for local/hands-on testing (owner self-registration and
-	// superadmin bootstrap are still deferred).
+	// Seed / operator commands.
 	CreateTenant CreateTenantCmd `cmd:"" name:"create-tenant" help:"Create a tenant."`
 	CreateOwner  CreateOwnerCmd  `cmd:"" name:"create-owner" help:"Create an owner with a password credential in a tenant."`
+	HashPassword HashPasswordCmd `cmd:"" name:"hash-password" help:"Print the argon2id hash of a password (read from $YAADEGAR_PASSWORD or stdin) for the superadmin config."`
 }
 
 // ServeCmd runs the HTTP server until interrupted.
@@ -67,6 +68,13 @@ type ServeCmd struct {
 	AuthJWTSecret       string        `name:"auth-jwt-secret" env:"YAADEGAR_AUTH_JWT_SECRET" help:"JWT signing secret (HS256), >=32 bytes. Required; from the environment. The instance refuses to start if missing or too short."`
 	AuthPasswordEnabled bool          `name:"auth-password-enabled" default:"true" env:"YAADEGAR_AUTH_PASSWORD_ENABLED" help:"Enable username+password login (the first login method; magic-link and OAuth land later)."`
 	AuthAccessTTL       time.Duration `name:"auth-access-ttl" default:"12h" env:"YAADEGAR_AUTH_ACCESS_TTL" help:"Access-token lifetime; re-login on expiry (refresh tokens are a later cut)."`
+
+	// Superadmin config (ADR-0005 §6). Both set → the /admin surface is enabled and
+	// the identity is ensured at startup; neither set → the admin surface is
+	// disabled (not an error). The password is provided as an argon2id hash from
+	// `yaadegar hash-password`, never as plaintext.
+	SuperadminUsername     string `name:"superadmin-username" env:"YAADEGAR_SUPERADMIN_USERNAME" help:"Superadmin login username. Set together with the password hash to enable the /admin surface."`
+	SuperadminPasswordHash string `name:"superadmin-password-hash" env:"YAADEGAR_SUPERADMIN_PASSWORD_HASH" help:"Superadmin argon2id password hash (from 'yaadegar hash-password'). Never a plaintext password."`
 
 	// SMTP config. If SMTPHost is empty the server logs emails instead of sending
 	// them (dev default). Secrets (SMTPPassword) come from the environment.
@@ -118,11 +126,20 @@ func (c *ServeCmd) Run(cli *CLI) error {
 		return err
 	}
 
+	// Superadmin bootstrap (ADR-0005 §6): both fields set → ensure the identity
+	// (idempotent) and enable /admin; neither set → the admin surface stays
+	// disabled; exactly one set → a misconfiguration, fail closed with a clear error.
+	adminEnabled, err := ensureSuperadmin(ctx, store, c, logger)
+	if err != nil {
+		return err
+	}
+
 	handler := api.NewHandler(store, api.Options{
 		BaseDomain:        c.BaseDomain,
 		Logger:            logger,
 		Email:             sender,
 		Auth:              authService,
+		AdminEnabled:      adminEnabled,
 		DomainCNAMETarget: c.DomainCNAMETarget,
 	})
 
@@ -135,6 +152,25 @@ func (c *ServeCmd) Run(cli *CLI) error {
 	go runSweeper(ctx, sweeper, c.DecaySweepInterval, logger)
 
 	return server.New(c.HTTPAddr, handler, logger).Run(ctx)
+}
+
+// ensureSuperadmin applies the superadmin bootstrap rule and reports whether the
+// admin surface is enabled. Both fields set → EnsureAdmin (idempotent) + enabled;
+// neither → disabled; exactly one → a fail-closed configuration error.
+func ensureSuperadmin(ctx context.Context, store storage.Store, c *ServeCmd, logger *slog.Logger) (bool, error) {
+	switch {
+	case c.SuperadminUsername != "" && c.SuperadminPasswordHash != "":
+		if _, err := store.EnsureAdmin(ctx, c.SuperadminUsername, c.SuperadminPasswordHash); err != nil {
+			return false, fmt.Errorf("ensure superadmin: %w", err)
+		}
+		logger.Info("admin surface enabled", "superadmin", c.SuperadminUsername)
+		return true, nil
+	case c.SuperadminUsername != "" || c.SuperadminPasswordHash != "":
+		return false, errors.New(
+			"superadmin requires both --superadmin-username and --superadmin-password-hash (set neither to disable the admin surface)")
+	default:
+		return false, nil // no superadmin configured; admin surface disabled
+	}
 }
 
 // buildSender returns the real SMTP sender when an SMTP host is configured, and

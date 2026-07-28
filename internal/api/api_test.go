@@ -47,7 +47,10 @@ type harness struct {
 	authSvc  *auth.Service
 }
 
-func newHarness(t *testing.T) *harness {
+func newHarness(t *testing.T) *harness { return newHarnessOpt(t, false) }
+
+// newHarnessOpt builds the test harness, optionally enabling the /admin surface.
+func newHarnessOpt(t *testing.T, adminEnabled bool) *harness {
 	t.Helper()
 	ctx := context.Background()
 	dsn := "file:" + filepath.Join(t.TempDir(), "api.db")
@@ -75,6 +78,7 @@ func newHarness(t *testing.T) *harness {
 		Previewer:         preview.New(pf),
 		Resolver:          fr,
 		Auth:              authSvc,
+		AdminEnabled:      adminEnabled,
 		DomainCNAMETarget: "cname.yaadegar.test",
 	})
 	return &harness{t: t, h: h, store: store, tenant: tenant, owner: owner, email: fake, clk: clk, preview: pf, resolver: fr, authSvc: authSvc}
@@ -127,6 +131,15 @@ func (h *harness) ownerToken() string {
 func (h *harness) tokenFor(userID, tenantID string) string {
 	tok, err := h.authSvc.Issuer().Issue(auth.Principal{
 		UserID: userID, TenantID: tenantID, Role: auth.RoleOwner,
+	})
+	require.NoError(h.t, err)
+	return tok
+}
+
+// adminTokenFor mints a superadmin JWT (role=superadmin, sentinel tid).
+func (h *harness) adminTokenFor(adminID string) string {
+	tok, err := h.authSvc.Issuer().Issue(auth.Principal{
+		UserID: adminID, TenantID: auth.SuperadminTenant, Role: auth.RoleSuperadmin,
 	})
 	require.NoError(h.t, err)
 	return tok

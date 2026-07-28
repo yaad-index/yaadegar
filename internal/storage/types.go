@@ -91,6 +91,16 @@ type User struct {
 	CreatedAt    time.Time
 }
 
+// Admin is the instance-level superadmin (ADR-0005 §6): not tied to any tenant,
+// authenticated on the separate /admin surface. PasswordHash is an argon2id hash;
+// the plaintext is never stored.
+type Admin struct {
+	ID           string
+	Username     string
+	PasswordHash string
+	CreatedAt    time.Time
+}
+
 // List is an owner's wishlist. ShareSlug is the opaque, unguessable handle used
 // by the public giver surface.
 type List struct {

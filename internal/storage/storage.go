@@ -68,6 +68,16 @@ type Store interface {
 	// caller's concern; storage stays free of base-domain policy.
 	TenantByCustomDomain(ctx context.Context, hostname string) (Tenant, error)
 
+	// EnsureAdmin idempotently provisions the instance-level superadmin from
+	// configuration: it inserts the admin, or updates the stored password hash when
+	// the username already exists (so rotating the configured hash takes effect).
+	// Instance-level — not tenant-scoped (ADR-0005 §6).
+	EnsureAdmin(ctx context.Context, username, passwordHash string) (Admin, error)
+	// AdminByUsername looks up the superadmin by username; ErrNotFound if absent.
+	AdminByUsername(ctx context.Context, username string) (Admin, error)
+	// AdminByID looks up the superadmin by id; ErrNotFound if absent.
+	AdminByID(ctx context.Context, id string) (Admin, error)
+
 	// ForTenant returns a data-access handle bound to exactly one tenant. Every
 	// repository reached through it filters and stamps tenant_id from t.ID; there
 	// is no unscoped repository.

@@ -29,6 +29,8 @@ tags:
     description: Tenant subdomain and custom-domain management.
   - name: auth
     description: Owner authentication (login).
+  - name: admin
+    description: Instance-level superadmin surface (not tenant-scoped).
   - name: ops
     description: Operational endpoints.
 
@@ -72,6 +74,54 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404":
           description: Password login is not enabled on this instance.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /admin/auth/login:
+    post:
+      operationId: adminLogin
+      tags: [admin]
+      summary: Log in as the instance superadmin
+      description: >
+        Exchanges the superadmin username+password for a session token on the
+        instance-level admin surface. Unauthenticated; not tenant-scoped. Returns
+        404 when no superadmin is configured (the admin surface is disabled).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Authentication succeeded; a superadmin session token.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: The admin surface is not enabled on this instance.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /admin/me:
+    get:
+      operationId: adminGetMe
+      tags: [admin]
+      summary: The current superadmin
+      responses:
+        "200":
+          description: The authenticated superadmin.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminIdentity" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: The admin surface is not enabled on this instance.
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
@@ -697,6 +747,12 @@ components:
           properties:
             id: { type: string }
             subdomain: { type: string, example: alice }
+
+    AdminIdentity:
+      type: object
+      properties:
+        id: { type: string }
+        username: { type: string }
 
     LoginRequest:
       type: object
