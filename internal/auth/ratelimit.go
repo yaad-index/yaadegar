@@ -32,8 +32,9 @@ type InMemoryLimiter struct {
 	window      time.Duration
 	clock       clock.Clock
 
-	mu      sync.Mutex
-	entries map[string]*failureWindow
+	mu        sync.Mutex
+	entries   map[string]*failureWindow
+	lastSweep time.Time
 }
 
 type failureWindow struct {
@@ -53,6 +54,7 @@ func NewInMemoryLimiter(maxFailures int, window time.Duration, clk clock.Clock) 
 		window:      window,
 		clock:       clk,
 		entries:     make(map[string]*failureWindow),
+		lastSweep:   clk.Now(),
 	}
 }
 
@@ -84,6 +86,29 @@ func (l *InMemoryLimiter) RecordFailure(key string) {
 		l.entries[key] = e
 	}
 	e.failures++
+	l.sweepLocked(now)
+}
+
+// sweepLocked drops entries whose window has elapsed, at most once per window, so a
+// flood of distinct keys cannot grow the map unbounded over time (#65). It is an
+// amortized O(n) lazy sweep — no background goroutine to manage. Caller holds mu.
+func (l *InMemoryLimiter) sweepLocked(now time.Time) {
+	if now.Sub(l.lastSweep) < l.window {
+		return
+	}
+	l.lastSweep = now
+	for k, e := range l.entries {
+		if now.After(e.windowEnd) {
+			delete(l.entries, k)
+		}
+	}
+}
+
+// Len reports the number of tracked keys — for observability and tests.
+func (l *InMemoryLimiter) Len() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.entries)
 }
 
 // RecordSuccess clears key.
