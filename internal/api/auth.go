@@ -29,14 +29,28 @@ func (s *Server) Login(ctx context.Context, req gen.LoginRequestObject) (gen.Log
 		}, nil
 	}
 
+	// Brute-force guard: fail closed on a rate-limited IP or identity before any
+	// credential work. The identity key is tenant-scoped so tenants don't share a
+	// bucket for the same username.
+	ipKey, idKey := s.loginKeys(ctx, "owner:"+tenant.ID, req.Body.Username)
+	if !s.loginAllowed(ipKey, idKey) {
+		return gen.Login429ApplicationProblemPlusJSONResponse{
+			TooManyRequestsApplicationProblemPlusJSONResponse: tooManyRequests(),
+		}, nil
+	}
+
 	user, err := ts.Users().ByUsername(ctx, req.Body.Username)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
+			auth.VerifyDummy(req.Body.Password) // constant-time vs. a real account (#62)
+			s.loginFailed(ipKey, idKey)
 			return unauthorizedLogin(), nil
 		}
 		return nil, err
 	}
 	if user.PasswordHash == "" {
+		auth.VerifyDummy(req.Body.Password)
+		s.loginFailed(ipKey, idKey)
 		return unauthorizedLogin(), nil
 	}
 	okPw, err := auth.VerifyPassword(req.Body.Password, user.PasswordHash)
@@ -45,6 +59,7 @@ func (s *Server) Login(ctx context.Context, req gen.LoginRequestObject) (gen.Log
 		return nil, err
 	}
 	if !okPw {
+		s.loginFailed(ipKey, idKey)
 		return unauthorizedLogin(), nil
 	}
 
@@ -56,11 +71,35 @@ func (s *Server) Login(ctx context.Context, req gen.LoginRequestObject) (gen.Log
 	if err != nil {
 		return nil, err
 	}
+	s.loginSucceeded(ipKey, idKey)
 	return gen.Login200JSONResponse{
 		AccessToken: token,
 		TokenType:   gen.Bearer,
 		ExpiresIn:   int(s.auth.Issuer().AccessTTL().Seconds()),
 	}, nil
+}
+
+// loginKeys returns the (ip, identity) rate-limit keys for a login attempt. The IP
+// key is global across surfaces — one attacker, one bucket; the identity key is
+// namespaced by surface/scope so distinct principals never share a bucket.
+func (s *Server) loginKeys(ctx context.Context, idScope, username string) (ipKey, idKey string) {
+	return "ip:" + clientIPFromContext(ctx), "id:" + idScope + ":" + username
+}
+
+// loginAllowed reports whether both the IP and the identity are under their limits.
+func (s *Server) loginAllowed(ipKey, idKey string) bool {
+	return s.loginLimiter.Allow(ipKey) && s.loginLimiter.Allow(idKey)
+}
+
+// loginFailed / loginSucceeded record the attempt outcome against both keys.
+func (s *Server) loginFailed(ipKey, idKey string) {
+	s.loginLimiter.RecordFailure(ipKey)
+	s.loginLimiter.RecordFailure(idKey)
+}
+
+func (s *Server) loginSucceeded(ipKey, idKey string) {
+	s.loginLimiter.RecordSuccess(ipKey)
+	s.loginLimiter.RecordSuccess(idKey)
 }
 
 // unauthorizedLogin is the single 401 used for every credential failure, so the

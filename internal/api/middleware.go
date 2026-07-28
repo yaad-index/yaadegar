@@ -155,6 +155,24 @@ func captureCapabilityToken(next http.Handler) http.Handler {
 	})
 }
 
+// captureClientIP lifts the request's peer IP into the context for login
+// rate-limiting. It uses RemoteAddr (the direct peer); behind a reverse proxy the
+// operator would front this with trusted X-Forwarded-For handling — a deployment
+// concern, not done here.
+func captureClientIP(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r.WithContext(withClientIP(r.Context(), clientIP(r.RemoteAddr))))
+	})
+}
+
+// clientIP strips the port from a RemoteAddr ("host:port" → "host").
+func clientIP(remoteAddr string) string {
+	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		return host
+	}
+	return remoteAddr
+}
+
 func bearerToken(r *http.Request) string {
 	if rest, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
 		return strings.TrimSpace(rest)

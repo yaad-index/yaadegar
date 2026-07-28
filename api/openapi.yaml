@@ -72,6 +72,7 @@ paths:
               schema: { $ref: "#/components/schemas/LoginResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
         "404":
           description: Password login is not enabled on this instance.
           content:
@@ -101,6 +102,7 @@ paths:
               schema: { $ref: "#/components/schemas/LoginResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
         "404":
           description: The admin surface is not enabled on this instance.
           content:
@@ -759,6 +761,11 @@ components:
           schema: { $ref: "#/components/schemas/Problem" }
     Conflict:
       description: The request conflicts with current state.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    TooManyRequests:
+      description: Too many failed attempts; the caller is temporarily rate-limited.
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }

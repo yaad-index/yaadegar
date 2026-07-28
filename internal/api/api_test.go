@@ -51,6 +51,11 @@ func newHarness(t *testing.T) *harness { return newHarnessOpt(t, false) }
 
 // newHarnessOpt builds the test harness, optionally enabling the /admin surface.
 func newHarnessOpt(t *testing.T, adminEnabled bool) *harness {
+	return newHarnessLimited(t, adminEnabled, nil)
+}
+
+// newHarnessLimited additionally injects a login rate limiter (nil → no limiting).
+func newHarnessLimited(t *testing.T, adminEnabled bool, limiter auth.Limiter) *harness {
 	t.Helper()
 	ctx := context.Background()
 	dsn := "file:" + filepath.Join(t.TempDir(), "api.db")
@@ -79,6 +84,7 @@ func newHarnessOpt(t *testing.T, adminEnabled bool) *harness {
 		Resolver:          fr,
 		Auth:              authSvc,
 		AdminEnabled:      adminEnabled,
+		LoginLimiter:      limiter,
 		DomainCNAMETarget: "cname.yaadegar.test",
 	})
 	return &harness{t: t, h: h, store: store, tenant: tenant, owner: owner, email: fake, clk: clk, preview: pf, resolver: fr, authSvc: authSvc}
