@@ -25,6 +25,7 @@ type Server struct {
 	resolver          Resolver
 	auth              *auth.Service
 	adminEnabled      bool
+	loginLimiter      auth.Limiter
 	domainCNAMETarget string
 	logger            *slog.Logger
 }
@@ -60,6 +61,9 @@ type Options struct {
 	// surface is simply absent, not a hard failure (ADR-0005 §6). Startup ensures
 	// the configured admin identity exists before setting this.
 	AdminEnabled bool
+	// LoginLimiter throttles brute-force login attempts (owner + admin). Defaults
+	// to a no-op limiter (no limiting) when nil.
+	LoginLimiter auth.Limiter
 	// DomainCNAMETarget is the hostname owners point their custom domain's CNAME
 	// at; returned by addDomain.
 	DomainCNAMETarget string
@@ -81,11 +85,15 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 		resolver:          opts.Resolver,
 		auth:              opts.Auth,
 		adminEnabled:      opts.AdminEnabled,
+		loginLimiter:      opts.LoginLimiter,
 		domainCNAMETarget: opts.DomainCNAMETarget,
 		logger:            opts.Logger,
 	}
 	if s.logger == nil {
 		s.logger = slog.Default()
+	}
+	if s.loginLimiter == nil {
+		s.loginLimiter = auth.NoopLimiter{}
 	}
 	if s.email == nil {
 		s.email = email.NewLogSender(s.logger)
@@ -126,6 +134,7 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 	h = s.requireAdmin(h)
 	h = s.requireOwner(h)
 	h = s.resolveTenant(h)
+	h = captureClientIP(h)
 	return h
 }
 

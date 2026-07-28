@@ -25,9 +25,19 @@ func (s *Server) AdminLogin(ctx context.Context, req gen.AdminLoginRequestObject
 		}, nil
 	}
 
+	// Brute-force guard, fail-closed before any credential work.
+	ipKey, idKey := s.loginKeys(ctx, "admin", req.Body.Username)
+	if !s.loginAllowed(ipKey, idKey) {
+		return gen.AdminLogin429ApplicationProblemPlusJSONResponse{
+			TooManyRequestsApplicationProblemPlusJSONResponse: tooManyRequests(),
+		}, nil
+	}
+
 	admin, err := s.store.AdminByUsername(ctx, req.Body.Username)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
+			auth.VerifyDummy(req.Body.Password) // constant-time vs. a real account (#62)
+			s.loginFailed(ipKey, idKey)
 			return adminUnauthorized(), nil
 		}
 		return nil, err
@@ -37,6 +47,7 @@ func (s *Server) AdminLogin(ctx context.Context, req gen.AdminLoginRequestObject
 		return nil, err
 	}
 	if !okPw {
+		s.loginFailed(ipKey, idKey)
 		return adminUnauthorized(), nil
 	}
 
@@ -48,6 +59,7 @@ func (s *Server) AdminLogin(ctx context.Context, req gen.AdminLoginRequestObject
 	if err != nil {
 		return nil, err
 	}
+	s.loginSucceeded(ipKey, idKey)
 	return gen.AdminLogin200JSONResponse{
 		AccessToken: token,
 		TokenType:   gen.Bearer,

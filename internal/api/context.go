@@ -19,6 +19,7 @@ const (
 	ownerCtxKey
 	capTokenCtxKey
 	adminCtxKey
+	clientIPCtxKey
 )
 
 // withTenant returns ctx carrying the resolved tenant for the request.
@@ -65,4 +66,16 @@ func withCapToken(ctx context.Context, token string) context.Context {
 func capTokenFromContext(ctx context.Context) string {
 	tok, _ := ctx.Value(capTokenCtxKey).(string)
 	return tok
+}
+
+// withClientIP carries the request's client IP (for login rate-limiting; the
+// strict handlers have no direct access to the *http.Request).
+func withClientIP(ctx context.Context, ip string) context.Context {
+	return context.WithValue(ctx, clientIPCtxKey, ip)
+}
+
+// clientIPFromContext returns the request's client IP, or "" if unknown.
+func clientIPFromContext(ctx context.Context) string {
+	ip, _ := ctx.Value(clientIPCtxKey).(string)
+	return ip
 }

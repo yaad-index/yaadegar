@@ -76,6 +76,12 @@ type ServeCmd struct {
 	SuperadminUsername     string `name:"superadmin-username" env:"YAADEGAR_SUPERADMIN_USERNAME" help:"Superadmin login username. Set together with the password hash to enable the /admin surface."`
 	SuperadminPasswordHash string `name:"superadmin-password-hash" env:"YAADEGAR_SUPERADMIN_PASSWORD_HASH" help:"Superadmin argon2id password hash (from 'yaadegar hash-password'). Never a plaintext password."`
 
+	// Login brute-force rate limit (applies to both owner and admin login), per IP
+	// and per username. In-memory (single-instance); a multi-instance deployment
+	// would swap in a shared-state limiter behind the same interface.
+	LoginRateMaxFailures int           `name:"login-rate-max-failures" default:"10" env:"YAADEGAR_LOGIN_RATE_MAX_FAILURES" help:"Failed login attempts per IP and per username before rate-limiting kicks in (0 disables)."`
+	LoginRateWindow      time.Duration `name:"login-rate-window" default:"15m" env:"YAADEGAR_LOGIN_RATE_WINDOW" help:"Window over which failed login attempts accumulate and the lockout lasts."`
+
 	// SMTP config. If SMTPHost is empty the server logs emails instead of sending
 	// them (dev default). Secrets (SMTPPassword) come from the environment.
 	SMTPHost     string `name:"smtp-host" env:"YAADEGAR_SMTP_HOST" help:"SMTP server host. Empty logs emails instead of sending (dev default)."`
@@ -140,6 +146,7 @@ func (c *ServeCmd) Run(cli *CLI) error {
 		Email:             sender,
 		Auth:              authService,
 		AdminEnabled:      adminEnabled,
+		LoginLimiter:      auth.NewInMemoryLimiter(c.LoginRateMaxFailures, c.LoginRateWindow, clock.Real{}),
 		DomainCNAMETarget: c.DomainCNAMETarget,
 	})
 

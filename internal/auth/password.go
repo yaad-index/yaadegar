@@ -47,6 +47,18 @@ func HashPassword(plaintext string) (string, error) {
 	), nil
 }
 
+// dummyHash is a valid argon2id hash used only to spend the same verification cost
+// on the account-not-found path as on a wrong-password path, so login response
+// timing cannot distinguish an unknown account from a known one (#62).
+var dummyHash, _ = HashPassword("yaadegar-constant-time-equalizer")
+
+// VerifyDummy runs a password verification against a throwaway hash and discards
+// the result. Callers use it on the account-not-found branch of login so the
+// timing matches the found-but-wrong-password branch.
+func VerifyDummy(plaintext string) {
+	_, _ = VerifyPassword(plaintext, dummyHash)
+}
+
 // VerifyPassword reports whether plaintext matches the argon2id PHC-encoded hash.
 // The comparison recomputes with the hash's own encoded parameters and is
 // constant-time. A malformed hash is an error, not a silent false.
