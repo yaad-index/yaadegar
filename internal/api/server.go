@@ -24,6 +24,7 @@ type Server struct {
 	previewer         *preview.Previewer
 	resolver          Resolver
 	auth              *auth.Service
+	adminEnabled      bool
 	domainCNAMETarget string
 	logger            *slog.Logger
 }
@@ -54,6 +55,11 @@ type Options struct {
 	// if nil, since the owner surface must never fall open (the fail-closed
 	// construction lives in NewService, called at startup).
 	Auth *auth.Service
+	// AdminEnabled turns on the instance-level superadmin surface (/admin). When
+	// false (no superadmin configured), the admin endpoints report 404 — the
+	// surface is simply absent, not a hard failure (ADR-0005 §6). Startup ensures
+	// the configured admin identity exists before setting this.
+	AdminEnabled bool
 	// DomainCNAMETarget is the hostname owners point their custom domain's CNAME
 	// at; returned by addDomain.
 	DomainCNAMETarget string
@@ -74,6 +80,7 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 		previewer:         opts.Previewer,
 		resolver:          opts.Resolver,
 		auth:              opts.Auth,
+		adminEnabled:      opts.AdminEnabled,
 		domainCNAMETarget: opts.DomainCNAMETarget,
 		logger:            opts.Logger,
 	}
@@ -111,10 +118,12 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 	mux := http.NewServeMux()
 	gen.HandlerFromMux(strict, mux)
 
-	// Middleware order (outermost first): resolve tenant, enforce owner auth, then
-	// lift any capability token into context for the giver handlers.
+	// Middleware order (outermost first): resolve tenant (skips /admin + /healthz),
+	// enforce owner auth on /api/v1, enforce superadmin auth on /admin, then lift
+	// any capability token into context for the giver handlers.
 	var h http.Handler = mux
 	h = captureCapabilityToken(h)
+	h = s.requireAdmin(h)
 	h = s.requireOwner(h)
 	h = s.resolveTenant(h)
 	return h

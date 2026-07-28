@@ -4,11 +4,41 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"strings"
 
 	"github.com/yaad-index/yaadegar/internal/auth"
 	"github.com/yaad-index/yaadegar/internal/storage"
 	"github.com/yaad-index/yaadegar/internal/storage/sqlstore"
 )
+
+// HashPasswordCmd prints the argon2id hash of a password for the operator to paste
+// into the superadmin configuration (ADR-0005 §6). The password is read from
+// $YAADEGAR_PASSWORD or, if unset, from stdin — never a flag, so it does not land
+// in shell history or the process list.
+type HashPasswordCmd struct{}
+
+// Run reads the password and prints its argon2id hash.
+func (c *HashPasswordCmd) Run() error {
+	pw := os.Getenv("YAADEGAR_PASSWORD")
+	if pw == "" {
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return fmt.Errorf("read password from stdin: %w", err)
+		}
+		pw = strings.TrimRight(string(data), "\r\n")
+	}
+	if pw == "" {
+		return errors.New("no password provided — set YAADEGAR_PASSWORD or pipe the password on stdin")
+	}
+	hash, err := auth.HashPassword(pw)
+	if err != nil {
+		return err
+	}
+	fmt.Println(hash)
+	return nil
+}
 
 // storageFlags are the storage connection flags shared by the seed commands
 // (the same env vars ServeCmd reads, so `docker compose run` picks up the compose

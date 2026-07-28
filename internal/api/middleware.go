@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/yaad-index/yaadegar/internal/auth"
 	"github.com/yaad-index/yaadegar/internal/storage"
 )
 
@@ -15,7 +16,9 @@ import (
 // unknown host is a 404 — the request names no tenant we serve.
 func (s *Server) resolveTenant(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/healthz" {
+		// /healthz is host-agnostic ops; /admin is the instance-level superadmin
+		// surface and is deliberately NOT tenant-scoped (ADR-0005 §6).
+		if r.URL.Path == "/healthz" || strings.HasPrefix(r.URL.Path, "/admin/") {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -76,8 +79,15 @@ func (s *Server) requireOwner(next http.Handler) http.Handler {
 			writeProblem(w, http.StatusUnauthorized, "invalid or expired token")
 			return
 		}
-		// Tenant-match invariant: the token must belong to the tenant addressed by
-		// the request Host. This is the cross-tenant-replay guard.
+		// Two independent checks guard the owner/admin boundary (ADR-0005 §6). (1)
+		// Positive role assertion: only an owner token is accepted here, so a
+		// superadmin token is rejected on its role alone. (2) Tenant-match invariant
+		// (below): the token's tenant must equal the Host-resolved tenant, which the
+		// superadmin sentinel tid also fails. Either check alone closes the boundary.
+		if principal.Role != auth.RoleOwner {
+			writeProblem(w, http.StatusUnauthorized, "owner authentication required")
+			return
+		}
 		if principal.TenantID != tenant.ID {
 			writeProblem(w, http.StatusUnauthorized, "token does not match this tenant")
 			return
@@ -88,6 +98,47 @@ func (s *Server) requireOwner(next http.Handler) http.Handler {
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(withOwner(r.Context(), owner)))
+	})
+}
+
+// requireAdmin enforces superadmin authentication on the instance-level admin
+// surface (/admin/*), except the unauthenticated login endpoint. It authorizes by
+// ROLE (superadmin) and never applies the tenant-match invariant — the superadmin
+// is not tenant-scoped (ADR-0005 §6). This is the mirror of requireOwner's role
+// check: an owner token is rejected here by role, and a superadmin token is
+// rejected on the owner surface by role, so the boundary holds in both directions
+// independently of the sentinel tid. When no superadmin is configured the surface
+// reports 404 rather than failing the process.
+func (s *Server) requireAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/admin/") || r.URL.Path == "/admin/auth/login" {
+			next.ServeHTTP(w, r) // non-admin paths and the unauth login pass through
+			return
+		}
+		if !s.adminEnabled {
+			writeProblem(w, http.StatusNotFound, "the admin surface is not enabled on this instance")
+			return
+		}
+		token := bearerToken(r)
+		if token == "" {
+			writeProblem(w, http.StatusUnauthorized, "missing bearer token")
+			return
+		}
+		principal, err := s.auth.Issuer().Validate(token)
+		if err != nil {
+			writeProblem(w, http.StatusUnauthorized, "invalid or expired token")
+			return
+		}
+		if principal.Role != auth.RoleSuperadmin {
+			writeProblem(w, http.StatusForbidden, "superadmin role required")
+			return
+		}
+		admin, err := s.store.AdminByID(r.Context(), principal.UserID)
+		if err != nil {
+			writeProblem(w, http.StatusUnauthorized, "invalid credentials")
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(withAdmin(r.Context(), admin)))
 	})
 }
 

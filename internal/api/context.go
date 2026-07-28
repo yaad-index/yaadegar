@@ -18,6 +18,7 @@ const (
 	tenantCtxKey ctxKey = iota
 	ownerCtxKey
 	capTokenCtxKey
+	adminCtxKey
 )
 
 // withTenant returns ctx carrying the resolved tenant for the request.
@@ -40,6 +41,17 @@ func withOwner(ctx context.Context, u storage.User) context.Context {
 func ownerFromContext(ctx context.Context) (storage.User, bool) {
 	u, ok := ctx.Value(ownerCtxKey).(storage.User)
 	return u, ok
+}
+
+// withAdmin returns ctx carrying the authenticated superadmin for the request.
+func withAdmin(ctx context.Context, a storage.Admin) context.Context {
+	return context.WithValue(ctx, adminCtxKey, a)
+}
+
+// adminFromContext returns the superadmin authenticated by the admin-auth middleware.
+func adminFromContext(ctx context.Context) (storage.Admin, bool) {
+	a, ok := ctx.Value(adminCtxKey).(storage.Admin)
+	return a, ok
 }
 
 // withCapToken carries the raw capability token from the X-Capability-Token
