@@ -38,8 +38,11 @@ principles; the phased feature scope is delivered in cuts on top of this.
 4. **Principle (hard): don't reinvent the wheel.** Use mature, proven
    libraries; never hand-roll what a well-maintained library already solves. For F1
    this fixes the baseline stack:
-   - **UI/components:** a component library (Skeleton or shadcn-svelte) rather than
-     bespoke primitives.
+   - **UI/components:** **bits-ui** — the headless component-primitive layer that
+     shadcn-svelte itself builds on — with Tailwind, rather than bespoke primitives.
+     It is the best Svelte-5 / Node-20 fit in the "use a proven component library"
+     family (Skeleton's v2/v3 split fights Svelte 5); shadcn-svelte components can be
+     adopted on top of the same primitives later.
    - **Forms + validation:** `sveltekit-superforms` with `zod` schemas, not
      hand-written form state and validation.
    - **Data fetching/caching:** the TanStack Query Svelte adapter alongside
