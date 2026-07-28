@@ -126,6 +126,50 @@ paths:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
 
+  /admin/tenants:
+    post:
+      operationId: adminCreateTenant
+      tags: [admin]
+      summary: Create a tenant (superadmin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminTenantCreate" }
+      responses:
+        "201":
+          description: The created tenant.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tenant" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /admin/owners:
+    post:
+      operationId: adminCreateOwner
+      tags: [admin]
+      summary: Create an owner with a password credential in a tenant (superadmin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminOwnerCreate" }
+      responses:
+        "201":
+          description: The created owner (never includes the password hash).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminOwner" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
   /api/v1/me:
     get:
       operationId: getCurrentUser
@@ -753,6 +797,33 @@ components:
       properties:
         id: { type: string }
         username: { type: string }
+
+    Tenant:
+      type: object
+      properties:
+        id: { type: string }
+        subdomain: { type: string }
+
+    AdminTenantCreate:
+      type: object
+      required: [subdomain]
+      properties:
+        subdomain: { type: string, minLength: 1, description: "Lowercase slug; the tenant is addressed at <subdomain>.<base-domain>." }
+
+    AdminOwner:
+      type: object
+      properties:
+        id: { type: string }
+        tenant_id: { type: string }
+        email: { type: string }
+
+    AdminOwnerCreate:
+      type: object
+      required: [tenant_id, email, password]
+      properties:
+        tenant_id: { type: string, minLength: 1 }
+        email: { type: string, minLength: 1 }
+        password: { type: string, minLength: 1, description: "Plaintext; hashed server-side (argon2id). The email doubles as the login username." }
 
     LoginRequest:
       type: object

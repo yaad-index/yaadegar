@@ -87,3 +87,65 @@ func TestAdminOwnerBoundary(t *testing.T) {
 	resp, _ = h.req(http.MethodGet, "/admin/me", anyHost, adminTok, nil)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
+
+// TestAdminProvisioning: the superadmin creates a tenant and an owner over HTTP,
+// and the created owner logs in end-to-end on the new tenant's host. Also the
+// error matrix (409 duplicates, 404 unknown tenant, 403 owner token, 401 unauth).
+func TestAdminProvisioning(t *testing.T) {
+	h := newHarnessOpt(t, true)
+	adminTok := h.adminTokenFor(h.seedAdmin("root", "sup3r-secret"))
+
+	// Create a tenant.
+	resp, body := h.req(http.MethodPost, "/admin/tenants", anyHost, adminTok,
+		map[string]any{"subdomain": "neworg"})
+	require.Equal(t, http.StatusCreated, resp.StatusCode, "body: %s", body)
+	ten := decode[gen.Tenant](t, body)
+	require.NotEmpty(t, *ten.Id)
+	assert.Equal(t, "neworg", *ten.Subdomain)
+
+	// Create an owner in it (password hashed server-side; no hash echoed back).
+	resp, body = h.req(http.MethodPost, "/admin/owners", anyHost, adminTok,
+		map[string]any{"tenant_id": *ten.Id, "email": "carol@example.test", "password": "ownerpw123"})
+	require.Equal(t, http.StatusCreated, resp.StatusCode, "body: %s", body)
+	ow := decode[gen.AdminOwner](t, body)
+	require.NotEmpty(t, *ow.Id)
+	assert.Equal(t, "carol@example.test", *ow.Email)
+	assert.NotContains(t, string(body), "argon2", "the password hash must never be returned")
+
+	// End-to-end: the created owner logs in on the new tenant's host (email = username).
+	newHost := "neworg." + baseDomain
+	resp, body = h.req(http.MethodPost, "/api/v1/auth/login", newHost, "",
+		map[string]any{"username": "carol@example.test", "password": "ownerpw123"})
+	require.Equal(t, http.StatusOK, resp.StatusCode, "body: %s", body)
+	lr := decode[gen.LoginResponse](t, body)
+	resp, _ = h.req(http.MethodGet, "/api/v1/me", newHost, lr.AccessToken, nil)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// Error matrix.
+	resp, _ = h.req(http.MethodPost, "/admin/tenants", anyHost, adminTok, map[string]any{"subdomain": "neworg"})
+	assert.Equal(t, http.StatusConflict, resp.StatusCode, "duplicate subdomain")
+
+	resp, _ = h.req(http.MethodPost, "/admin/owners", anyHost, adminTok,
+		map[string]any{"tenant_id": *ten.Id, "email": "carol@example.test", "password": "x"})
+	assert.Equal(t, http.StatusConflict, resp.StatusCode, "duplicate owner")
+
+	resp, _ = h.req(http.MethodPost, "/admin/owners", anyHost, adminTok,
+		map[string]any{"tenant_id": "does-not-exist", "email": "e@x.test", "password": "x"})
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode, "unknown tenant")
+
+	resp, _ = h.req(http.MethodPost, "/admin/tenants", anyHost, h.ownerToken(), map[string]any{"subdomain": "x"})
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode, "owner token rejected from admin provisioning")
+
+	resp, _ = h.req(http.MethodPost, "/admin/tenants", anyHost, "", map[string]any{"subdomain": "x"})
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode, "unauth rejected")
+}
+
+// TestAdminProvisioningDisabled: with the surface off, provisioning is 404.
+func TestAdminProvisioningDisabled(t *testing.T) {
+	h := newHarness(t) // adminEnabled = false
+	resp, _ := h.req(http.MethodPost, "/admin/tenants", anyHost, "", map[string]any{"subdomain": "x"})
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	resp, _ = h.req(http.MethodPost, "/admin/owners", anyHost, "",
+		map[string]any{"tenant_id": "t", "email": "e@x.test", "password": "p"})
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+}

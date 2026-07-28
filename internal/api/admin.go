@@ -65,6 +65,73 @@ func (s *Server) AdminGetMe(ctx context.Context, _ gen.AdminGetMeRequestObject) 
 	return gen.AdminGetMe200JSONResponse{Id: ptr(admin.ID), Username: ptr(admin.Username)}, nil
 }
 
+// AdminCreateTenant provisions a tenant over HTTP (the superadmin equivalent of
+// the create-tenant CLI). requireAdmin has already enforced the surface and role.
+func (s *Server) AdminCreateTenant(ctx context.Context, req gen.AdminCreateTenantRequestObject) (gen.AdminCreateTenantResponseObject, error) {
+	if req.Body == nil || req.Body.Subdomain == "" {
+		return gen.AdminCreateTenant400ApplicationProblemPlusJSONResponse{
+			BadRequestApplicationProblemPlusJSONResponse: badRequest("subdomain is required"),
+		}, nil
+	}
+	tenant, err := s.store.CreateTenant(ctx, storage.Tenant{Subdomain: req.Body.Subdomain})
+	if err != nil {
+		switch {
+		case errors.Is(err, storage.ErrConflict):
+			return gen.AdminCreateTenant409ApplicationProblemPlusJSONResponse{
+				ConflictApplicationProblemPlusJSONResponse: conflict("a tenant with that subdomain already exists"),
+			}, nil
+		case errors.Is(err, storage.ErrInvalidSubdomain):
+			return gen.AdminCreateTenant400ApplicationProblemPlusJSONResponse{
+				BadRequestApplicationProblemPlusJSONResponse: badRequest("invalid subdomain"),
+			}, nil
+		}
+		return nil, err
+	}
+	return gen.AdminCreateTenant201JSONResponse{Id: ptr(tenant.ID), Subdomain: ptr(tenant.Subdomain)}, nil
+}
+
+// AdminCreateOwner provisions a password-credentialed owner in a tenant (the
+// superadmin equivalent of create-owner). The email doubles as the login username;
+// the password is hashed server-side and never echoed back.
+func (s *Server) AdminCreateOwner(ctx context.Context, req gen.AdminCreateOwnerRequestObject) (gen.AdminCreateOwnerResponseObject, error) {
+	if req.Body == nil || req.Body.TenantId == "" || req.Body.Email == "" || req.Body.Password == "" {
+		return gen.AdminCreateOwner400ApplicationProblemPlusJSONResponse{
+			BadRequestApplicationProblemPlusJSONResponse: badRequest("tenant_id, email, and password are required"),
+		}, nil
+	}
+	tenant, err := s.store.TenantByID(ctx, req.Body.TenantId)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return gen.AdminCreateOwner404ApplicationProblemPlusJSONResponse{
+				NotFoundApplicationProblemPlusJSONResponse: notFound("tenant not found"),
+			}, nil
+		}
+		return nil, err
+	}
+	hash, err := auth.HashPassword(req.Body.Password)
+	if err != nil {
+		return nil, err
+	}
+	email := req.Body.Email
+	owner, err := s.store.ForTenant(tenant).Users().Create(ctx, storage.User{
+		Name:         email,
+		Email:        email,
+		Username:     &email, // the email doubles as the login username
+		PasswordHash: hash,
+	})
+	if err != nil {
+		if errors.Is(err, storage.ErrConflict) {
+			return gen.AdminCreateOwner409ApplicationProblemPlusJSONResponse{
+				ConflictApplicationProblemPlusJSONResponse: conflict("an owner with that email already exists in this tenant"),
+			}, nil
+		}
+		return nil, err
+	}
+	return gen.AdminCreateOwner201JSONResponse{
+		Id: ptr(owner.ID), TenantId: ptr(tenant.ID), Email: ptr(owner.Email),
+	}, nil
+}
+
 // adminUnauthorized is the single 401 for a failed admin login, so it never
 // distinguishes unknown-admin from wrong-password.
 func adminUnauthorized() gen.AdminLogin401ApplicationProblemPlusJSONResponse {

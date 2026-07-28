@@ -23,6 +23,9 @@ func (r userRepo) Create(ctx context.Context, u storage.User) (storage.User, err
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`),
 		u.ID, u.TenantID, u.Name, u.Email, usernameArg(u.Username), u.PasswordHash, fmtTime(u.CreatedAt))
 	if err != nil {
+		if r.d.isUniqueViolation(err) {
+			return storage.User{}, storage.ErrConflict // e.g. a duplicate username in the tenant
+		}
 		return storage.User{}, err
 	}
 	return u, nil
