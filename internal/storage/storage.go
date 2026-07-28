@@ -108,16 +108,34 @@ type UserRepo interface {
 	ByUsername(ctx context.Context, username string) (User, error)
 }
 
-// ListRepo persists lists within the bound tenant.
+// ListRepo persists lists within the bound tenant. Ownership lives in a join table
+// (list_owners); v1 enforces exactly one owner per list at Create, but the schema
+// is multi-owner-capable (ADR-0005 §7).
 type ListRepo interface {
-	Create(ctx context.Context, l List) (List, error)
+	// Create persists a list owned by ownerID, atomically recording that ownership.
+	// It enforces the v1 single-owner rule (the list is created with exactly one
+	// owner). The List's own OwnerID field is ignored in favor of ownerID.
+	Create(ctx context.Context, l List, ownerID string) (List, error)
 	Get(ctx context.Context, id string) (List, error)
 	// GetBySlug backs the public giver surface. It still resolves within the
 	// bound tenant — the slug is unique per tenant.
 	GetBySlug(ctx context.Context, shareSlug string) (List, error)
+	// List returns the lists ownerID owns, resolved through the join table.
 	List(ctx context.Context, ownerID string, p Page) ([]List, int, error)
 	Update(ctx context.Context, l List) (List, error)
 	Delete(ctx context.Context, id string) error
+
+	// IsOwner reports whether userID is an owner of listID (the owner-surface
+	// authorization check). False for a nonexistent or non-owned list.
+	IsOwner(ctx context.Context, listID, userID string) (bool, error)
+	// Owners lists the user ids that own listID.
+	Owners(ctx context.Context, listID string) ([]string, error)
+	// AddOwner records userID as an owner of listID. In v1 it enforces the
+	// single-owner rule, returning ErrConflict if the list already has an owner
+	// (co-ownership is deferred to #25). Idempotent for the existing sole owner.
+	AddOwner(ctx context.Context, listID, userID string) error
+	// RemoveOwner removes userID as an owner of listID (no-op if absent).
+	RemoveOwner(ctx context.Context, listID, userID string) error
 }
 
 // ItemRepo persists items within the bound tenant.

@@ -41,6 +41,15 @@ func (s *Server) CreateItem(ctx context.Context, req gen.CreateItemRequestObject
 		}
 		return nil, err
 	}
+	owned, err := s.ownsList(ctx, ts, req.ListId)
+	if err != nil {
+		return nil, err
+	}
+	if !owned {
+		return gen.CreateItem403ApplicationProblemPlusJSONResponse{
+			ForbiddenApplicationProblemPlusJSONResponse: forbidden("not an owner of this list"),
+		}, nil
+	}
 
 	created, err := ts.Items().Create(ctx, storage.Item{
 		ListID:         req.ListId,
@@ -74,6 +83,15 @@ func (s *Server) ListItems(ctx context.Context, req gen.ListItemsRequestObject) 
 			}, nil
 		}
 		return nil, err
+	}
+	owned, err := s.ownsList(ctx, ts, req.ListId)
+	if err != nil {
+		return nil, err
+	}
+	if !owned {
+		return gen.ListItems403ApplicationProblemPlusJSONResponse{
+			ForbiddenApplicationProblemPlusJSONResponse: forbidden("not an owner of this list"),
+		}, nil
 	}
 
 	page := pageParams(req.Params.Limit, req.Params.Offset)
@@ -117,6 +135,15 @@ func (s *Server) UpdateItem(ctx context.Context, req gen.UpdateItemRequestObject
 		}
 		return nil, err
 	}
+	owned, err := s.ownsList(ctx, ts, it.ListID)
+	if err != nil {
+		return nil, err
+	}
+	if !owned {
+		return gen.UpdateItem403ApplicationProblemPlusJSONResponse{
+			ForbiddenApplicationProblemPlusJSONResponse: forbidden("not an owner of this list"),
+		}, nil
+	}
 
 	if req.Body.Name != nil {
 		it.Name = *req.Body.Name
@@ -155,6 +182,26 @@ func (s *Server) DeleteItem(ctx context.Context, req gen.DeleteItemRequestObject
 	ts, _, ok := s.tenantStore(ctx)
 	if !ok {
 		return nil, errMissingContext
+	}
+	// Resolve the item (404) so ownership can be checked against its list before
+	// deleting; a non-owner of an existing item gets 403.
+	it, err := ts.Items().Get(ctx, req.ItemId)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return gen.DeleteItem404ApplicationProblemPlusJSONResponse{
+				NotFoundApplicationProblemPlusJSONResponse: notFound("item not found"),
+			}, nil
+		}
+		return nil, err
+	}
+	owned, err := s.ownsList(ctx, ts, it.ListID)
+	if err != nil {
+		return nil, err
+	}
+	if !owned {
+		return gen.DeleteItem403ApplicationProblemPlusJSONResponse{
+			ForbiddenApplicationProblemPlusJSONResponse: forbidden("not an owner of this list"),
+		}, nil
 	}
 	if err := ts.Items().Delete(ctx, req.ItemId); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {

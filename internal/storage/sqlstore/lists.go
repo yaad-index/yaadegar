@@ -10,15 +10,19 @@ import (
 
 type listRepo struct{ baseRepo }
 
-// listCols are the physical list columns, used for INSERT.
-const listCols = `id, tenant_id, owner_id, title, visibility, share_slug,
+// listCols are the physical list columns, used for INSERT. Ownership is no longer
+// a column here — it lives in list_owners (ADR-0005 §7).
+const listCols = `id, tenant_id, title, visibility, share_slug,
 	event_date, decay_days, active, created_at`
 
-// listSelectCols is listCols plus the derived item_count (a correlated subquery),
-// used for reads so a list carries its item count without an N+1 count query.
+// listSelectCols is listCols plus two correlated subqueries used for reads: the
+// derived item_count, and the (v1 sole) owner id resolved from list_owners.
 const listSelectCols = listCols + `,
 	(SELECT COUNT(*) FROM items
-	  WHERE items.tenant_id = lists.tenant_id AND items.list_id = lists.id) AS item_count`
+	  WHERE items.tenant_id = lists.tenant_id AND items.list_id = lists.id) AS item_count,
+	(SELECT user_id FROM list_owners
+	  WHERE list_owners.list_id = lists.id
+	  ORDER BY added_at, user_id LIMIT 1) AS owner_id`
 
 // scanner is satisfied by both *sql.Row and *sql.Rows.
 type scanner interface{ Scan(dest ...any) error }
@@ -52,11 +56,13 @@ func scanList(s scanner) (storage.List, error) {
 		decayDays int
 		active    int
 		createdAt string
+		ownerID   sql.NullString
 	)
-	if err := s.Scan(&l.ID, &l.TenantID, &l.OwnerID, &l.Title, &l.Visibility,
-		&l.ShareSlug, &eventDate, &decayDays, &active, &createdAt, &l.ItemCount); err != nil {
+	if err := s.Scan(&l.ID, &l.TenantID, &l.Title, &l.Visibility,
+		&l.ShareSlug, &eventDate, &decayDays, &active, &createdAt, &l.ItemCount, &ownerID); err != nil {
 		return storage.List{}, err
 	}
+	l.OwnerID = ownerID.String // derived: the v1 sole owner (empty only if orphaned)
 	l.DecayDays = decayDaysFromStorage(decayDays)
 	ed, err := datePtr(eventDate)
 	if err != nil {
@@ -72,7 +78,8 @@ func scanList(s scanner) (storage.List, error) {
 	return l, nil
 }
 
-func (r listRepo) Create(ctx context.Context, l storage.List) (storage.List, error) {
+// Create inserts the list and records ownerID as its sole owner, atomically.
+func (r listRepo) Create(ctx context.Context, l storage.List, ownerID string) (storage.List, error) {
 	if l.ID == "" {
 		l.ID = newID()
 	}
@@ -90,15 +97,29 @@ func (r listRepo) Create(ctx context.Context, l storage.List) (storage.List, err
 		l.CreatedAt = nowTime()
 	}
 	l.TenantID = r.tenantID
+	l.OwnerID = ownerID
 
-	_, err := r.db.ExecContext(ctx, r.rb(
-		`INSERT INTO lists (`+listCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
-		l.ID, l.TenantID, l.OwnerID, l.Title, l.Visibility, l.ShareSlug,
-		nullDate(l.EventDate), decayDaysToStorage(l.DecayDays), boolToInt(l.Active), fmtTime(l.CreatedAt))
+	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
+		return storage.List{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, r.rb(
+		`INSERT INTO lists (`+listCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+		l.ID, l.TenantID, l.Title, l.Visibility, l.ShareSlug,
+		nullDate(l.EventDate), decayDaysToStorage(l.DecayDays), boolToInt(l.Active), fmtTime(l.CreatedAt)); err != nil {
 		if r.d.isUniqueViolation(err) {
 			return storage.List{}, storage.ErrConflict
 		}
+		return storage.List{}, err
+	}
+	if _, err := tx.ExecContext(ctx, r.rb(
+		`INSERT INTO list_owners (list_id, user_id, added_at) VALUES (?, ?, ?)`),
+		l.ID, ownerID, fmtTime(l.CreatedAt)); err != nil {
+		return storage.List{}, err
+	}
+	if err := tx.Commit(); err != nil {
 		return storage.List{}, err
 	}
 	return l, nil
@@ -125,17 +146,21 @@ func (r listRepo) GetBySlug(ctx context.Context, shareSlug string) (storage.List
 	return r.get(ctx, `share_slug = ?`, shareSlug)
 }
 
+// List returns the lists ownerID owns, joined through list_owners.
 func (r listRepo) List(ctx context.Context, ownerID string, p storage.Page) ([]storage.List, int, error) {
+	const ownerFilter = ` AND EXISTS (SELECT 1 FROM list_owners lo
+		WHERE lo.list_id = lists.id AND lo.user_id = ?)`
+
 	var total int
 	if err := r.db.QueryRowContext(ctx, r.rb(
-		`SELECT COUNT(*) FROM lists WHERE tenant_id = ? AND owner_id = ?`),
+		`SELECT COUNT(*) FROM lists WHERE tenant_id = ?`+ownerFilter),
 		r.tenantID, ownerID).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
 	rows, err := r.db.QueryContext(ctx, r.rb(
 		`SELECT `+listSelectCols+` FROM lists
-		  WHERE tenant_id = ? AND owner_id = ?
+		  WHERE tenant_id = ?`+ownerFilter+`
 		  ORDER BY created_at DESC, id
 		  LIMIT ? OFFSET ?`),
 		r.tenantID, ownerID, p.Limit, p.Offset)
@@ -171,11 +196,95 @@ func (r listRepo) Update(ctx context.Context, l storage.List) (storage.List, err
 	return r.Get(ctx, l.ID)
 }
 
+// Delete removes the list and its ownership rows. The list_owners delete is scoped
+// through this tenant's lists so a foreign list id can never touch another tenant's
+// rows; it also backs the FK cascade for the SQLite dialect (which runs without
+// foreign-key enforcement).
 func (r listRepo) Delete(ctx context.Context, id string) error {
-	res, err := r.db.ExecContext(ctx, r.rb(
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, r.rb(
+		`DELETE FROM list_owners
+		  WHERE list_id IN (SELECT id FROM lists WHERE tenant_id = ? AND id = ?)`),
+		r.tenantID, id); err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, r.rb(
 		`DELETE FROM lists WHERE tenant_id = ? AND id = ?`), r.tenantID, id)
 	if err != nil {
 		return err
 	}
-	return expectOne(res)
+	if err := expectOne(res); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// IsOwner reports whether userID owns listID, scoped to the bound tenant.
+func (r listRepo) IsOwner(ctx context.Context, listID, userID string) (bool, error) {
+	var n int
+	err := r.db.QueryRowContext(ctx, r.rb(
+		`SELECT COUNT(*) FROM list_owners lo
+		   JOIN lists l ON l.id = lo.list_id
+		  WHERE l.tenant_id = ? AND lo.list_id = ? AND lo.user_id = ?`),
+		r.tenantID, listID, userID).Scan(&n)
+	return n > 0, err
+}
+
+// Owners returns the user ids owning listID (tenant-scoped).
+func (r listRepo) Owners(ctx context.Context, listID string) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, r.rb(
+		`SELECT lo.user_id FROM list_owners lo
+		   JOIN lists l ON l.id = lo.list_id
+		  WHERE l.tenant_id = ? AND lo.list_id = ?
+		  ORDER BY lo.added_at, lo.user_id`),
+		r.tenantID, listID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// AddOwner records userID as an owner of listID, enforcing the v1 single-owner
+// rule: if the list already has a different owner it returns ErrConflict. Adding
+// the existing sole owner again is a no-op.
+func (r listRepo) AddOwner(ctx context.Context, listID, userID string) error {
+	owners, err := r.Owners(ctx, listID)
+	if err != nil {
+		return err
+	}
+	for _, o := range owners {
+		if o == userID {
+			return nil // already the owner
+		}
+	}
+	if len(owners) > 0 {
+		return storage.ErrConflict // v1: exactly one owner (co-ownership is #25)
+	}
+	_, err = r.db.ExecContext(ctx, r.rb(
+		`INSERT INTO list_owners (list_id, user_id, added_at) VALUES (?, ?, ?)`),
+		listID, userID, fmtTime(nowTime()))
+	return err
+}
+
+// RemoveOwner removes userID as an owner of listID (tenant-scoped; no-op if absent).
+func (r listRepo) RemoveOwner(ctx context.Context, listID, userID string) error {
+	_, err := r.db.ExecContext(ctx, r.rb(
+		`DELETE FROM list_owners
+		  WHERE user_id = ? AND list_id IN (SELECT id FROM lists WHERE tenant_id = ? AND id = ?)`),
+		userID, r.tenantID, listID)
+	return err
 }
