@@ -1,0 +1,153 @@
+# Yaadegar example configuration.
+#
+# Copy this to ./config.yaml (next to the binary) or /etc/yaadegar/config.yaml —
+# both are searched, in that precedence — then uncomment and edit the keys you
+# want to override. Every key below is optional; a commented key falls back to the
+# default shown next to it.
+#
+# Precedence (lowest to highest): this file < environment variable < command-line
+# flag. So a flag always wins over the file, and an env var wins over the file but
+# loses to a flag. Each key's matching env var and flag are noted inline.
+#
+# SECRETS ARE NOT SET HERE. The JWT signing secret, the SMTP password, and the
+# superadmin password hash are read from the environment only — never put a real
+# value in this file (it is meant to be committed/shared as a template). They are
+# listed at the bottom for reference, without values.
+
+# --- Server ---------------------------------------------------------------------
+
+# HTTP listen address.  (env YAADEGAR_HTTP_ADDR, flag --http-addr)
+# http-addr: ":8080"
+
+# Log verbosity: debug | info | warn | error.  (env YAADEGAR_LOG_LEVEL, flag --log-level)
+# log-level: "info"
+
+# Host suffix under which tenant subdomains live (e.g. example.wish.list). Hosts
+# outside it are treated as custom domains. Empty in single-tenant/dev setups.
+# (env YAADEGAR_BASE_DOMAIN, flag --base-domain)
+# base-domain: ""
+
+# Resolve the tenant from X-Forwarded-Host (proxy deployments). Enable ONLY when
+# the backend is reachable exclusively behind the trusted frontend proxy; a
+# directly-exposed backend must leave this off (it is a tenant-spoofing hole).
+# (env YAADEGAR_TRUST_FORWARDED_HOST, flag --trust-forwarded-host)
+# trust-forwarded-host: false
+
+# --- Storage --------------------------------------------------------------------
+
+# Storage driver: sqlite or postgres.  (env YAADEGAR_STORAGE_DRIVER, flag --storage-driver)
+# storage-driver: "sqlite"
+
+# Storage DSN: a SQLite file path/URI, or a Postgres connection URL.
+# (env YAADEGAR_STORAGE_DSN, flag --storage-dsn)
+# storage-dsn: "file:yaadegar.db"
+
+# --- Reservation decay ----------------------------------------------------------
+
+# How often the reservation-decay sweeper runs (0 disables it).
+# (env YAADEGAR_DECAY_SWEEP_INTERVAL, flag --decay-sweep-interval)
+# decay-sweep-interval: "15m"
+
+# Instance-default decay period in days (0 = off) for lists that do not override it.
+# (env YAADEGAR_DECAY_DEFAULT_DAYS, flag --decay-default-days)
+# decay-default-days: 0
+
+# How long the reserver has to keep/release a stale reservation before it auto-expires.
+# (env YAADEGAR_DECAY_RESPONSE_WINDOW, flag --decay-response-window)
+# decay-response-window: "48h"
+
+# --- Emailed links --------------------------------------------------------------
+
+# Base URL of the giver-facing site for links in emails (reservation confirm and
+# decay keep/release). Set this to where the frontend is reachable.
+# (env YAADEGAR_PUBLIC_LINK_BASE, flag --public-link-base)
+# public-link-base: ""
+
+# DEPRECATED alias for public-link-base, still honoured for the keep/release links
+# when public-link-base is unset. Prefer public-link-base.
+# (env YAADEGAR_DECAY_LINK_BASE, flag --decay-link-base)
+# decay-link-base: ""
+
+# --- Reserver identity (ADR-0007) -----------------------------------------------
+
+# How long an email_confirmed reservation may sit unconfirmed before it auto-expires
+# and frees the item. Per-list overridable. Keep the 30m default (or another
+# positive value) as the safe norm: 0 disables the sweep, so an unconfirmed hold
+# NEVER expires — anyone could tie items up indefinitely without confirming.
+# (env YAADEGAR_RESERVER_CONFIRM_WINDOW, flag --reserver-confirm-window)
+# reserver-confirm-window: "30m"
+
+# Instance-default reserver tier for lists that set no override:
+# full_guest | email_confirmed | registered.
+# (env YAADEGAR_RESERVER_DEFAULT_TIER, flag --reserver-default-tier)
+# reserver-default-tier: "full_guest"
+
+# --- Custom domains (ADR-0004) --------------------------------------------------
+
+# Hostname that owners point a custom domain's CNAME at (returned by add-domain).
+# (env YAADEGAR_DOMAIN_CNAME_TARGET, flag --domain-cname-target)
+# domain-cname-target: ""
+
+# How long an unverified custom-domain claim holds its hostname before another
+# tenant can reclaim it at add time (0 disables reclaiming). A verified domain is
+# never reclaimed.  (env YAADEGAR_DOMAIN_CLAIM_TTL, flag --domain-claim-ttl)
+# domain-claim-ttl: "168h"
+
+# --- Authentication (ADR-0005) --------------------------------------------------
+
+# Enable username+password login (the first login method; magic-link and OAuth
+# land later).  (env YAADEGAR_AUTH_PASSWORD_ENABLED, flag --auth-password-enabled)
+# auth-password-enabled: true
+
+# Access-token lifetime; re-login on expiry (refresh tokens are a later cut).
+# (env YAADEGAR_AUTH_ACCESS_TTL, flag --auth-access-ttl)
+# auth-access-ttl: "12h"
+
+# Superadmin login username. Set it together with the password hash (a secret, see
+# the bottom) to enable the instance /admin surface; leave both unset to disable it.
+# (env YAADEGAR_SUPERADMIN_USERNAME, flag --superadmin-username)
+# superadmin-username: ""
+
+# --- Login rate limit -----------------------------------------------------------
+
+# Failed login attempts per IP and per username before rate-limiting kicks in
+# (0 disables).  (env YAADEGAR_LOGIN_RATE_MAX_FAILURES, flag --login-rate-max-failures)
+# login-rate-max-failures: 10
+
+# Window over which failed login attempts accumulate and the lockout lasts.
+# (env YAADEGAR_LOGIN_RATE_WINDOW, flag --login-rate-window)
+# login-rate-window: "15m"
+
+# --- Outgoing email (SMTP) ------------------------------------------------------
+
+# SMTP server host. Empty logs emails instead of sending them (dev default).
+# (env YAADEGAR_SMTP_HOST, flag --smtp-host)
+# smtp-host: ""
+
+# SMTP server port (587 STARTTLS, 465 implicit TLS).
+# (env YAADEGAR_SMTP_PORT, flag --smtp-port)
+# smtp-port: 587
+
+# SMTP auth username (relay-with-auth, e.g. a Gmail address + app password).
+# (env YAADEGAR_SMTP_USERNAME, flag --smtp-username)
+# smtp-username: ""
+
+# Envelope/header From address for outgoing mail.
+# (env YAADEGAR_SMTP_FROM, flag --smtp-from)
+# smtp-from: ""
+
+# TLS mode: starttls (587, required), tls (465 implicit), or none (plaintext,
+# loopback only).  (env YAADEGAR_SMTP_TLS_MODE, flag --smtp-tls-mode)
+# smtp-tls-mode: "starttls"
+
+# --- Secrets (environment ONLY — do not set here) -------------------------------
+#
+# Provide these via the environment, never in this file:
+#
+#   YAADEGAR_AUTH_JWT_SECRET          JWT signing secret (HS256), >= 32 bytes.
+#                                     Required — the instance refuses to start if
+#                                     missing or too short.
+#   YAADEGAR_SMTP_PASSWORD            SMTP auth password (use an app password).
+#   YAADEGAR_SUPERADMIN_PASSWORD_HASH Superadmin argon2id hash from
+#                                     `yaadegar hash-password` (never a plaintext
+#                                     password). Pairs with superadmin-username.
