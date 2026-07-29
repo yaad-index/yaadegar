@@ -22,18 +22,37 @@ func (s *Server) resolveTenant(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		tenant, err := s.tenantForHost(r.Context(), hostname(r.Host))
+		routingHost := s.hostForRouting(r)
+		tenant, err := s.tenantForHost(r.Context(), hostname(routingHost))
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
 				writeProblem(w, http.StatusNotFound, "no tenant is configured for this host")
 				return
 			}
-			s.logger.Error("tenant resolution failed", "err", err, "host", r.Host)
+			s.logger.Error("tenant resolution failed", "err", err, "host", routingHost)
 			writeProblem(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(withTenant(r.Context(), tenant)))
 	})
+}
+
+// hostForRouting returns the host used to resolve the tenant. By default it is the
+// request Host. When forwarded-host trust is explicitly enabled (ADR-0004 §7) — i.e.
+// the backend is reachable ONLY behind the trusted frontend proxy — an
+// X-Forwarded-Host header takes precedence, falling back to Host when absent.
+//
+// SECURITY: X-Forwarded-Host is client-settable, so honoring it unconditionally
+// would let anyone who can reach the backend spoof any tenant. Trust is therefore
+// OFF by default and must be enabled only when the backend port is not externally
+// reachable; a directly-exposed backend must keep it off.
+func (s *Server) hostForRouting(r *http.Request) string {
+	if s.trustForwardedHost {
+		if xfh := r.Header.Get("X-Forwarded-Host"); xfh != "" {
+			return xfh
+		}
+	}
+	return r.Host
 }
 
 // tenantForHost applies the routing policy: a host under the configured base

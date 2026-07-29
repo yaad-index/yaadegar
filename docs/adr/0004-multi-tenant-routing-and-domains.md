@@ -67,6 +67,28 @@ hostname uniqueness, subdomain rules, and the explicit TLS boundary.
    can layer on later without a rewrite. The OpenAPI note about on-demand TLS on
    `addDomain` is aspirational until that lands.
 
+7. **Reverse-proxy trust — `X-Forwarded-Host`, off by default.** When the backend
+   runs behind the trusted frontend (the SvelteKit server proxies owner-surface
+   calls, ADR-0006), the original tenant host must reach the backend, but Node's
+   `fetch` forbids overriding the outbound `Host` header. The standard reverse-proxy
+   answer is `X-Forwarded-Host`, gated by an explicit, **default-off**
+   `trust_forwarded_host` setting:
+   - **Off (default).** The tenant resolves from `Host` exactly as before;
+     `X-Forwarded-Host` is ignored entirely. This is the untrusted-safe default:
+     the header is client-settable, so honoring it on a directly-reachable backend
+     would let anyone spoof any tenant.
+   - **On.** `X-Forwarded-Host` takes precedence, with `Host` as the fallback when
+     it is absent. Enable it **only** when the backend port is not externally
+     reachable and requests arrive exclusively through the trusted frontend (e.g. an
+     unpublished backend on a compose network). This mirrors the well-trodden
+     `USE_X_FORWARDED_HOST` pattern.
+   - **Load-bearing invariant:** with trust off, `X-Forwarded-Host` never influences
+     tenant routing — pinned by a test.
+   - **Future hardening (noted, not built for v1):** if the backend is ever exposed
+     directly while still fronted by the proxy, add a shared-secret header between
+     the frontend and backend so a forwarded host is trusted only when accompanied
+     by the secret. Recorded here so it is not re-invented.
+
 ## Consequences
 
 - Custom domains are self-service — add → prove control via TXT → verified →

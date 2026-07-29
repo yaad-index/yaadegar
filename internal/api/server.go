@@ -17,17 +17,18 @@ import (
 // Server implements the generated strict server interface against the storage
 // layer.
 type Server struct {
-	store             storage.Store
-	baseDomain        string
-	email             email.Sender
-	clock             clock.Clock
-	previewer         *preview.Previewer
-	resolver          Resolver
-	auth              *auth.Service
-	adminEnabled      bool
-	loginLimiter      auth.Limiter
-	domainCNAMETarget string
-	logger            *slog.Logger
+	store              storage.Store
+	baseDomain         string
+	email              email.Sender
+	clock              clock.Clock
+	previewer          *preview.Previewer
+	resolver           Resolver
+	auth               *auth.Service
+	adminEnabled       bool
+	trustForwardedHost bool
+	loginLimiter       auth.Limiter
+	domainCNAMETarget  string
+	logger             *slog.Logger
 }
 
 var _ gen.StrictServerInterface = (*Server)(nil)
@@ -64,6 +65,12 @@ type Options struct {
 	// LoginLimiter throttles brute-force login attempts (owner + admin). Defaults
 	// to a no-op limiter (no limiting) when nil.
 	LoginLimiter auth.Limiter
+	// TrustForwardedHost enables X-Forwarded-Host for tenant resolution (ADR-0004
+	// §7). DEFAULT FALSE — enable ONLY when the backend is reachable exclusively
+	// behind the trusted frontend proxy; a directly-exposed backend must keep it
+	// off, since the header is client-settable and would otherwise let any caller
+	// spoof any tenant.
+	TrustForwardedHost bool
 	// DomainCNAMETarget is the hostname owners point their custom domain's CNAME
 	// at; returned by addDomain.
 	DomainCNAMETarget string
@@ -77,17 +84,18 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 		panic("api: Options.Auth is required (owner surface must not fall open)")
 	}
 	s := &Server{
-		store:             store,
-		baseDomain:        opts.BaseDomain,
-		email:             opts.Email,
-		clock:             opts.Clock,
-		previewer:         opts.Previewer,
-		resolver:          opts.Resolver,
-		auth:              opts.Auth,
-		adminEnabled:      opts.AdminEnabled,
-		loginLimiter:      opts.LoginLimiter,
-		domainCNAMETarget: opts.DomainCNAMETarget,
-		logger:            opts.Logger,
+		store:              store,
+		baseDomain:         opts.BaseDomain,
+		email:              opts.Email,
+		clock:              opts.Clock,
+		previewer:          opts.Previewer,
+		resolver:           opts.Resolver,
+		auth:               opts.Auth,
+		adminEnabled:       opts.AdminEnabled,
+		trustForwardedHost: opts.TrustForwardedHost,
+		loginLimiter:       opts.LoginLimiter,
+		domainCNAMETarget:  opts.DomainCNAMETarget,
+		logger:             opts.Logger,
 	}
 	if s.logger == nil {
 		s.logger = slog.Default()
