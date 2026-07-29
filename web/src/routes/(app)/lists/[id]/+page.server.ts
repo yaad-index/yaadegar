@@ -68,23 +68,23 @@ export const actions: Actions = {
 
 	// Auto-fill from a pasted product URL by reusing the SSRF-safe preview endpoint
 	// (#10) server-side; the owner reviews the draft before adding. Never scrapes
-	// client-side.
+	// client-side. The preview validates ONLY that a link was pasted — it POPULATES
+	// name/url/image/price, so it must not fail on an empty name/quantity (that would
+	// make superforms return a failure and the client discard the scraped prefill,
+	// #79 follow-up). The returned form is always success so enhance applies the
+	// fetched values; ?/add still does the real name validation.
 	preview: async ({ request, locals }) => {
 		const form = await superValidate(request, zod4(addItemSchema));
-		const url = (form.data.url || '').trim();
-		if (!url) return message(form, 'Paste a product link first.', { status: 400 });
+		form.valid = true;
+		form.errors = {};
+		const link = (form.data.url || '').trim();
+		if (!link) return message(form, 'Paste a product link first.');
 		const client = backendClient({ host: locals.host, token: locals.token });
-		const {
-			data,
-			error: err,
-			response
-		} = await client.POST('/api/v1/item-previews', {
-			body: { url }
+		const { data, error: err } = await client.POST('/api/v1/item-previews', {
+			body: { url: link }
 		});
 		if (err || !data) {
-			return message(form, "Couldn't fetch that page — enter the details manually.", {
-				status: response?.status === 422 ? 422 : 400
-			});
+			return message(form, "Couldn't fetch that page — enter the details manually.");
 		}
 		if (data.name) form.data.name = data.name;
 		if (data.url) form.data.url = data.url;
