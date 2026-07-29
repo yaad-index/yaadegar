@@ -4,6 +4,7 @@ import { zod4 } from 'sveltekit-superforms/adapters';
 import { z } from 'zod';
 import { backendClient } from '$lib/server/api';
 import { capsForList, addCap, removeCap } from '$lib/server/caps';
+import { renderNote } from '$lib/server/markdown';
 import type { Actions, PageServerLoad } from './$types';
 
 // The giver may optionally leave a name and an email; both are used only
@@ -32,7 +33,13 @@ export const load: PageServerLoad = async ({ params, locals, cookies }) => {
 		// A disabled list, or one past its event date, is a clean "closed" state — not
 		// an error page (ADR-0002: the backend signals it with 410).
 		if (response.status === 410) {
-			return { closed: true as const, list: null, reservedItemIds: [] as string[], form };
+			return {
+				closed: true as const,
+				list: null,
+				reservedItemIds: [] as string[],
+				noteHtml: {} as Record<string, string>,
+				form
+			};
 		}
 		error(response.status === 404 ? 404 : response.status || 502, 'This list is not available.');
 	}
@@ -44,6 +51,8 @@ export const load: PageServerLoad = async ({ params, locals, cookies }) => {
 		// the httpOnly cookie and are read server-side in the release action; they are
 		// deliberately NOT returned here, so they never reach client JS (ADR-0006 §4).
 		reservedItemIds: Object.keys(capsForList(cookies, params.shareSlug)),
+		// Notes rendered to sanitized HTML server-side; {@html} only touches this map.
+		noteHtml: Object.fromEntries((data.items ?? []).map((i) => [i.id ?? '', renderNote(i.note)])),
 		form
 	};
 };
