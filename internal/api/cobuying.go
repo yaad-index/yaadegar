@@ -278,22 +278,16 @@ func (s *Server) ConfirmMatch(ctx context.Context, req gen.ConfirmMatchRequestOb
 		return gen.ConfirmMatch200JSONResponse(toGenMatch(m, nil)), nil
 	}
 
-	// Confirm.
-	c.Status = storage.ContributionConfirmed
-	if _, err := ts.Contributions().Update(ctx, c); err != nil {
-		return nil, err
-	}
-	contribs, allConfirmed, err := s.matchContributions(ctx, ts, m)
+	// Confirm. The transition — mark this contribution confirmed, check whether all
+	// are confirmed, and flip the match to both_confirmed — runs atomically under the
+	// item lock in the store, so two concurrent confirms complete the match (and fire
+	// the reveal) exactly once (#36).
+	m, contribs, completedNow, err := ts.Matches().ConfirmContribution(ctx, m.ItemID, m.ID, c.ID)
 	if err != nil {
 		return nil, err
 	}
-	if !allConfirmed {
+	if !completedNow {
 		return gen.ConfirmMatch200JSONResponse(toGenMatch(m, nil)), nil
-	}
-
-	m.State = storage.MatchBothConfirmed
-	if _, err := ts.Matches().Update(ctx, m); err != nil {
-		return nil, err
 	}
 	contacts := make([]string, 0, len(contribs))
 	for _, cc := range contribs {
@@ -369,24 +363,6 @@ func (s *Server) dissolveMatch(ctx context.Context, ts storage.TenantStore, m st
 		return err
 	}
 	return nil
-}
-
-// matchContributions loads the match's contributions and reports whether all are
-// confirmed.
-func (s *Server) matchContributions(ctx context.Context, ts storage.TenantStore, m storage.Match) ([]storage.Contribution, bool, error) {
-	out := make([]storage.Contribution, 0, len(m.ContributionIDs))
-	allConfirmed := true
-	for _, id := range m.ContributionIDs {
-		c, err := ts.Contributions().Get(ctx, id)
-		if err != nil {
-			return nil, false, err
-		}
-		if c.Status != storage.ContributionConfirmed {
-			allConfirmed = false
-		}
-		out = append(out, c)
-	}
-	return out, allConfirmed, nil
 }
 
 // emailMatch sends the same non-revealing notice to each party. The body carries

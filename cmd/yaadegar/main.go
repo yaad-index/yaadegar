@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -41,6 +42,7 @@ type CLI struct {
 
 	Serve   ServeCmd   `cmd:"" help:"Run the HTTP API server."`
 	Version VersionCmd `cmd:"" help:"Print the build version and exit."`
+	Health  HealthCmd  `cmd:"" help:"Probe the server's health endpoint and exit non-zero if unhealthy (container healthcheck)."`
 
 	// Seed / operator commands.
 	CreateTenant CreateTenantCmd `cmd:"" name:"create-tenant" help:"Create a tenant."`
@@ -67,6 +69,8 @@ type ServeCmd struct {
 	DecayLinkBase       string        `name:"decay-link-base" env:"YAADEGAR_DECAY_LINK_BASE" help:"Base URL for the one-click keep/release links in reserver decay emails."`
 
 	DomainCNAMETarget string `name:"domain-cname-target" env:"YAADEGAR_DOMAIN_CNAME_TARGET" help:"Hostname that owners point a custom domain's CNAME at (returned by add-domain)."`
+
+	DomainClaimTTL time.Duration `name:"domain-claim-ttl" default:"168h" env:"YAADEGAR_DOMAIN_CLAIM_TTL" help:"How long an unverified custom-domain claim holds its hostname before another tenant can reclaim it at add time (0 disables reclaiming). A verified domain is never reclaimed."`
 
 	// Auth config (ADR-0005). The JWT secret is a secret and comes from the
 	// environment only. At least one login method must be enabled and configured or
@@ -155,6 +159,7 @@ func (c *ServeCmd) Run(cli *CLI) error {
 		TrustForwardedHost: c.TrustForwardedHost,
 		LoginLimiter:       auth.NewInMemoryLimiter(c.LoginRateMaxFailures, c.LoginRateWindow, clock.Real{}),
 		DomainCNAMETarget:  c.DomainCNAMETarget,
+		DomainClaimTTL:     c.DomainClaimTTL,
 	})
 
 	// Run the reservation-decay sweeper on a ticker alongside the server.
@@ -231,6 +236,33 @@ type VersionCmd struct{}
 // Run prints the version to stdout.
 func (VersionCmd) Run() error {
 	fmt.Println(version)
+	return nil
+}
+
+// HealthCmd probes the server's /healthz over HTTP and exits non-zero if it is
+// not reachable or not OK. It exists so the distroless runtime image (no shell,
+// no curl) can still expose a container healthcheck against the binary itself.
+type HealthCmd struct {
+	URL string `name:"url" default:"http://127.0.0.1:8080/healthz" env:"YAADEGAR_HEALTH_URL" help:"Health endpoint to probe."`
+}
+
+// Run performs a single bounded GET and returns an error (non-zero exit) unless
+// the endpoint answers 200.
+func (c *HealthCmd) Run() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.URL, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("health check failed: %s returned %d", c.URL, resp.StatusCode)
+	}
 	return nil
 }
 

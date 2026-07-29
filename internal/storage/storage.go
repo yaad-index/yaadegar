@@ -230,11 +230,29 @@ type MatchRepo interface {
 	ListByItem(ctx context.Context, itemID string) ([]Match, error)
 	// Update persists the match state transition.
 	Update(ctx context.Context, m Match) (Match, error)
+	// ConfirmContribution atomically marks one contribution confirmed within the
+	// match and, if that leaves every contribution on the match confirmed while the
+	// match is still proposed, transitions the match to both_confirmed — all under
+	// the item row lock (the same lock reserve/contribute use), so concurrent
+	// confirms serialize and the completion happens exactly once. completedNow is
+	// true only for the call that performs the transition; contribs holds the
+	// match's contributions (for the reveal) then, and is nil otherwise. The
+	// returned Match carries the current state either way.
+	ConfirmContribution(ctx context.Context, itemID, matchID, contributionID string) (m Match, contribs []Contribution, completedNow bool, err error)
 }
 
 // DomainRepo persists custom domains within the bound tenant.
 type DomainRepo interface {
 	Create(ctx context.Context, d Domain) (Domain, error)
+	// CreateReclaimingExpired inserts the domain, first reclaiming an existing claim
+	// on the same hostname when that claim is unverified and was created before
+	// expiredBefore — freeing a hostname parked by an unverified squatter (the
+	// add-time namespace DoS, ADR-0004 §4). A verified claim is never reclaimed. The
+	// check + reclaim + insert are atomic under a row lock, so two concurrent adds
+	// cannot both reclaim. A zero expiredBefore disables reclaiming (behaves like
+	// Create). Returns ErrConflict when the hostname is held by a verified or
+	// still-within-window claim.
+	CreateReclaimingExpired(ctx context.Context, d Domain, expiredBefore time.Time) (Domain, error)
 	Get(ctx context.Context, id string) (Domain, error)
 	List(ctx context.Context) ([]Domain, error)
 	Update(ctx context.Context, d Domain) (Domain, error)

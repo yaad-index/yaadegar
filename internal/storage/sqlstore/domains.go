@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/yaad-index/yaadegar/internal/storage"
 )
@@ -55,6 +56,79 @@ func (r domainRepo) Create(ctx context.Context, d storage.Domain) (storage.Domai
 		return storage.Domain{}, err
 	}
 	return d, nil
+}
+
+// CreateReclaimingExpired inserts the domain, first reclaiming an existing claim on
+// the same hostname when that claim is unverified and older than expiredBefore.
+// This frees a hostname parked by an unverified squatter (the add-time namespace
+// DoS in ADR-0004 §4) without ever disturbing a verified domain. The lookup +
+// reclaim + insert run in one transaction under a row lock on the existing claim,
+// so two concurrent adds cannot both reclaim. The lookup is intentionally global
+// (not tenant-scoped): a squatting claim may belong to another tenant. A zero
+// expiredBefore disables reclaiming.
+func (r domainRepo) CreateReclaimingExpired(ctx context.Context, dom storage.Domain, expiredBefore time.Time) (storage.Domain, error) {
+	if dom.ID == "" {
+		dom.ID = newID()
+	}
+	if dom.TLSStatus == "" {
+		dom.TLSStatus = storage.TLSNone
+	}
+	if dom.CreatedAt.IsZero() {
+		dom.CreatedAt = nowTime()
+	}
+	dom.TenantID = r.tenantID
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return storage.Domain{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Lock any existing claim on this hostname (global — a squatter may be another
+	// tenant). Reclaim it only when it is unverified and past the expiry window.
+	var (
+		existingID string
+		verified   int
+		createdAt  string
+	)
+	err = tx.QueryRowContext(ctx, r.rb(
+		`SELECT id, verified, created_at FROM domains WHERE hostname = ?`+r.d.forUpdate()),
+		dom.Hostname).Scan(&existingID, &verified, &createdAt)
+	switch {
+	case err == nil:
+		if verified != 0 {
+			return storage.Domain{}, storage.ErrConflict // verified never expires
+		}
+		ca, perr := parseTime(createdAt)
+		if perr != nil {
+			return storage.Domain{}, perr
+		}
+		if !ca.Before(expiredBefore) {
+			return storage.Domain{}, storage.ErrConflict // still within the window
+		}
+		if _, derr := tx.ExecContext(ctx, r.rb(
+			`DELETE FROM domains WHERE id = ?`), existingID); derr != nil {
+			return storage.Domain{}, derr
+		}
+	case errors.Is(err, sql.ErrNoRows):
+		// No existing claim — a normal first registration.
+	default:
+		return storage.Domain{}, err
+	}
+
+	if _, err := tx.ExecContext(ctx, r.rb(
+		`INSERT INTO domains (`+domainCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
+		dom.ID, dom.TenantID, dom.Hostname, dom.CNAMETarget, boolToInt(dom.Verified),
+		dom.TLSStatus, dom.VerificationToken, fmtTime(dom.CreatedAt)); err != nil {
+		if r.d.isUniqueViolation(err) {
+			return storage.Domain{}, storage.ErrConflict
+		}
+		return storage.Domain{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return storage.Domain{}, err
+	}
+	return dom, nil
 }
 
 func (r domainRepo) Get(ctx context.Context, id string) (storage.Domain, error) {
