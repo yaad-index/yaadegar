@@ -322,13 +322,16 @@ type List struct {
 	CreatedAt *time.Time `json:"created_at,omitempty"`
 
 	// DecayDays The decay-period override; null means inheriting the instance default.
-	DecayDays  *int                `json:"decay_days,omitempty"`
-	EventDate  *openapi_types.Date `json:"event_date,omitempty"`
-	Id         *string             `json:"id,omitempty"`
-	ItemCount  *int                `json:"item_count,omitempty"`
-	ShareSlug  *string             `json:"share_slug,omitempty"`
-	Title      *string             `json:"title,omitempty"`
-	Visibility *ListVisibility     `json:"visibility,omitempty"`
+	DecayDays *int                `json:"decay_days,omitempty"`
+	EventDate *openapi_types.Date `json:"event_date,omitempty"`
+	Id        *string             `json:"id,omitempty"`
+	ItemCount *int                `json:"item_count,omitempty"`
+
+	// ReserverTier The reserver-identity tier override; null inherits the instance default.
+	ReserverTier *string         `json:"reserver_tier,omitempty"`
+	ShareSlug    *string         `json:"share_slug,omitempty"`
+	Title        *string         `json:"title,omitempty"`
+	Visibility   *ListVisibility `json:"visibility,omitempty"`
 }
 
 // ListCreate defines model for ListCreate.
@@ -337,9 +340,12 @@ type ListCreate struct {
 	DecayDays *int `json:"decay_days,omitempty"`
 
 	// EventDate Optional. After this date the list auto-disables (read-only).
-	EventDate  *openapi_types.Date `json:"event_date,omitempty"`
-	Title      string              `json:"title"`
-	Visibility *ListVisibility     `json:"visibility,omitempty"`
+	EventDate *openapi_types.Date `json:"event_date,omitempty"`
+
+	// ReserverTier Reserver-identity tier override (ADR-0007): full_guest | email_confirmed | registered. Omit (or null) to inherit the instance default. full_guest reserves with a one-time capability token; email_confirmed requires the giver to confirm an email before the reservation activates; registered (deferred) requires a giver account.
+	ReserverTier *string         `json:"reserver_tier,omitempty"`
+	Title        string          `json:"title"`
+	Visibility   *ListVisibility `json:"visibility,omitempty"`
 }
 
 // ListPage defines model for ListPage.
@@ -352,11 +358,12 @@ type ListPage struct {
 
 // ListUpdate defines model for ListUpdate.
 type ListUpdate struct {
-	Active     *bool               `json:"active,omitempty"`
-	DecayDays  *int                `json:"decay_days,omitempty"`
-	EventDate  *openapi_types.Date `json:"event_date,omitempty"`
-	Title      *string             `json:"title,omitempty"`
-	Visibility *ListVisibility     `json:"visibility,omitempty"`
+	Active       *bool               `json:"active,omitempty"`
+	DecayDays    *int                `json:"decay_days,omitempty"`
+	EventDate    *openapi_types.Date `json:"event_date,omitempty"`
+	ReserverTier *string             `json:"reserver_tier,omitempty"`
+	Title        *string             `json:"title,omitempty"`
+	Visibility   *ListVisibility     `json:"visibility,omitempty"`
 }
 
 // ListVisibility defines model for ListVisibility.

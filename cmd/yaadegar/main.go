@@ -68,6 +68,8 @@ type ServeCmd struct {
 	DecayResponseWindow time.Duration `name:"decay-response-window" default:"48h" env:"YAADEGAR_DECAY_RESPONSE_WINDOW" help:"How long the reserver has to keep/release a stale reservation before it auto-expires."`
 	DecayLinkBase       string        `name:"decay-link-base" env:"YAADEGAR_DECAY_LINK_BASE" help:"Base URL for the one-click keep/release links in reserver decay emails."`
 
+	ReserverConfirmWindow time.Duration `name:"reserver-confirm-window" default:"30m" env:"YAADEGAR_RESERVER_CONFIRM_WINDOW" help:"How long an email_confirmed reservation may sit unconfirmed before it auto-expires and frees the item (ADR-0007). 0 disables the confirm-window sweep."`
+
 	DomainCNAMETarget string `name:"domain-cname-target" env:"YAADEGAR_DOMAIN_CNAME_TARGET" help:"Hostname that owners point a custom domain's CNAME at (returned by add-domain)."`
 
 	DomainClaimTTL time.Duration `name:"domain-claim-ttl" default:"168h" env:"YAADEGAR_DOMAIN_CLAIM_TTL" help:"How long an unverified custom-domain claim holds its hostname before another tenant can reclaim it at add time (0 disables reclaiming). A verified domain is never reclaimed."`
@@ -166,6 +168,7 @@ func (c *ServeCmd) Run(cli *CLI) error {
 	sweeper := decay.NewSweeper(store, sender, clock.Real{}, decay.Config{
 		DefaultDecayDays: c.DecayDefaultDays,
 		ResponseWindow:   c.DecayResponseWindow,
+		ConfirmWindow:    c.ReserverConfirmWindow,
 		LinkBase:         c.DecayLinkBase,
 	}, logger)
 	go runSweeper(ctx, sweeper, c.DecaySweepInterval, logger)

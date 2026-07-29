@@ -19,12 +19,19 @@ func (s *Server) CreateList(ctx context.Context, req gen.CreateListRequestObject
 			BadRequestApplicationProblemPlusJSONResponse: badRequest("missing request body"),
 		}, nil
 	}
+	tier, ok3 := parseReserverTier(req.Body.ReserverTier)
+	if !ok3 {
+		return gen.CreateList400ApplicationProblemPlusJSONResponse{
+			BadRequestApplicationProblemPlusJSONResponse: badRequest("invalid reserver_tier"),
+		}, nil
+	}
 	created, err := ts.Lists().Create(ctx, storage.List{
-		Title:      req.Body.Title,
-		Visibility: fromGenVisibility(req.Body.Visibility),
-		EventDate:  fromGenDate(req.Body.EventDate),
-		DecayDays:  req.Body.DecayDays, // nil (absent) = inherit the instance default
-		Active:     true,
+		Title:        req.Body.Title,
+		Visibility:   fromGenVisibility(req.Body.Visibility),
+		EventDate:    fromGenDate(req.Body.EventDate),
+		DecayDays:    req.Body.DecayDays, // nil (absent) = inherit the instance default
+		ReserverTier: tier,               // nil (absent) = inherit the instance default
+		Active:       true,
 	}, owner.ID)
 	if err != nil {
 		return nil, err
@@ -136,6 +143,15 @@ func (s *Server) UpdateList(ctx context.Context, req gen.UpdateListRequestObject
 	}
 	if req.Body.DecayDays != nil {
 		l.DecayDays = req.Body.DecayDays
+	}
+	if req.Body.ReserverTier != nil {
+		tier, ok := parseReserverTier(req.Body.ReserverTier)
+		if !ok {
+			return gen.UpdateList400ApplicationProblemPlusJSONResponse{
+				BadRequestApplicationProblemPlusJSONResponse: badRequest("invalid reserver_tier"),
+			}, nil
+		}
+		l.ReserverTier = tier
 	}
 	if req.Body.Active != nil {
 		l.Active = *req.Body.Active

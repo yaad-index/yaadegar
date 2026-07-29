@@ -76,11 +76,11 @@ func (f *failingSender) Send(context.Context, email.Message) error {
 	return assert.AnError
 }
 
-func (f *fixture) state(t *testing.T) storage.ReservationDecayState {
+func (f *fixture) state(t *testing.T) storage.ReservationState {
 	t.Helper()
 	r, err := f.ts.Reservations().Get(context.Background(), f.resID)
 	require.NoError(t, err)
-	return r.DecayState
+	return r.State
 }
 
 // TestDecayEscalation: list overrides decay to 30 days → reserver notified once
@@ -92,13 +92,13 @@ func TestDecayEscalation(t *testing.T) {
 	f := setup(t, t0, ptr(30), 0)
 
 	require.NoError(t, f.sweeper.Sweep(ctx))
-	assert.Equal(t, storage.DecayActive, f.state(t))
+	assert.Equal(t, storage.StateActive, f.state(t))
 	assert.Empty(t, f.fakeMail.Sent())
 
 	// Past the 30-day period → reserver notified once, with keep + release links.
 	f.clk.Set(t0.Add(31 * 24 * time.Hour))
 	require.NoError(t, f.sweeper.Sweep(ctx))
-	assert.Equal(t, storage.DecayReserverNotified, f.state(t))
+	assert.Equal(t, storage.StateReserverNotified, f.state(t))
 	sent := f.fakeMail.Sent()
 	require.Len(t, sent, 1)
 	assert.Equal(t, giverEmail, sent[0].To)
@@ -114,7 +114,7 @@ func TestDecayEscalation(t *testing.T) {
 	// After the 24h response window → auto-expire; no email; item freed.
 	f.clk.Advance(24 * time.Hour)
 	require.NoError(t, f.sweeper.Sweep(ctx))
-	assert.Equal(t, storage.DecayExpired, f.state(t))
+	assert.Equal(t, storage.StateExpired, f.state(t))
 	assert.Len(t, f.fakeMail.Sent(), 1, "auto-expiry sends no email")
 
 	qty, err := f.ts.Items().ReservedQuantity(ctx, f.item.ID)
@@ -144,12 +144,12 @@ func TestDecaySendFailureHoldsActive(t *testing.T) {
 
 	f.clk.Set(t0.Add(31 * 24 * time.Hour))
 	require.NoError(t, sweeper.Sweep(ctx)) // one failed candidate is logged, not fatal
-	assert.Equal(t, storage.DecayActive, f.state(t), "send failure must not advance state")
+	assert.Equal(t, storage.StateActive, f.state(t), "send failure must not advance state")
 	assert.Positive(t, failer.calls)
 
 	// A subsequent sweep with a working sender advances and notifies.
 	require.NoError(t, f.sweeper.Sweep(ctx))
-	assert.Equal(t, storage.DecayReserverNotified, f.state(t))
+	assert.Equal(t, storage.StateReserverNotified, f.state(t))
 	require.Len(t, f.fakeMail.Sent(), 1)
 }
 
@@ -162,7 +162,7 @@ func TestDecayInheritsInstanceDefault(t *testing.T) {
 
 	f.clk.Set(t0.Add(31 * 24 * time.Hour))
 	require.NoError(t, f.sweeper.Sweep(ctx))
-	assert.Equal(t, storage.DecayReserverNotified, f.state(t))
+	assert.Equal(t, storage.StateReserverNotified, f.state(t))
 	assert.Len(t, f.fakeMail.Sent(), 1)
 }
 
@@ -175,7 +175,7 @@ func TestDecayExplicitOff(t *testing.T) {
 
 	f.clk.Set(t0.Add(365 * 24 * time.Hour))
 	require.NoError(t, f.sweeper.Sweep(ctx))
-	assert.Equal(t, storage.DecayActive, f.state(t))
+	assert.Equal(t, storage.StateActive, f.state(t))
 	assert.Empty(t, f.fakeMail.Sent())
 }
 
@@ -188,6 +188,68 @@ func TestDecayInheritsOffDefault(t *testing.T) {
 
 	f.clk.Set(t0.Add(365 * 24 * time.Hour))
 	require.NoError(t, f.sweeper.Sweep(ctx))
-	assert.Equal(t, storage.DecayActive, f.state(t))
+	assert.Equal(t, storage.StateActive, f.state(t))
 	assert.Empty(t, f.fakeMail.Sent())
+}
+
+// pendingFixture rewires the fixture's sweeper with a confirm window and creates a
+// pending_confirmation reservation at t0 alongside the setup's active one.
+func (f *fixture) withConfirmWindow(t *testing.T, t0 time.Time, decayDefaultDays int, confirmWindow time.Duration) string {
+	t.Helper()
+	f.sweeper = decay.NewSweeper(f.store, f.fakeMail, f.clk, decay.Config{
+		DefaultDecayDays: decayDefaultDays,
+		ResponseWindow:   24 * time.Hour,
+		ConfirmWindow:    confirmWindow,
+	}, slog.New(slog.DiscardHandler))
+	pend, err := f.ts.Reservations().Create(context.Background(), storage.Reservation{
+		ItemID: f.item.ID, GiverEmail: ptr(giverEmail), Quantity: 1, TokenHash: "cap-pend",
+		ConfirmTokenHash: "conf-hash", State: storage.StatePendingConfirmation, CreatedAt: t0,
+	})
+	require.NoError(t, err)
+	return pend.ID
+}
+
+func (f *fixture) stateOf(t *testing.T, id string) storage.ReservationState {
+	t.Helper()
+	r, err := f.ts.Reservations().Get(context.Background(), id)
+	require.NoError(t, err)
+	return r.State
+}
+
+// TestConfirmWindowExpiry (#81): a pending_confirmation reservation stays pending
+// within the confirm window and auto-expires past it — silently (no email).
+func TestConfirmWindowExpiry(t *testing.T) {
+	ctx := context.Background()
+	t0 := time.Date(2027, 1, 1, 12, 0, 0, 0, time.UTC)
+	f := setup(t, t0, nil, 0) // instance decay off; only the confirm window is exercised
+	pendID := f.withConfirmWindow(t, t0, 0, 30*time.Minute)
+
+	// Within the window → still pending, no email.
+	f.clk.Set(t0.Add(20 * time.Minute))
+	require.NoError(t, f.sweeper.Sweep(ctx))
+	assert.Equal(t, storage.StatePendingConfirmation, f.stateOf(t, pendID))
+	assert.Empty(t, f.fakeMail.Sent(), "confirm-window expiry sends no email")
+
+	// Past the window → expired (frees the item).
+	f.clk.Set(t0.Add(31 * time.Minute))
+	require.NoError(t, f.sweeper.Sweep(ctx))
+	assert.Equal(t, storage.StateExpired, f.stateOf(t, pendID))
+	assert.Empty(t, f.fakeMail.Sent())
+}
+
+// TestPendingExcludedFromActiveDecay (#81, Addition B-ii): a pending reservation is
+// eligible ONLY for confirm-window expiry — never the active-reservation decay
+// path. With a short decay period but a long confirm window, advancing past the
+// decay period leaves the pending reservation pending (not notified, not expired).
+func TestPendingExcludedFromActiveDecay(t *testing.T) {
+	ctx := context.Background()
+	t0 := time.Date(2027, 1, 1, 12, 0, 0, 0, time.UTC)
+	f := setup(t, t0, nil, 1)                             // instance decay = 1 day
+	pendID := f.withConfirmWindow(t, t0, 1, 72*time.Hour) // confirm window 72h
+
+	// 25h later: past the 1-day decay period but well within the 72h confirm window.
+	f.clk.Set(t0.Add(25 * time.Hour))
+	require.NoError(t, f.sweeper.Sweep(ctx))
+	assert.Equal(t, storage.StatePendingConfirmation, f.stateOf(t, pendID),
+		"a pending reservation is never advanced by the active-decay path")
 }

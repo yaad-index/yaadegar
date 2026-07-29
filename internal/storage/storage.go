@@ -196,14 +196,18 @@ type ReservationRepo interface {
 	// false (no error) otherwise — so concurrent sweeps/keeps/releases are safe
 	// no-ops, and a caller must gate any email on a true return.
 
-	// MarkReserverNotified moves active → reserver_notified, stamping decay_state_at
+	// MarkReserverNotified moves active → reserver_notified, stamping state_at
 	// and the minted keep/release token hashes.
 	MarkReserverNotified(ctx context.Context, reservationID string, at time.Time, keepTokenHash, releaseTokenHash string) (bool, error)
 	// MarkExpired moves reserver_notified → expired, leaving the token hashes in
 	// place (a late click resolves to 410, not 404).
 	MarkExpired(ctx context.Context, reservationID string, at time.Time) (bool, error)
+	// ExpirePending moves pending_confirmation → expired when an email_confirmed
+	// reservation's confirm-window elapses unconfirmed (ADR-0007 §3). Row-locked
+	// single-winner; a no-op if it was already confirmed (active) or expired.
+	ExpirePending(ctx context.Context, reservationID string, at time.Time) (bool, error)
 	// Renew moves reserver_notified → active on a "keep" click: it resets the decay
-	// clock (last_activity_at, decay_state_at) and clears both one-click tokens.
+	// clock (last_activity_at, state_at) and clears both one-click tokens.
 	Renew(ctx context.Context, reservationID string, at time.Time) (bool, error)
 }
 

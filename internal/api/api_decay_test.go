@@ -23,13 +23,13 @@ func TestCreateListDecayInheritsByDefault(t *testing.T) {
 
 // seedDecayReservation inserts a reservation in a decay state with known keep and
 // release tokens.
-func (h *harness) seedDecayReservation(itemID string, state storage.ReservationDecayState, keepRaw, releaseRaw string) {
+func (h *harness) seedDecayReservation(itemID string, state storage.ReservationState, keepRaw, releaseRaw string) {
 	h.t.Helper()
 	_, err := h.store.ForTenant(h.tenant).Reservations().Create(context.Background(), storage.Reservation{
 		ItemID:                itemID,
 		Quantity:              1,
 		TokenHash:             "cap-" + releaseRaw,
-		DecayState:            state,
+		State:                 state,
 		DecayReleaseTokenHash: token.Hash(releaseRaw),
 		DecayKeepTokenHash:    token.Hash(keepRaw),
 	})
@@ -40,7 +40,7 @@ func TestReleaseByDecayToken(t *testing.T) {
 	h := newHarness(t)
 	list := h.createList("List")
 	item := h.createItem(*list.Id, "Item", 1)
-	h.seedDecayReservation(*item.Id, storage.DecayReserverNotified, "keep-tok", "rel-tok")
+	h.seedDecayReservation(*item.Id, storage.StateReserverNotified, "keep-tok", "rel-tok")
 
 	assert.Equal(t, gen.Reserved, h.itemAvailability(t, *list.Id, *item.Id))
 
@@ -62,7 +62,7 @@ func TestKeepByDecayToken(t *testing.T) {
 	h := newHarness(t)
 	list := h.createList("List")
 	item := h.createItem(*list.Id, "Item", 1)
-	h.seedDecayReservation(*item.Id, storage.DecayReserverNotified, "keep-tok", "rel-tok")
+	h.seedDecayReservation(*item.Id, storage.StateReserverNotified, "keep-tok", "rel-tok")
 
 	// Keep renews → 204, item stays reserved (not released).
 	resp, _ := h.req(http.MethodPost, "/public/decay-keep", h.ownerHost(), "", map[string]any{"token": "keep-tok"})
@@ -81,7 +81,7 @@ func TestDecayTokensExpired410(t *testing.T) {
 	list := h.createList("List")
 	item := h.createItem(*list.Id, "Item", 1)
 	// Already auto-expired: both links are dead (410, hashes retained).
-	h.seedDecayReservation(*item.Id, storage.DecayExpired, "keep-tok", "rel-tok")
+	h.seedDecayReservation(*item.Id, storage.StateExpired, "keep-tok", "rel-tok")
 
 	resp, _ := h.req(http.MethodPost, "/public/decay-release", h.ownerHost(), "", map[string]any{"token": "rel-tok"})
 	assert.Equal(t, http.StatusGone, resp.StatusCode)

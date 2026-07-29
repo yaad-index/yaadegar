@@ -49,17 +49,39 @@ func fromGenVisibility(v *gen.ListVisibility) storage.Visibility {
 }
 
 func toGenList(l storage.List) gen.List {
-	return gen.List{
-		Id:         ptr(l.ID),
-		Title:      ptr(l.Title),
-		Visibility: ptr(gen.ListVisibility(l.Visibility)),
-		ShareSlug:  ptr(l.ShareSlug),
-		EventDate:  toGenDate(l.EventDate),
-		DecayDays:  l.DecayDays, // *int: nil = inheriting the instance default
-		Active:     ptr(l.Active),
-		ItemCount:  ptr(l.ItemCount),
-		CreatedAt:  ptr(l.CreatedAt),
+	var tier *string
+	if l.ReserverTier != nil {
+		t := string(*l.ReserverTier)
+		tier = &t
 	}
+	return gen.List{
+		Id:           ptr(l.ID),
+		Title:        ptr(l.Title),
+		Visibility:   ptr(gen.ListVisibility(l.Visibility)),
+		ShareSlug:    ptr(l.ShareSlug),
+		EventDate:    toGenDate(l.EventDate),
+		DecayDays:    l.DecayDays, // *int: nil = inheriting the instance default
+		ReserverTier: tier,        // nil = inheriting the instance default
+		Active:       ptr(l.Active),
+		ItemCount:    ptr(l.ItemCount),
+		CreatedAt:    ptr(l.CreatedAt),
+	}
+}
+
+// parseReserverTier validates and maps the request's reserver_tier override. nil
+// (absent/null) inherits the instance default; a present value must be a known
+// tier or it is a 400. registered is accepted (it is a valid tier) but its
+// enforcement is deferred until a giver-account system exists (ADR-0007 §6).
+func parseReserverTier(s *string) (*storage.ReserverTier, bool) {
+	if s == nil {
+		return nil, true
+	}
+	switch storage.ReserverTier(*s) {
+	case storage.TierFullGuest, storage.TierEmailConfirmed, storage.TierRegistered:
+		t := storage.ReserverTier(*s)
+		return &t, true
+	}
+	return nil, false
 }
 
 // toGenItem maps a stored item plus its derived availability and reserved count

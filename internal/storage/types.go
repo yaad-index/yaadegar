@@ -115,12 +115,27 @@ type List struct {
 	// instance default, 0 means off, N means N days. The nil/-1 encoding is
 	// handled entirely in the storage scan/insert path.
 	DecayDays *int
-	Active    bool
-	CreatedAt time.Time
+	// ReserverTier is the per-list reserver-identity tier override (ADR-0007): nil
+	// inherits the instance default. Stored as a nullable column (NULL = inherit).
+	ReserverTier *ReserverTier
+	Active       bool
+	CreatedAt    time.Time
 	// ItemCount is a derived read field: the number of items on the list. It is
 	// populated by reads (Get/GetBySlug/List) and left zero by Create.
 	ItemCount int
 }
+
+// ReserverTier is the identity level a giver must meet to reserve on a list
+// (ADR-0007). full_guest is the lowest-friction default; email_confirmed requires a
+// verified email before the reservation activates; registered (deferred) requires a
+// giver account.
+type ReserverTier string
+
+const (
+	TierFullGuest      ReserverTier = "full_guest"
+	TierEmailConfirmed ReserverTier = "email_confirmed"
+	TierRegistered     ReserverTier = "registered"
+)
 
 // Item is one entry on a list. Nil pointers are absent optional fields.
 type Item struct {
@@ -137,15 +152,22 @@ type Item struct {
 	CreatedAt      time.Time
 }
 
-// ReservationDecayState tracks a reservation through the stale-reservation decay
-// flow: active → reserver_notified → expired, with a "keep" click returning it to
-// active. Only `active` is set at creation.
-type ReservationDecayState string
+// ReservationState tracks a reservation through its lifecycle. The email_confirmed
+// tier adds an initial pending_confirmation gate; then the stale-reservation decay
+// flow runs: (pending_confirmation →) active → reserver_notified → expired, with a
+// "keep" click returning it to active. full_guest reservations are created active
+// and skip pending_confirmation (ADR-0007 §5).
+type ReservationState string
 
 const (
-	DecayActive           ReservationDecayState = "active"
-	DecayReserverNotified ReservationDecayState = "reserver_notified"
-	DecayExpired          ReservationDecayState = "expired"
+	// StatePendingConfirmation is an email_confirmed reservation awaiting the giver's
+	// email confirmation; it holds the item provisionally and either advances to
+	// active (on confirm) or expires (confirm-window elapses). Never reached by
+	// full_guest reservations.
+	StatePendingConfirmation ReservationState = "pending_confirmation"
+	StateActive              ReservationState = "active"
+	StateReserverNotified    ReservationState = "reserver_notified"
+	StateExpired             ReservationState = "expired"
 )
 
 // Reservation is an anonymous giver's claim on an item. GiverName/GiverEmail are
@@ -165,11 +187,21 @@ type Reservation struct {
 	LastActivityAt time.Time
 	// IsGroup marks a reservation opened as part of group co-buying (#7).
 	IsGroup bool
-	// DecayState is the stale-reservation lifecycle state; `active` at creation.
-	DecayState ReservationDecayState
-	// DecayStateAt stamps when DecayState was last set; it drives the grace and
+	// State is the reservation lifecycle state; `active` (full_guest) or
+	// `pending_confirmation` (email_confirmed) at creation.
+	State ReservationState
+	// StateAt stamps when State was last set; it drives the confirm, grace, and
 	// expire windows. Defaults to CreatedAt.
-	DecayStateAt time.Time
+	StateAt time.Time
+	// ConfirmTokenHash is the hash of the one-time email-confirmation token for an
+	// email_confirmed reservation (empty for full_guest). The raw token is emailed
+	// once and never stored (like the capability token).
+	ConfirmTokenHash string
+	// EmailConfirmedAt is set when a pending_confirmation reservation is confirmed —
+	// the un-backfillable "this email is verified" signal (system-only; drives
+	// deliverable decay reminders and a future cross-list view keyed on verified
+	// emails, #20). nil = never confirmed (full_guest, or still pending).
+	EmailConfirmedAt *time.Time
 	// DecayReleaseTokenHash / DecayKeepTokenHash are the hashes of the one-click
 	// release and keep tokens minted at reserver_notified (empty = none). The raw
 	// tokens are emailed once and never stored (like the capability token).
@@ -186,9 +218,9 @@ type DecayCandidate struct {
 	ItemID         string
 	ItemName       string
 	GiverEmail     *string // reserver's email (optional)
-	DecayState     ReservationDecayState
+	State          ReservationState
 	LastActivityAt time.Time
-	DecayStateAt   time.Time
+	StateAt        time.Time
 	// DecayDays is the list's period override (nil = inherit the instance
 	// default). The sweeper resolves the effective period; it never compares this
 	// raw value.
