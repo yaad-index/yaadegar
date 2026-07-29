@@ -1,12 +1,29 @@
 <script lang="ts">
 	import { superForm } from 'sveltekit-superforms';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 	// superForm captures the initial form once and owns its reactivity thereafter.
 	// svelte-ignore state_referenced_locally
 	const { form, errors, message, enhance, submitting } = superForm(data.addForm);
+
+	// The public giver link is this list's share slug on the current (tenant) origin.
+	// share_slug already rides in the load data — the owner just needs it surfaced to
+	// send to givers (the giver flow lives at /l/<slug>).
+	const shareUrl = $derived(`${page.url.origin}/l/${data.list.share_slug ?? ''}`);
+	let copied = $state<'idle' | 'ok' | 'fail'>('idle');
+	async function copyShare() {
+		try {
+			// clipboard.writeText needs a secure context (https or localhost); it throws
+			// otherwise, so fall back to the always-selectable input below.
+			await navigator.clipboard.writeText(shareUrl);
+			copied = 'ok';
+		} catch {
+			copied = 'fail';
+		}
+	}
 
 	// Availability is derived by the backend; it never carries reserver identity
 	// (ADR-0002 §5). We show only the state and the reserved count.
@@ -22,6 +39,35 @@
 
 <a href={resolve('/')} class="text-sm text-gray-500 hover:underline">← Your lists</a>
 <h1 class="mt-1 text-2xl font-bold">{data.list.title}</h1>
+
+<!-- Share link. The selectable input is always the fallback (works with no JS and in
+     non-secure contexts); the copy button is a progressive enhancement on top. -->
+<section class="mt-3 rounded border bg-gray-50 p-3">
+	<p class="text-sm font-medium">Share this list</p>
+	<p class="mt-0.5 text-xs text-gray-600">
+		Send this link to givers — they can reserve without an account, and you never see who reserved
+		what.
+	</p>
+	<div class="mt-2 flex gap-2">
+		<input
+			class="flex-1 rounded border p-2 text-sm"
+			readonly
+			value={shareUrl}
+			aria-label="Public share link"
+			onclick={(e) => e.currentTarget.select()}
+		/>
+		<button type="button" class="rounded bg-black px-3 py-2 text-sm text-white" onclick={copyShare}>
+			Copy
+		</button>
+	</div>
+	{#if copied === 'ok'}
+		<p class="mt-1 text-xs text-green-700" role="status">Link copied.</p>
+	{:else if copied === 'fail'}
+		<p class="mt-1 text-xs text-gray-600" role="status">
+			Couldn't copy automatically — select the link above and copy it.
+		</p>
+	{/if}
+</section>
 
 <!-- Add item -->
 <form method="post" action="?/add" use:enhance class="mt-4 space-y-2 rounded border p-3">
