@@ -47,6 +47,31 @@ func TestReserverTierRoundTrip(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
+// TestReserverConfirmWindowRoundTrip: the per-list confirm-window override is
+// absent by default (null = inherit), created, and updated through the API.
+func TestReserverConfirmWindowRoundTrip(t *testing.T) {
+	h := newHarness(t)
+
+	// Absent on create → inherits the instance default → null in the response.
+	_, body := h.req(http.MethodPost, "/api/v1/lists", h.ownerHost(), h.ownerToken(),
+		gen.ListCreate{Title: "Default"})
+	assert.Nil(t, decode[gen.List](t, body).ReserverConfirmWindow)
+
+	// Create with an override (minutes).
+	resp, body := h.req(http.MethodPost, "/api/v1/lists", h.ownerHost(), h.ownerToken(),
+		gen.ListCreate{Title: "Fast", ReserverConfirmWindow: ptr(15)})
+	require.Equal(t, http.StatusCreated, resp.StatusCode, "body: %s", body)
+	created := decode[gen.List](t, body)
+	require.NotNil(t, created.ReserverConfirmWindow)
+	assert.Equal(t, 15, *created.ReserverConfirmWindow)
+
+	// Update the override.
+	_, body = h.req(http.MethodPatch, "/api/v1/lists/"+*created.Id, h.ownerHost(), h.ownerToken(),
+		gen.ListUpdate{ReserverConfirmWindow: ptr(120)})
+	require.NotNil(t, decode[gen.List](t, body).ReserverConfirmWindow)
+	assert.Equal(t, 120, *decode[gen.List](t, body).ReserverConfirmWindow)
+}
+
 // seedPendingReservation inserts a pending_confirmation reservation (as the
 // email_confirmed reserve will in Cut 2), with a giver email that must never leak.
 func (h *harness) seedPendingReservation(itemID, giverEmail string) {

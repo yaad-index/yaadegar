@@ -572,6 +572,8 @@ export interface components {
             decay_days?: number | null;
             /** @description Reserver-identity tier override (ADR-0007): full_guest | email_confirmed | registered. Omit (or null) to inherit the instance default. full_guest reserves with a one-time capability token; email_confirmed requires the giver to confirm an email before the reservation activates; registered (deferred) requires a giver account. */
             reserver_tier?: string | null;
+            /** @description email_confirmed confirm-window override in minutes (ADR-0007). Omit (or null) to inherit the instance default; 0 means an unconfirmed hold never auto-expires; N means it expires N minutes after reserve if unconfirmed. */
+            reserver_confirm_window?: number | null;
         };
         ListUpdate: {
             title?: string;
@@ -581,6 +583,7 @@ export interface components {
             decay_days?: number | null;
             active?: boolean;
             reserver_tier?: string | null;
+            reserver_confirm_window?: number | null;
         };
         List: {
             id?: string;
@@ -593,6 +596,8 @@ export interface components {
             decay_days?: number | null;
             /** @description The reserver-identity tier override; null inherits the instance default. */
             reserver_tier?: string | null;
+            /** @description The confirm-window override in minutes; null inherits the instance default. */
+            reserver_confirm_window?: number | null;
             active?: boolean;
             item_count?: number;
             /** Format: date-time */

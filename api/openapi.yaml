@@ -931,6 +931,13 @@ components:
             reserves with a one-time capability token; email_confirmed requires the
             giver to confirm an email before the reservation activates; registered
             (deferred) requires a giver account.
+        reserver_confirm_window:
+          type: [integer, "null"]
+          minimum: 0
+          description: >
+            email_confirmed confirm-window override in minutes (ADR-0007). Omit (or
+            null) to inherit the instance default; 0 means an unconfirmed hold never
+            auto-expires; N means it expires N minutes after reserve if unconfirmed.
 
     ListUpdate:
       type: object
@@ -941,6 +948,7 @@ components:
         decay_days: { type: [integer, "null"], minimum: 0 }
         active: { type: boolean }
         reserver_tier: { type: [string, "null"] }
+        reserver_confirm_window: { type: [integer, "null"], minimum: 0 }
 
     List:
       type: object
@@ -956,6 +964,9 @@ components:
         reserver_tier:
           type: [string, "null"]
           description: The reserver-identity tier override; null inherits the instance default.
+        reserver_confirm_window:
+          type: [integer, "null"]
+          description: The confirm-window override in minutes; null inherits the instance default.
         active: { type: boolean }
         item_count: { type: integer }
         created_at: { type: string, format: date-time }

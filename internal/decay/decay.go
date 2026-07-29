@@ -93,7 +93,17 @@ func (s *Sweeper) step(ctx context.Context, now time.Time, c storage.DecayCandid
 		// giver never confirmed. A pending reservation is eligible ONLY for this
 		// confirm-window expiry: it never enters the active-decay path until it is
 		// confirmed and becomes active (ADR-0007 §3).
-		if s.cfg.ConfirmWindow <= 0 || now.Sub(c.StateAt) < s.cfg.ConfirmWindow {
+		//
+		// Effective window: the per-list override if set, else the instance default
+		// (mirrors the decay-period resolution). The override is minutes; resolve
+		// through settings.Resolve and never compare the raw value. 0 disables.
+		var confirmOverride *time.Duration
+		if c.ReserverConfirmWindowMinutes != nil {
+			d := time.Duration(*c.ReserverConfirmWindowMinutes) * time.Minute
+			confirmOverride = &d
+		}
+		confirmWindow := settings.Resolve(confirmOverride, s.cfg.ConfirmWindow)
+		if confirmWindow <= 0 || now.Sub(c.StateAt) < confirmWindow {
 			return nil
 		}
 		if _, err := res.ExpirePending(ctx, c.ReservationID, now); err != nil {
