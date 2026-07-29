@@ -216,3 +216,81 @@ func TestPostgres_DomainReclaimConcurrentSingleWinner(t *testing.T) {
 
 	assert.Equal(t, 1, wins, "exactly one tenant reclaims the expired hostname under real FOR UPDATE concurrency")
 }
+
+// TestPostgres_ConfirmVsExpireSingleWinner is the ADR-0007 confirm-race guard on
+// real Postgres: a pending_confirmation reservation is raced by a giver confirm
+// (→ active) and the confirm-window sweep (→ expired). The row-locked from-state
+// transitions must let exactly one win, leaving the other a no-op — never both.
+func TestPostgres_ConfirmVsExpireSingleWinner(t *testing.T) {
+	ctx := context.Background()
+	st := newPostgresStore(t)
+	suffix := t.Name()
+
+	ten, err := st.CreateTenant(ctx, storage.Tenant{Subdomain: "ce-" + suffix})
+	require.NoError(t, err)
+	s := st.ForTenant(ten)
+	owner, err := s.Users().Create(ctx, storage.User{Name: "Owner"})
+	require.NoError(t, err)
+	list, err := s.Lists().Create(ctx, storage.List{Title: "Confirm"}, owner.ID)
+	require.NoError(t, err)
+	item, err := s.Items().Create(ctx, storage.Item{ListID: list.ID, Name: "Toaster", QuantityWanted: 1})
+	require.NoError(t, err)
+
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	for round := 0; round < 40; round++ {
+		id := fmt.Sprintf("res-%s-%d", suffix, round)
+		_, err := s.Reservations().CreateWithinCapacity(ctx, storage.Reservation{
+			ID: id, ItemID: item.ID, Quantity: 1,
+			TokenHash:        "pending:" + id,
+			ConfirmTokenHash: fmt.Sprintf("confirm-%d", round),
+			State:            storage.StatePendingConfirmation,
+		}, item.QuantityWanted)
+		require.NoError(t, err)
+
+		var (
+			wg              sync.WaitGroup
+			mu              sync.Mutex
+			confirmed, gone bool
+			start           = make(chan struct{})
+		)
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			ok, err := s.Reservations().ConfirmReservation(ctx, id, fmt.Sprintf("cap-%d", round), now)
+			assert.NoError(t, err)
+			if ok {
+				mu.Lock()
+				confirmed = true
+				mu.Unlock()
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			ok, err := s.Reservations().ExpirePending(ctx, id, now)
+			assert.NoError(t, err)
+			if ok {
+				mu.Lock()
+				gone = true
+				mu.Unlock()
+			}
+		}()
+		close(start)
+		wg.Wait()
+
+		// Exactly one transition wins; the other is a no-op.
+		assert.Truef(t, confirmed != gone, "exactly one of confirm/expire wins (round %d: confirmed=%v gone=%v)", round, confirmed, gone)
+		final, err := s.Reservations().Get(ctx, id)
+		require.NoError(t, err)
+		if confirmed {
+			assert.Equal(t, storage.StateActive, final.State, "confirm won (round %d)", round)
+			require.NotNil(t, final.EmailConfirmedAt)
+		} else {
+			assert.Equal(t, storage.StateExpired, final.State, "expire won (round %d)", round)
+		}
+
+		// Reset the item for the next round so capacity is free again.
+		require.NoError(t, s.Reservations().Delete(ctx, id))
+	}
+}

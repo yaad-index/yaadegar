@@ -103,7 +103,7 @@ func TestReserverIdentityIsHidden(t *testing.T) {
 	require.Equal(t, http.StatusCreated, resp.StatusCode, "body: %s", body)
 	created := decode[gen.ReservationCreated](t, body)
 	require.NotEmpty(t, *created.CapabilityToken)
-	require.NotEmpty(t, *created.ReservationId)
+	require.NotEmpty(t, created.ReservationId)
 
 	// Owner item view: reserved, reserved_quantity 1, identity absent.
 	resp, body = h.req(http.MethodGet, "/api/v1/lists/"+*list.Id+"/items", h.ownerHost(), h.ownerToken(), nil)

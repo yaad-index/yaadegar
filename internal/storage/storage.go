@@ -188,6 +188,10 @@ type ReservationRepo interface {
 	// hash of its one-click release / keep token.
 	ByDecayReleaseTokenHash(ctx context.Context, tokenHash string) (Reservation, error)
 	ByDecayKeepTokenHash(ctx context.Context, tokenHash string) (Reservation, error)
+	// ByConfirmTokenHash looks up an email_confirmed reservation by the hash of the
+	// one-time confirmation token emailed to the giver at reserve. Empty hashes
+	// never match (ADR-0007 §3).
+	ByConfirmTokenHash(ctx context.Context, tokenHash string) (Reservation, error)
 	ListByItem(ctx context.Context, itemID string) ([]Reservation, error)
 	Delete(ctx context.Context, id string) error
 
@@ -206,6 +210,13 @@ type ReservationRepo interface {
 	// reservation's confirm-window elapses unconfirmed (ADR-0007 §3). Row-locked
 	// single-winner; a no-op if it was already confirmed (active) or expired.
 	ExpirePending(ctx context.Context, reservationID string, at time.Time) (bool, error)
+	// ConfirmReservation moves pending_confirmation → active when the giver confirms
+	// via the emailed token: it stamps email_confirmed_at and installs the freshly
+	// minted capability-token hash (replacing the pending sentinel). Row-locked
+	// single-winner; returns false (no error) if the reservation already moved off
+	// pending_confirmation — so a double-confirm or a confirm racing the
+	// confirm-window expiry is a safe no-op, and only the winner returns a token.
+	ConfirmReservation(ctx context.Context, reservationID, capabilityTokenHash string, at time.Time) (bool, error)
 	// Renew moves reserver_notified → active on a "keep" click: it resets the decay
 	// clock (last_activity_at, state_at) and clears both one-click tokens.
 	Renew(ctx context.Context, reservationID string, at time.Time) (bool, error)

@@ -66,9 +66,15 @@ type ServeCmd struct {
 	DecaySweepInterval  time.Duration `name:"decay-sweep-interval" default:"15m" env:"YAADEGAR_DECAY_SWEEP_INTERVAL" help:"How often the reservation-decay sweeper runs (0 disables it)."`
 	DecayDefaultDays    int           `name:"decay-default-days" default:"0" env:"YAADEGAR_DECAY_DEFAULT_DAYS" help:"Instance-default decay period in days (0 = off) for lists that do not override it."`
 	DecayResponseWindow time.Duration `name:"decay-response-window" default:"48h" env:"YAADEGAR_DECAY_RESPONSE_WINDOW" help:"How long the reserver has to keep/release a stale reservation before it auto-expires."`
-	DecayLinkBase       string        `name:"decay-link-base" env:"YAADEGAR_DECAY_LINK_BASE" help:"Base URL for the one-click keep/release links in reserver decay emails."`
+	DecayLinkBase       string        `name:"decay-link-base" env:"YAADEGAR_DECAY_LINK_BASE" help:"DEPRECATED alias for --public-link-base (still honoured for the keep/release links when --public-link-base is unset)."`
+
+	// PublicLinkBase is the giver-facing site base for every emailed link (confirm
+	// + decay keep/release). It supersedes DecayLinkBase, which stays as a
+	// back-compat alias so existing self-hosts keep working.
+	PublicLinkBase string `name:"public-link-base" env:"YAADEGAR_PUBLIC_LINK_BASE" help:"Base URL of the giver-facing site for links in emails (reservation confirm, decay keep/release). Supersedes --decay-link-base."`
 
 	ReserverConfirmWindow time.Duration `name:"reserver-confirm-window" default:"30m" env:"YAADEGAR_RESERVER_CONFIRM_WINDOW" help:"How long an email_confirmed reservation may sit unconfirmed before it auto-expires and frees the item (ADR-0007). 0 disables the confirm-window sweep."`
+	ReserverDefaultTier   string        `name:"reserver-default-tier" default:"full_guest" env:"YAADEGAR_RESERVER_DEFAULT_TIER" help:"Instance-default reserver tier for lists that set no override (ADR-0007): full_guest | email_confirmed | registered."`
 
 	DomainCNAMETarget string `name:"domain-cname-target" env:"YAADEGAR_DOMAIN_CNAME_TARGET" help:"Hostname that owners point a custom domain's CNAME at (returned by add-domain)."`
 
@@ -152,16 +158,33 @@ func (c *ServeCmd) Run(cli *CLI) error {
 		return err
 	}
 
+	// The public link base (giver-facing site) feeds every emailed link; the old
+	// --decay-link-base is honoured as a back-compat alias when it is unset.
+	linkBase := c.PublicLinkBase
+	if linkBase == "" {
+		linkBase = c.DecayLinkBase
+	}
+	// Fail closed on a bogus instance-default tier rather than silently reserving
+	// as full_guest (ADR-0007).
+	defaultTier := storage.ReserverTier(c.ReserverDefaultTier)
+	switch defaultTier {
+	case storage.TierFullGuest, storage.TierEmailConfirmed, storage.TierRegistered:
+	default:
+		return fmt.Errorf("invalid --reserver-default-tier %q (want full_guest, email_confirmed, or registered)", c.ReserverDefaultTier)
+	}
+
 	handler := api.NewHandler(store, api.Options{
-		BaseDomain:         c.BaseDomain,
-		Logger:             logger,
-		Email:              sender,
-		Auth:               authService,
-		AdminEnabled:       adminEnabled,
-		TrustForwardedHost: c.TrustForwardedHost,
-		LoginLimiter:       auth.NewInMemoryLimiter(c.LoginRateMaxFailures, c.LoginRateWindow, clock.Real{}),
-		DomainCNAMETarget:  c.DomainCNAMETarget,
-		DomainClaimTTL:     c.DomainClaimTTL,
+		BaseDomain:          c.BaseDomain,
+		Logger:              logger,
+		Email:               sender,
+		Auth:                authService,
+		AdminEnabled:        adminEnabled,
+		TrustForwardedHost:  c.TrustForwardedHost,
+		LoginLimiter:        auth.NewInMemoryLimiter(c.LoginRateMaxFailures, c.LoginRateWindow, clock.Real{}),
+		DomainCNAMETarget:   c.DomainCNAMETarget,
+		DomainClaimTTL:      c.DomainClaimTTL,
+		DefaultReserverTier: defaultTier,
+		PublicLinkBase:      linkBase,
 	})
 
 	// Run the reservation-decay sweeper on a ticker alongside the server.
@@ -169,7 +192,7 @@ func (c *ServeCmd) Run(cli *CLI) error {
 		DefaultDecayDays: c.DecayDefaultDays,
 		ResponseWindow:   c.DecayResponseWindow,
 		ConfirmWindow:    c.ReserverConfirmWindow,
-		LinkBase:         c.DecayLinkBase,
+		LinkBase:         linkBase,
 	}, logger)
 	go runSweeper(ctx, sweeper, c.DecaySweepInterval, logger)
 

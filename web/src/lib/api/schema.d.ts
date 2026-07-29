@@ -328,7 +328,8 @@ export interface paths {
         put?: never;
         /**
          * Reserve an item (anonymous giver)
-         * @description Claims an item so nobody duplicates the gift. Optional name/email are used only server-side (e.g. decay reminders) and are never shown to others. Returns a one-time capability token to later release the reservation.
+         * @description Claims an item so nobody duplicates the gift. Optional name/email are used only server-side (e.g. decay reminders) and are never shown to others.
+         *     On a full_guest list the reservation is active immediately and a one-time capability token is returned (201). On an email_confirmed list the reservation is held provisionally as pending_confirmation and a confirmation link is emailed; the response is 202 with status pending_confirmation and no token — the giver must confirm (see /public/reservations/confirm) before the reservation activates and the token is issued. An email_confirmed reserve requires giver_email.
          */
         post: operations["createReservation"];
         delete?: never;
@@ -354,6 +355,26 @@ export interface paths {
          * @description Requires the capability token returned at creation.
          */
         delete: operations["releaseReservation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/reservations/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm an email_confirmed reservation via its emailed token (anonymous)
+         * @description Activates the pending_confirmation reservation identified by the one-time token emailed to the giver at reserve time, and returns the capability token to release it later. Idempotent: re-confirming an already-active reservation returns 200 with status active and no new capability token (it cannot be re-issued). The token stops working once the confirm window elapses and the reservation auto-expires.
+         */
+        post: operations["confirmReservation"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -670,8 +691,23 @@ export interface components {
             quantity: number;
         };
         ReservationCreated: {
-            reservation_id?: string;
-            /** @description Returned once. Store it to release the reservation later. */
+            reservation_id: string;
+            /**
+             * @description active — the reservation holds the item now (full_guest tier). pending_confirmation — an email_confirmed reservation holding the item provisionally until the giver confirms via the emailed link; no capability token is issued until then.
+             * @enum {string}
+             */
+            status: "active" | "pending_confirmation";
+            /** @description The release handle, returned once. Present only for an active reservation; absent while pending_confirmation (issued at confirm). */
+            capability_token?: string;
+        };
+        ReservationConfirmed: {
+            reservation_id: string;
+            /**
+             * @description Always active on a 200 — the reservation now holds the item, whether this request activated it or it was already confirmed.
+             * @enum {string}
+             */
+            status: "active";
+            /** @description Returned once, on the confirming request that activates the reservation. Absent on an idempotent re-confirm of an already-active reservation (it cannot be re-issued). */
             capability_token?: string;
         };
         /** @enum {string} */
@@ -1419,7 +1455,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Reservation created; token returned once. */
+            /** @description Reservation active; capability token returned once (full_guest). */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -1428,6 +1464,16 @@ export interface operations {
                     "application/json": components["schemas"]["ReservationCreated"];
                 };
             };
+            /** @description Reservation held pending email confirmation (email_confirmed); a confirmation link was emailed. No token until confirmed. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReservationCreated"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
             /** @description The item is already fully reserved. */
             409: {
@@ -1469,6 +1515,42 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    confirmReservation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    token: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Reservation active. Capability token present on first confirm. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReservationConfirmed"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description The confirm window elapsed; the reservation expired and the link is spent. */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     releaseByDecayToken: {
