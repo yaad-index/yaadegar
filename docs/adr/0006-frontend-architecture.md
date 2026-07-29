@@ -56,6 +56,16 @@ principles; the phased feature scope is delivered in cuts on top of this.
 5. **Deployment.** SvelteKit's **node adapter**, containerized and run alongside the
    backend (the existing compose/Dockerfile story extends to a `web` service). The
    frontend forwards the request Host so tenant routing continues to work end to end.
+   - **Behind a TLS-terminating reverse proxy**, configure the node server to trust the
+     forwarding headers: `PROTOCOL_HEADER=x-forwarded-proto`, `HOST_HEADER=x-forwarded-host`,
+     and set `ORIGIN` to the public origin. The httpOnly cookies — the owner session
+     (F2) and the giver capability map (F3) — derive their `Secure` flag from
+     `url.protocol`. Without `PROTOCOL_HEADER` the node server sees plain `http`, so
+     `url.protocol` is `http:`, the `Secure` flag is **not** set, and cross-origin form
+     POSTs can be rejected; setting it is the switch that makes the cookies `Secure` in
+     production. This pairs with the backend's `trust_forwarded_host`
+     ([ADR-0004](0004-multi-tenant-routing-and-domains.md) §7): the frontend forwards
+     `X-Forwarded-Host` and the backend honors it only when that trust is enabled.
 
 6. **Location.** The app lives under **`web/`** at the repo root, a self-contained
    Node project with its own `package.json`, lint/typecheck/build, and its generated
