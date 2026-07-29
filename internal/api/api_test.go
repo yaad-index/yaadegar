@@ -56,6 +56,15 @@ func newHarnessOpt(t *testing.T, adminEnabled bool) *harness {
 
 // newHarnessLimited additionally injects a login rate limiter (nil → no limiting).
 func newHarnessLimited(t *testing.T, adminEnabled bool, limiter auth.Limiter) *harness {
+	return newHarnessBuild(t, adminEnabled, limiter, false)
+}
+
+// newHarnessTrusted builds a harness with X-Forwarded-Host trust enabled.
+func newHarnessTrusted(t *testing.T) *harness {
+	return newHarnessBuild(t, false, nil, true)
+}
+
+func newHarnessBuild(t *testing.T, adminEnabled bool, limiter auth.Limiter, trustForwardedHost bool) *harness {
 	t.Helper()
 	ctx := context.Background()
 	dsn := "file:" + filepath.Join(t.TempDir(), "api.db")
@@ -76,16 +85,17 @@ func newHarnessLimited(t *testing.T, adminEnabled bool, limiter auth.Limiter) *h
 	authSvc, err := auth.NewService(auth.Config{JWTSecret: testJWTSecret, PasswordEnabled: true}, clk)
 	require.NoError(t, err)
 	h := api.NewHandler(store, api.Options{
-		BaseDomain:        baseDomain,
-		Logger:            slog.New(slog.DiscardHandler),
-		Email:             fake,
-		Clock:             clk,
-		Previewer:         preview.New(pf),
-		Resolver:          fr,
-		Auth:              authSvc,
-		AdminEnabled:      adminEnabled,
-		LoginLimiter:      limiter,
-		DomainCNAMETarget: "cname.yaadegar.test",
+		BaseDomain:         baseDomain,
+		Logger:             slog.New(slog.DiscardHandler),
+		Email:              fake,
+		Clock:              clk,
+		Previewer:          preview.New(pf),
+		Resolver:           fr,
+		Auth:               authSvc,
+		AdminEnabled:       adminEnabled,
+		TrustForwardedHost: trustForwardedHost,
+		LoginLimiter:       limiter,
+		DomainCNAMETarget:  "cname.yaadegar.test",
 	})
 	return &harness{t: t, h: h, store: store, tenant: tenant, owner: owner, email: fake, clk: clk, preview: pf, resolver: fr, authSvc: authSvc}
 }

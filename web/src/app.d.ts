@@ -1,9 +1,13 @@
 // See https://svelte.dev/docs/kit/types#app.d.ts
-// for information about these interfaces
 declare global {
 	namespace App {
 		// interface Error {}
-		// interface Locals {}
+		interface Locals {
+			/** Tenant host for backend Host-based routing. */
+			host: string;
+			/** Owner session JWT from the httpOnly cookie, if present. */
+			token?: string;
+		}
 		// interface PageData {}
 		// interface PageState {}
 		// interface Platform {}

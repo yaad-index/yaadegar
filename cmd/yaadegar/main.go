@@ -55,6 +55,12 @@ type ServeCmd struct {
 	StorageDSN    string `name:"storage-dsn" default:"file:yaadegar.db" env:"YAADEGAR_STORAGE_DSN" help:"Storage DSN: a SQLite file path/URI or a Postgres connection URL."`
 	BaseDomain    string `name:"base-domain" env:"YAADEGAR_BASE_DOMAIN" help:"Host suffix under which tenant subdomains live (e.g. example.wish.list). Hosts outside it are treated as custom domains."`
 
+	// TrustForwardedHost is off by default (untrusted-safe). Enable it ONLY when the
+	// backend port is not externally reachable and requests arrive through the
+	// trusted frontend proxy; on a directly-exposed backend it is a tenant-spoofing
+	// hole (ADR-0004 §7).
+	TrustForwardedHost bool `name:"trust-forwarded-host" env:"YAADEGAR_TRUST_FORWARDED_HOST" help:"Resolve the tenant from X-Forwarded-Host (proxy deployments). Enable ONLY when the backend is reachable exclusively behind the trusted frontend; a directly-exposed backend must leave this off."`
+
 	DecaySweepInterval  time.Duration `name:"decay-sweep-interval" default:"15m" env:"YAADEGAR_DECAY_SWEEP_INTERVAL" help:"How often the reservation-decay sweeper runs (0 disables it)."`
 	DecayDefaultDays    int           `name:"decay-default-days" default:"0" env:"YAADEGAR_DECAY_DEFAULT_DAYS" help:"Instance-default decay period in days (0 = off) for lists that do not override it."`
 	DecayResponseWindow time.Duration `name:"decay-response-window" default:"48h" env:"YAADEGAR_DECAY_RESPONSE_WINDOW" help:"How long the reserver has to keep/release a stale reservation before it auto-expires."`
@@ -141,13 +147,14 @@ func (c *ServeCmd) Run(cli *CLI) error {
 	}
 
 	handler := api.NewHandler(store, api.Options{
-		BaseDomain:        c.BaseDomain,
-		Logger:            logger,
-		Email:             sender,
-		Auth:              authService,
-		AdminEnabled:      adminEnabled,
-		LoginLimiter:      auth.NewInMemoryLimiter(c.LoginRateMaxFailures, c.LoginRateWindow, clock.Real{}),
-		DomainCNAMETarget: c.DomainCNAMETarget,
+		BaseDomain:         c.BaseDomain,
+		Logger:             logger,
+		Email:              sender,
+		Auth:               authService,
+		AdminEnabled:       adminEnabled,
+		TrustForwardedHost: c.TrustForwardedHost,
+		LoginLimiter:       auth.NewInMemoryLimiter(c.LoginRateMaxFailures, c.LoginRateWindow, clock.Real{}),
+		DomainCNAMETarget:  c.DomainCNAMETarget,
 	})
 
 	// Run the reservation-decay sweeper on a ticker alongside the server.
