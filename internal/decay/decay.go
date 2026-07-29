@@ -31,6 +31,10 @@ type Config struct {
 	// ResponseWindow is how long the reserver has to click keep/release before the
 	// reservation auto-expires.
 	ResponseWindow time.Duration
+	// ConfirmWindow is how long an email_confirmed reservation may sit in
+	// pending_confirmation before it auto-expires unconfirmed (ADR-0007 §3, default
+	// ~30m). 0 disables the confirm-window expiry sweep.
+	ConfirmWindow time.Duration
 	// LinkBase prefixes the keep/release one-click links in the reserver email
 	// (…/decay-keep?token=RAW, …/decay-release?token=RAW).
 	LinkBase string
@@ -82,8 +86,21 @@ func daysDuration(days int) time.Duration { return time.Duration(days) * 24 * ti
 func (s *Sweeper) step(ctx context.Context, now time.Time, c storage.DecayCandidate) error {
 	res := s.store.ForTenant(storage.Tenant{ID: c.TenantID}).Reservations()
 
-	switch c.DecayState {
-	case storage.DecayActive:
+	switch c.State {
+	case storage.StatePendingConfirmation:
+		// An email_confirmed reservation awaiting the giver's confirmation. Expire it
+		// (frees the item) if the confirm window elapsed unconfirmed — no email, the
+		// giver never confirmed. A pending reservation is eligible ONLY for this
+		// confirm-window expiry: it never enters the active-decay path until it is
+		// confirmed and becomes active (ADR-0007 §3).
+		if s.cfg.ConfirmWindow <= 0 || now.Sub(c.StateAt) < s.cfg.ConfirmWindow {
+			return nil
+		}
+		if _, err := res.ExpirePending(ctx, c.ReservationID, now); err != nil {
+			return err
+		}
+
+	case storage.StateActive:
 		// Effective period: list override if set, else the instance default. Decay
 		// is on only when the resolved value is positive (never compare the raw
 		// override).
@@ -116,9 +133,9 @@ func (s *Sweeper) step(ctx context.Context, now time.Time, c storage.DecayCandid
 			return err
 		}
 
-	case storage.DecayReserverNotified:
+	case storage.StateReserverNotified:
 		window := settings.Resolve[time.Duration](nil, s.cfg.ResponseWindow)
-		if now.Sub(c.DecayStateAt) < window {
+		if now.Sub(c.StateAt) < window {
 			return nil
 		}
 		// Auto-release: expire (frees the item). No email — the owner is out of the

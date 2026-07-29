@@ -26,15 +26,15 @@ func (r reservationRepo) ByDecayKeepTokenHash(ctx context.Context, tokenHash str
 }
 
 // transitionState is the shared row-locked, idempotent decay transition: it moves
-// decay_state from `from` to `to` only if the current state is still `from`,
+// state from `from` to `to` only if the current state is still `from`,
 // applying update() inside the same transaction. It returns false (no error) when
 // the state already moved — so concurrent sweeps/keeps/releases are safe no-ops.
-func (r reservationRepo) transitionState(ctx context.Context, id string, from, to storage.ReservationDecayState, update string, args ...any) (bool, error) {
+func (r reservationRepo) transitionState(ctx context.Context, id string, from, to storage.ReservationState, update string, args ...any) (bool, error) {
 	moved := false
 	err := r.withRowLock(ctx, "reservations", id, func(tx *sql.Tx) error {
-		var current storage.ReservationDecayState
+		var current storage.ReservationState
 		if err := tx.QueryRowContext(ctx, r.rb(
-			`SELECT decay_state FROM reservations WHERE tenant_id = ? AND id = ?`),
+			`SELECT state FROM reservations WHERE tenant_id = ? AND id = ?`),
 			r.tenantID, id).Scan(&current); err != nil {
 			return err
 		}
@@ -53,34 +53,45 @@ func (r reservationRepo) transitionState(ctx context.Context, id string, from, t
 	return moved, nil
 }
 
-// MarkReserverNotified moves active → reserver_notified, stamping decay_state_at
+// MarkReserverNotified moves active → reserver_notified, stamping state_at
 // and the freshly-minted keep/release token hashes.
 func (r reservationRepo) MarkReserverNotified(ctx context.Context, id string, at time.Time, keepHash, releaseHash string) (bool, error) {
-	return r.transitionState(ctx, id, storage.DecayActive, storage.DecayReserverNotified,
-		`UPDATE reservations SET decay_state = ?, decay_state_at = ?,
+	return r.transitionState(ctx, id, storage.StateActive, storage.StateReserverNotified,
+		`UPDATE reservations SET state = ?, state_at = ?,
 		        decay_keep_token_hash = ?, decay_release_token_hash = ?
 		  WHERE tenant_id = ? AND id = ?`,
-		storage.DecayReserverNotified, fmtTime(at), keepHash, releaseHash)
+		storage.StateReserverNotified, fmtTime(at), keepHash, releaseHash)
 }
 
 // MarkExpired moves reserver_notified → expired. The token hashes are left in
 // place so a late keep/release click can resolve to a 410 rather than a 404.
 func (r reservationRepo) MarkExpired(ctx context.Context, id string, at time.Time) (bool, error) {
-	return r.transitionState(ctx, id, storage.DecayReserverNotified, storage.DecayExpired,
-		`UPDATE reservations SET decay_state = ?, decay_state_at = ?
+	return r.transitionState(ctx, id, storage.StateReserverNotified, storage.StateExpired,
+		`UPDATE reservations SET state = ?, state_at = ?
 		  WHERE tenant_id = ? AND id = ?`,
-		storage.DecayExpired, fmtTime(at))
+		storage.StateExpired, fmtTime(at))
+}
+
+// ExpirePending expires an email_confirmed reservation whose confirm-window elapsed
+// before the giver confirmed: pending_confirmation → expired (frees the item). The
+// row-locked from-state guard makes it a single-winner, idempotent no-op if the
+// reservation was already confirmed (now active) or expired.
+func (r reservationRepo) ExpirePending(ctx context.Context, id string, at time.Time) (bool, error) {
+	return r.transitionState(ctx, id, storage.StatePendingConfirmation, storage.StateExpired,
+		`UPDATE reservations SET state = ?, state_at = ?
+		  WHERE tenant_id = ? AND id = ?`,
+		storage.StateExpired, fmtTime(at))
 }
 
 // Renew moves reserver_notified → active (the reserver clicked "keep"): it resets
-// the decay clock (last_activity_at and decay_state_at) and invalidates both
+// the decay clock (last_activity_at and state_at) and invalidates both
 // one-click tokens so a fresh pair is minted next cycle.
 func (r reservationRepo) Renew(ctx context.Context, id string, at time.Time) (bool, error) {
-	return r.transitionState(ctx, id, storage.DecayReserverNotified, storage.DecayActive,
-		`UPDATE reservations SET decay_state = ?, decay_state_at = ?, last_activity_at = ?,
+	return r.transitionState(ctx, id, storage.StateReserverNotified, storage.StateActive,
+		`UPDATE reservations SET state = ?, state_at = ?, last_activity_at = ?,
 		        decay_keep_token_hash = '', decay_release_token_hash = ''
 		  WHERE tenant_id = ? AND id = ?`,
-		storage.DecayActive, fmtTime(at), fmtTime(at))
+		storage.StateActive, fmtTime(at), fmtTime(at))
 }
 
 // DecayCandidates returns non-expired reservations on active lists across all
@@ -90,13 +101,13 @@ func (r reservationRepo) Renew(ctx context.Context, id string, at time.Time) (bo
 func (s *sqlStore) DecayCandidates(ctx context.Context) ([]storage.DecayCandidate, error) {
 	rows, err := s.db.QueryContext(ctx, s.d.rebind(
 		`SELECT r.tenant_id, r.id, r.item_id, i.name, r.giver_email,
-		        r.decay_state, r.last_activity_at, r.decay_state_at, l.decay_days
+		        r.state, r.last_activity_at, r.state_at, l.decay_days
 		   FROM reservations r
 		   JOIN items i ON i.tenant_id = r.tenant_id AND i.id = r.item_id
 		   JOIN lists l ON l.tenant_id = r.tenant_id AND l.id = i.list_id
-		  WHERE r.decay_state != ? AND l.active = 1
+		  WHERE r.state != ? AND l.active = 1
 		  ORDER BY r.tenant_id, r.id`),
-		string(storage.DecayExpired))
+		string(storage.StateExpired))
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +123,7 @@ func (s *sqlStore) DecayCandidates(ctx context.Context) ([]storage.DecayCandidat
 			decayDays    int
 		)
 		if err := rows.Scan(&c.TenantID, &c.ReservationID, &c.ItemID, &c.ItemName,
-			&giverEmail, &c.DecayState, &lastActivity, &decayStateAt, &decayDays); err != nil {
+			&giverEmail, &c.State, &lastActivity, &decayStateAt, &decayDays); err != nil {
 			return nil, err
 		}
 		la, err := parseTime(lastActivity)
@@ -125,7 +136,7 @@ func (s *sqlStore) DecayCandidates(ctx context.Context) ([]storage.DecayCandidat
 		}
 		c.GiverEmail = strPtr(giverEmail)
 		c.LastActivityAt = la
-		c.DecayStateAt = dsa
+		c.StateAt = dsa
 		c.DecayDays = decayDaysFromStorage(decayDays)
 		out = append(out, c)
 	}

@@ -69,7 +69,7 @@ func (s *Server) CreateReservation(ctx context.Context, req gen.CreateReservatio
 		GiverEmail: giverEmail,
 		Quantity:   qty,
 		TokenHash:  hash,
-		DecayState: storage.DecayActive,
+		State:      storage.StateActive,
 	}, item.QuantityWanted)
 	if err != nil {
 		if errors.Is(err, storage.ErrCapacityExceeded) {
@@ -154,7 +154,7 @@ func (s *Server) ReleaseByDecayToken(ctx context.Context, req gen.ReleaseByDecay
 		}
 		return nil, err
 	}
-	if res.DecayState == storage.DecayExpired {
+	if res.State == storage.StateExpired {
 		return gen.ReleaseByDecayToken410ApplicationProblemPlusJSONResponse(
 			problemDetail(410, "this reservation has already expired"),
 		), nil
@@ -192,7 +192,7 @@ func (s *Server) KeepByDecayToken(ctx context.Context, req gen.KeepByDecayTokenR
 		}
 		return nil, err
 	}
-	if res.DecayState == storage.DecayExpired {
+	if res.State == storage.StateExpired {
 		return gen.KeepByDecayToken410ApplicationProblemPlusJSONResponse(
 			problemDetail(410, "this reservation has already expired"),
 		), nil

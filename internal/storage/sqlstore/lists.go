@@ -13,7 +13,7 @@ type listRepo struct{ baseRepo }
 // listCols are the physical list columns, used for INSERT. Ownership is no longer
 // a column here — it lives in list_owners (ADR-0005 §7).
 const listCols = `id, tenant_id, title, visibility, share_slug,
-	event_date, decay_days, active, created_at`
+	event_date, decay_days, active, created_at, reserver_tier`
 
 // listSelectCols is listCols plus two correlated subqueries used for reads: the
 // derived item_count, and the (v1 sole) owner id resolved from list_owners.
@@ -49,21 +49,41 @@ func decayDaysToStorage(p *int) int {
 	return *p
 }
 
+// reserver_tier is a nullable TEXT column: NULL means "inherit the instance
+// default", so the domain override is a plain pointer (nil = inherit).
+func reserverTierFromStorage(v sql.NullString) *storage.ReserverTier {
+	if !v.Valid || v.String == "" {
+		return nil
+	}
+	t := storage.ReserverTier(v.String)
+	return &t
+}
+
+func reserverTierToStorage(p *storage.ReserverTier) any {
+	if p == nil {
+		return nil // NULL = inherit
+	}
+	return string(*p)
+}
+
 func scanList(s scanner) (storage.List, error) {
 	var (
-		l         storage.List
-		eventDate sql.NullString
-		decayDays int
-		active    int
-		createdAt string
-		ownerID   sql.NullString
+		l            storage.List
+		eventDate    sql.NullString
+		decayDays    int
+		active       int
+		createdAt    string
+		reserverTier sql.NullString
+		ownerID      sql.NullString
 	)
 	if err := s.Scan(&l.ID, &l.TenantID, &l.Title, &l.Visibility,
-		&l.ShareSlug, &eventDate, &decayDays, &active, &createdAt, &l.ItemCount, &ownerID); err != nil {
+		&l.ShareSlug, &eventDate, &decayDays, &active, &createdAt, &reserverTier,
+		&l.ItemCount, &ownerID); err != nil {
 		return storage.List{}, err
 	}
 	l.OwnerID = ownerID.String // derived: the v1 sole owner (empty only if orphaned)
 	l.DecayDays = decayDaysFromStorage(decayDays)
+	l.ReserverTier = reserverTierFromStorage(reserverTier)
 	ed, err := datePtr(eventDate)
 	if err != nil {
 		return storage.List{}, err
@@ -106,9 +126,10 @@ func (r listRepo) Create(ctx context.Context, l storage.List, ownerID string) (s
 	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.ExecContext(ctx, r.rb(
-		`INSERT INTO lists (`+listCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+		`INSERT INTO lists (`+listCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		l.ID, l.TenantID, l.Title, l.Visibility, l.ShareSlug,
-		nullDate(l.EventDate), decayDaysToStorage(l.DecayDays), boolToInt(l.Active), fmtTime(l.CreatedAt)); err != nil {
+		nullDate(l.EventDate), decayDaysToStorage(l.DecayDays), boolToInt(l.Active),
+		fmtTime(l.CreatedAt), reserverTierToStorage(l.ReserverTier)); err != nil {
 		if r.d.isUniqueViolation(err) {
 			return storage.List{}, storage.ErrConflict
 		}
@@ -183,10 +204,10 @@ func (r listRepo) List(ctx context.Context, ownerID string, p storage.Page) ([]s
 func (r listRepo) Update(ctx context.Context, l storage.List) (storage.List, error) {
 	res, err := r.db.ExecContext(ctx, r.rb(
 		`UPDATE lists SET title = ?, visibility = ?, event_date = ?,
-		        decay_days = ?, active = ?
+		        decay_days = ?, active = ?, reserver_tier = ?
 		  WHERE tenant_id = ? AND id = ?`),
 		l.Title, l.Visibility, nullDate(l.EventDate), decayDaysToStorage(l.DecayDays),
-		boolToInt(l.Active), r.tenantID, l.ID)
+		boolToInt(l.Active), reserverTierToStorage(l.ReserverTier), r.tenantID, l.ID)
 	if err != nil {
 		return storage.List{}, err
 	}

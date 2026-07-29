@@ -549,6 +549,8 @@ export interface components {
             event_date?: string | null;
             /** @description Reservation-decay period override. Omit (or null) to inherit the instance default; 0 means off (this list never decays); N means a reservation may sit N days before the reserver is asked to keep or release it. */
             decay_days?: number | null;
+            /** @description Reserver-identity tier override (ADR-0007): full_guest | email_confirmed | registered. Omit (or null) to inherit the instance default. full_guest reserves with a one-time capability token; email_confirmed requires the giver to confirm an email before the reservation activates; registered (deferred) requires a giver account. */
+            reserver_tier?: string | null;
         };
         ListUpdate: {
             title?: string;
@@ -557,6 +559,7 @@ export interface components {
             event_date?: string | null;
             decay_days?: number | null;
             active?: boolean;
+            reserver_tier?: string | null;
         };
         List: {
             id?: string;
@@ -567,6 +570,8 @@ export interface components {
             event_date?: string | null;
             /** @description The decay-period override; null means inheriting the instance default. */
             decay_days?: number | null;
+            /** @description The reserver-identity tier override; null inherits the instance default. */
+            reserver_tier?: string | null;
             active?: boolean;
             item_count?: number;
             /** Format: date-time */
