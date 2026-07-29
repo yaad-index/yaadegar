@@ -30,7 +30,13 @@ type Server struct {
 	loginLimiter       auth.Limiter
 	domainCNAMETarget  string
 	domainClaimTTL     time.Duration
-	logger             *slog.Logger
+	// defaultReserverTier is the instance-wide reserver tier a list inherits when
+	// it sets no per-list override (ADR-0007). Empty behaves as full_guest.
+	defaultReserverTier storage.ReserverTier
+	// publicLinkBase is the base URL of the giver-facing site, used to build the
+	// email_confirmed confirmation link. Empty yields a relative link.
+	publicLinkBase string
+	logger         *slog.Logger
 }
 
 var _ gen.StrictServerInterface = (*Server)(nil)
@@ -80,6 +86,13 @@ type Options struct {
 	// hostname before another tenant can reclaim it at add time (ADR-0004 §4). A
 	// verified domain is never reclaimed. Zero disables reclaiming.
 	DomainClaimTTL time.Duration
+	// DefaultReserverTier is the instance-wide reserver tier lists inherit absent a
+	// per-list override (ADR-0007). Empty behaves as full_guest.
+	DefaultReserverTier storage.ReserverTier
+	// PublicLinkBase is the base URL of the giver-facing site, used to build the
+	// email_confirmed confirmation link (mirrors the decay link base). Empty
+	// yields a relative link.
+	PublicLinkBase string
 }
 
 // NewHandler builds the full HTTP handler: the generated strict router wrapped in
@@ -90,19 +103,21 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 		panic("api: Options.Auth is required (owner surface must not fall open)")
 	}
 	s := &Server{
-		store:              store,
-		baseDomain:         opts.BaseDomain,
-		email:              opts.Email,
-		clock:              opts.Clock,
-		previewer:          opts.Previewer,
-		resolver:           opts.Resolver,
-		auth:               opts.Auth,
-		adminEnabled:       opts.AdminEnabled,
-		trustForwardedHost: opts.TrustForwardedHost,
-		loginLimiter:       opts.LoginLimiter,
-		domainCNAMETarget:  opts.DomainCNAMETarget,
-		domainClaimTTL:     opts.DomainClaimTTL,
-		logger:             opts.Logger,
+		store:               store,
+		baseDomain:          opts.BaseDomain,
+		email:               opts.Email,
+		clock:               opts.Clock,
+		previewer:           opts.Previewer,
+		resolver:            opts.Resolver,
+		auth:                opts.Auth,
+		adminEnabled:        opts.AdminEnabled,
+		trustForwardedHost:  opts.TrustForwardedHost,
+		loginLimiter:        opts.LoginLimiter,
+		domainCNAMETarget:   opts.DomainCNAMETarget,
+		domainClaimTTL:      opts.DomainClaimTTL,
+		defaultReserverTier: opts.DefaultReserverTier,
+		publicLinkBase:      opts.PublicLinkBase,
+		logger:              opts.Logger,
 	}
 	if s.logger == nil {
 		s.logger = slog.Default()

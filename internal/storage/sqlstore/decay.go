@@ -25,6 +25,16 @@ func (r reservationRepo) ByDecayKeepTokenHash(ctx context.Context, tokenHash str
 	return r.get(ctx, `decay_keep_token_hash = ?`, tokenHash)
 }
 
+// ByConfirmTokenHash looks a reservation up by the hash of its one-time
+// email-confirmation token. Empty hashes never match (the column default for
+// full_guest reservations, which mint no confirm token).
+func (r reservationRepo) ByConfirmTokenHash(ctx context.Context, tokenHash string) (storage.Reservation, error) {
+	if tokenHash == "" {
+		return storage.Reservation{}, storage.ErrNotFound
+	}
+	return r.get(ctx, `confirm_token_hash = ?`, tokenHash)
+}
+
 // transitionState is the shared row-locked, idempotent decay transition: it moves
 // state from `from` to `to` only if the current state is still `from`,
 // applying update() inside the same transaction. It returns false (no error) when
@@ -81,6 +91,20 @@ func (r reservationRepo) ExpirePending(ctx context.Context, id string, at time.T
 		`UPDATE reservations SET state = ?, state_at = ?
 		  WHERE tenant_id = ? AND id = ?`,
 		storage.StateExpired, fmtTime(at))
+}
+
+// ConfirmReservation moves pending_confirmation → active when the giver confirms:
+// it stamps email_confirmed_at and replaces the pending sentinel in token_hash
+// with the freshly-minted capability-token hash. The row-locked from-state guard
+// makes it a single-winner, idempotent no-op if the reservation already moved off
+// pending_confirmation (a double-confirm, or a confirm racing the confirm-window
+// expiry) — so only the winning confirm returns a capability token.
+func (r reservationRepo) ConfirmReservation(ctx context.Context, id, capabilityTokenHash string, at time.Time) (bool, error) {
+	return r.transitionState(ctx, id, storage.StatePendingConfirmation, storage.StateActive,
+		`UPDATE reservations SET state = ?, state_at = ?, last_activity_at = ?,
+		        token_hash = ?, email_confirmed_at = ?
+		  WHERE tenant_id = ? AND id = ?`,
+		storage.StateActive, fmtTime(at), fmtTime(at), capabilityTokenHash, fmtTime(at))
 }
 
 // Renew moves reserver_notified → active (the reserver clicked "keep"): it resets

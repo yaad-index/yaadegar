@@ -151,6 +151,39 @@ func (e MatchState) Valid() bool {
 	}
 }
 
+// Defines values for ReservationConfirmedStatus.
+const (
+	ReservationConfirmedStatusActive ReservationConfirmedStatus = "active"
+)
+
+// Valid indicates whether the value is a known member of the ReservationConfirmedStatus enum.
+func (e ReservationConfirmedStatus) Valid() bool {
+	switch e {
+	case ReservationConfirmedStatusActive:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReservationCreatedStatus.
+const (
+	ReservationCreatedStatusActive              ReservationCreatedStatus = "active"
+	ReservationCreatedStatusPendingConfirmation ReservationCreatedStatus = "pending_confirmation"
+)
+
+// Valid indicates whether the value is a known member of the ReservationCreatedStatus enum.
+func (e ReservationCreatedStatus) Valid() bool {
+	switch e {
+	case ReservationCreatedStatusActive:
+		return true
+	case ReservationCreatedStatusPendingConfirmation:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ConfirmMatchJSONBodyDecision.
 const (
 	Confirm ConfirmMatchJSONBodyDecision = "confirm"
@@ -440,6 +473,19 @@ type PublicList struct {
 	Title     *string             `json:"title,omitempty"`
 }
 
+// ReservationConfirmed defines model for ReservationConfirmed.
+type ReservationConfirmed struct {
+	// CapabilityToken Returned once, on the confirming request that activates the reservation. Absent on an idempotent re-confirm of an already-active reservation (it cannot be re-issued).
+	CapabilityToken *string `json:"capability_token,omitempty"`
+	ReservationId   string  `json:"reservation_id"`
+
+	// Status Always active on a 200 — the reservation now holds the item, whether this request activated it or it was already confirmed.
+	Status ReservationConfirmedStatus `json:"status"`
+}
+
+// ReservationConfirmedStatus Always active on a 200 — the reservation now holds the item, whether this request activated it or it was already confirmed.
+type ReservationConfirmedStatus string
+
 // ReservationCreate defines model for ReservationCreate.
 type ReservationCreate struct {
 	GiverEmail *openapi_types.Email `json:"giver_email,omitempty"`
@@ -449,10 +495,16 @@ type ReservationCreate struct {
 
 // ReservationCreated defines model for ReservationCreated.
 type ReservationCreated struct {
-	// CapabilityToken Returned once. Store it to release the reservation later.
+	// CapabilityToken The release handle, returned once. Present only for an active reservation; absent while pending_confirmation (issued at confirm).
 	CapabilityToken *string `json:"capability_token,omitempty"`
-	ReservationId   *string `json:"reservation_id,omitempty"`
+	ReservationId   string  `json:"reservation_id"`
+
+	// Status active — the reservation holds the item now (full_guest tier). pending_confirmation — an email_confirmed reservation holding the item provisionally until the giver confirms via the emailed link; no capability token is issued until then.
+	Status ReservationCreatedStatus `json:"status"`
 }
+
+// ReservationCreatedStatus active — the reservation holds the item now (full_guest tier). pending_confirmation — an email_confirmed reservation holding the item provisionally until the giver confirms via the emailed link; no capability token is issued until then.
+type ReservationCreatedStatus string
 
 // Tenant defines model for Tenant.
 type Tenant struct {
@@ -543,6 +595,11 @@ type ConfirmMatchJSONBody struct {
 // ConfirmMatchJSONBodyDecision defines parameters for ConfirmMatch.
 type ConfirmMatchJSONBodyDecision string
 
+// ConfirmReservationJSONBody defines parameters for ConfirmReservation.
+type ConfirmReservationJSONBody struct {
+	Token string `json:"token"`
+}
+
 // AdminLoginJSONRequestBody defines body for AdminLogin for application/json ContentType.
 type AdminLoginJSONRequestBody = LoginRequest
 
@@ -581,6 +638,9 @@ type ReleaseByDecayTokenJSONRequestBody ReleaseByDecayTokenJSONBody
 
 // ConfirmMatchJSONRequestBody defines body for ConfirmMatch for application/json ContentType.
 type ConfirmMatchJSONRequestBody ConfirmMatchJSONBody
+
+// ConfirmReservationJSONRequestBody defines body for ConfirmReservation for application/json ContentType.
+type ConfirmReservationJSONRequestBody ConfirmReservationJSONBody
 
 // CreateContributionJSONRequestBody defines body for CreateContribution for application/json ContentType.
 type CreateContributionJSONRequestBody = ContributionCreate
@@ -668,6 +728,9 @@ type ServerInterface interface {
 	// ConfirmMatch Confirm or decline a proposed co-buying match
 	// (POST /public/matches/{matchId}/confirm)
 	ConfirmMatch(w http.ResponseWriter, r *http.Request, matchId string)
+	// ConfirmReservation Confirm an email_confirmed reservation via its emailed token (anonymous)
+	// (POST /public/reservations/confirm)
+	ConfirmReservation(w http.ResponseWriter, r *http.Request)
 	// ReleaseReservation Release a reservation (anonymous giver)
 	// (DELETE /public/reservations/{reservationId})
 	ReleaseReservation(w http.ResponseWriter, r *http.Request, reservationId string)
@@ -1260,6 +1323,20 @@ func (siw *ServerInterfaceWrapper) ConfirmMatch(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// ConfirmReservation operation middleware
+func (siw *ServerInterfaceWrapper) ConfirmReservation(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConfirmReservation(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ReleaseReservation operation middleware
 func (siw *ServerInterfaceWrapper) ReleaseReservation(w http.ResponseWriter, r *http.Request) {
 
@@ -1526,6 +1603,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/public/{shareSlug}", wrapper.GetPublicList)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/public/{shareSlug}/items/{itemId}/reservations", wrapper.CreateReservation)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/public/reservations/{reservationId}", wrapper.ReleaseReservation)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/public/reservations/confirm", wrapper.ConfirmReservation)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/public/decay-release", wrapper.ReleaseByDecayToken)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/public/decay-keep", wrapper.KeepByDecayToken)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/public/{shareSlug}/items/{itemId}/contributions", wrapper.CreateContribution)
@@ -3188,6 +3266,58 @@ func (response ConfirmMatch409ApplicationProblemPlusJSONResponse) VisitConfirmMa
 	return err
 }
 
+type ConfirmReservationRequestObject struct {
+	Body *ConfirmReservationJSONRequestBody
+}
+
+type ConfirmReservationResponseObject interface {
+	VisitConfirmReservationResponse(w http.ResponseWriter) error
+}
+
+type ConfirmReservation200JSONResponse ReservationConfirmed
+
+func (response ConfirmReservation200JSONResponse) VisitConfirmReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConfirmReservation404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response ConfirmReservation404ApplicationProblemPlusJSONResponse) VisitConfirmReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConfirmReservation410ApplicationProblemPlusJSONResponse Problem
+
+func (response ConfirmReservation410ApplicationProblemPlusJSONResponse) VisitConfirmReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ReleaseReservationRequestObject struct {
 	ReservationId string `json:"reservationId"`
 }
@@ -3396,6 +3526,36 @@ func (response CreateReservation201JSONResponse) VisitCreateReservationResponse(
 	return err
 }
 
+type CreateReservation202JSONResponse ReservationCreated
+
+func (response CreateReservation202JSONResponse) VisitCreateReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateReservation400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response CreateReservation400ApplicationProblemPlusJSONResponse) VisitCreateReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateReservation404ApplicationProblemPlusJSONResponse struct {
 	NotFoundApplicationProblemPlusJSONResponse
 }
@@ -3520,6 +3680,9 @@ type StrictServerInterface interface {
 	// ConfirmMatch Confirm or decline a proposed co-buying match
 	// (POST /public/matches/{matchId}/confirm)
 	ConfirmMatch(ctx context.Context, request ConfirmMatchRequestObject) (ConfirmMatchResponseObject, error)
+	// ConfirmReservation Confirm an email_confirmed reservation via its emailed token (anonymous)
+	// (POST /public/reservations/confirm)
+	ConfirmReservation(ctx context.Context, request ConfirmReservationRequestObject) (ConfirmReservationResponseObject, error)
 	// ReleaseReservation Release a reservation (anonymous giver)
 	// (DELETE /public/reservations/{reservationId})
 	ReleaseReservation(ctx context.Context, request ReleaseReservationRequestObject) (ReleaseReservationResponseObject, error)
@@ -4308,6 +4471,37 @@ func (sh *strictHandler) ConfirmMatch(w http.ResponseWriter, r *http.Request, ma
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ConfirmMatchResponseObject); ok {
 		if err := validResponse.VisitConfirmMatchResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ConfirmReservation operation middleware
+func (sh *strictHandler) ConfirmReservation(w http.ResponseWriter, r *http.Request) {
+	var request ConfirmReservationRequestObject
+
+	var body ConfirmReservationJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ConfirmReservation(ctx, request.(ConfirmReservationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ConfirmReservation")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ConfirmReservationResponseObject); ok {
+		if err := validResponse.VisitConfirmReservationResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

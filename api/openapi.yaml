@@ -485,17 +485,32 @@ paths:
       description: >
         Claims an item so nobody duplicates the gift. Optional name/email are used
         only server-side (e.g. decay reminders) and are never shown to others.
-        Returns a one-time capability token to later release the reservation.
+
+        On a full_guest list the reservation is active immediately and a one-time
+        capability token is returned (201). On an email_confirmed list the
+        reservation is held provisionally as pending_confirmation and a
+        confirmation link is emailed; the response is 202 with status
+        pending_confirmation and no token — the giver must confirm (see
+        /public/reservations/confirm) before the reservation activates and the
+        token is issued. An email_confirmed reserve requires giver_email.
       requestBody:
         content:
           application/json:
             schema: { $ref: "#/components/schemas/ReservationCreate" }
       responses:
         "201":
-          description: Reservation created; token returned once.
+          description: Reservation active; capability token returned once (full_guest).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ReservationCreated" }
+        "202":
+          description: >
+            Reservation held pending email confirmation (email_confirmed); a
+            confirmation link was emailed. No token until confirmed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReservationCreated" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409":
           description: The item is already fully reserved.
@@ -525,6 +540,41 @@ paths:
         "204": { description: Released. }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /public/reservations/confirm:
+    post:
+      operationId: confirmReservation
+      tags: [public]
+      summary: Confirm an email_confirmed reservation via its emailed token (anonymous)
+      security: []
+      description: >
+        Activates the pending_confirmation reservation identified by the one-time
+        token emailed to the giver at reserve time, and returns the capability
+        token to release it later. Idempotent: re-confirming an already-active
+        reservation returns 200 with status active and no new capability token
+        (it cannot be re-issued). The token stops working once the confirm window
+        elapses and the reservation auto-expires.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "200":
+          description: Reservation active. Capability token present on first confirm.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReservationConfirmed" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "410":
+          description: The confirm window elapsed; the reservation expired and the link is spent.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
 
   /public/decay-release:
     post:
@@ -1017,11 +1067,40 @@ components:
 
     ReservationCreated:
       type: object
+      required: [reservation_id, status]
       properties:
         reservation_id: { type: string }
+        status:
+          type: string
+          enum: [active, pending_confirmation]
+          description: >
+            active — the reservation holds the item now (full_guest tier).
+            pending_confirmation — an email_confirmed reservation holding the item
+            provisionally until the giver confirms via the emailed link; no
+            capability token is issued until then.
         capability_token:
           type: string
-          description: Returned once. Store it to release the reservation later.
+          description: >
+            The release handle, returned once. Present only for an active
+            reservation; absent while pending_confirmation (issued at confirm).
+
+    ReservationConfirmed:
+      type: object
+      required: [reservation_id, status]
+      properties:
+        reservation_id: { type: string }
+        status:
+          type: string
+          enum: [active]
+          description: >
+            Always active on a 200 — the reservation now holds the item, whether
+            this request activated it or it was already confirmed.
+        capability_token:
+          type: string
+          description: >
+            Returned once, on the confirming request that activates the
+            reservation. Absent on an idempotent re-confirm of an
+            already-active reservation (it cannot be re-issued).
 
     ContributionStatus:
       type: string

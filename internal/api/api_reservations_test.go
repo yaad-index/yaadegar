@@ -34,7 +34,7 @@ func TestReservationReleaseRoundTrip(t *testing.T) {
 	assert.Equal(t, gen.Reserved, h.itemAvailability(t, *list.Id, *item.Id))
 
 	// Release with the capability token → 204, back to available.
-	resp, _ = h.reqH(http.MethodDelete, "/public/reservations/"+*created.ReservationId,
+	resp, _ = h.reqH(http.MethodDelete, "/public/reservations/"+created.ReservationId,
 		h.ownerHost(), map[string]string{"X-Capability-Token": token}, nil)
 	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
 	assert.Equal(t, gen.Available, h.itemAvailability(t, *list.Id, *item.Id))
@@ -47,12 +47,12 @@ func TestReservationReleaseAuth(t *testing.T) {
 	_, created := h.reserve(*list.ShareSlug, *item.Id, 1)
 
 	// Missing token → 401.
-	resp, _ := h.reqH(http.MethodDelete, "/public/reservations/"+*created.ReservationId,
+	resp, _ := h.reqH(http.MethodDelete, "/public/reservations/"+created.ReservationId,
 		h.ownerHost(), nil, nil)
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 
 	// Wrong token → 401.
-	resp, _ = h.reqH(http.MethodDelete, "/public/reservations/"+*created.ReservationId,
+	resp, _ = h.reqH(http.MethodDelete, "/public/reservations/"+created.ReservationId,
 		h.ownerHost(), map[string]string{"X-Capability-Token": "wrong-token"}, nil)
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 
