@@ -125,7 +125,7 @@ func (r reservationRepo) Renew(ctx context.Context, id string, at time.Time) (bo
 func (s *sqlStore) DecayCandidates(ctx context.Context) ([]storage.DecayCandidate, error) {
 	rows, err := s.db.QueryContext(ctx, s.d.rebind(
 		`SELECT r.tenant_id, r.id, r.item_id, i.name, r.giver_email,
-		        r.state, r.last_activity_at, r.state_at, l.decay_days
+		        r.state, r.last_activity_at, r.state_at, l.decay_days, l.reserver_confirm_window
 		   FROM reservations r
 		   JOIN items i ON i.tenant_id = r.tenant_id AND i.id = r.item_id
 		   JOIN lists l ON l.tenant_id = r.tenant_id AND l.id = i.list_id
@@ -140,14 +140,15 @@ func (s *sqlStore) DecayCandidates(ctx context.Context) ([]storage.DecayCandidat
 	var out []storage.DecayCandidate
 	for rows.Next() {
 		var (
-			c            storage.DecayCandidate
-			giverEmail   sql.NullString
-			lastActivity string
-			decayStateAt string
-			decayDays    int
+			c             storage.DecayCandidate
+			giverEmail    sql.NullString
+			lastActivity  string
+			decayStateAt  string
+			decayDays     int
+			confirmWindow int
 		)
 		if err := rows.Scan(&c.TenantID, &c.ReservationID, &c.ItemID, &c.ItemName,
-			&giverEmail, &c.State, &lastActivity, &decayStateAt, &decayDays); err != nil {
+			&giverEmail, &c.State, &lastActivity, &decayStateAt, &decayDays, &confirmWindow); err != nil {
 			return nil, err
 		}
 		la, err := parseTime(lastActivity)
@@ -162,6 +163,7 @@ func (s *sqlStore) DecayCandidates(ctx context.Context) ([]storage.DecayCandidat
 		c.LastActivityAt = la
 		c.StateAt = dsa
 		c.DecayDays = decayDaysFromStorage(decayDays)
+		c.ReserverConfirmWindowMinutes = confirmWindowFromStorage(confirmWindow)
 		out = append(out, c)
 	}
 	return out, rows.Err()

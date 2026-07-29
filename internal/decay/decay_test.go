@@ -237,6 +237,58 @@ func TestConfirmWindowExpiry(t *testing.T) {
 	assert.Empty(t, f.fakeMail.Sent())
 }
 
+// pendingOnListWithOverride seeds a fresh list carrying a per-list confirm-window
+// override (nil = inherit) plus an item and a pending_confirmation reservation at
+// t0, and returns the reservation id. label keeps owner emails unique per call.
+func (f *fixture) pendingOnListWithOverride(t *testing.T, t0 time.Time, label string, overrideMinutes *int) string {
+	t.Helper()
+	ctx := context.Background()
+	owner, err := f.ts.Users().Create(ctx, storage.User{Name: label, Email: label + "@example.com"})
+	require.NoError(t, err)
+	list, err := f.ts.Lists().Create(ctx, storage.List{
+		Title: label, Active: true, ReserverConfirmWindowMinutes: overrideMinutes,
+	}, owner.ID)
+	require.NoError(t, err)
+	item, err := f.ts.Items().Create(ctx, storage.Item{ListID: list.ID, Name: "Kettle", QuantityWanted: 1})
+	require.NoError(t, err)
+	pend, err := f.ts.Reservations().Create(ctx, storage.Reservation{
+		ItemID: item.ID, GiverEmail: ptr(giverEmail), Quantity: 1,
+		TokenHash: "cap-" + label, ConfirmTokenHash: "conf-" + label,
+		State: storage.StatePendingConfirmation, CreatedAt: t0,
+	})
+	require.NoError(t, err)
+	return pend.ID
+}
+
+// TestPerListConfirmWindowOverride: the sweeper resolves the confirm window per
+// list — a per-list override wins over the instance default in BOTH directions,
+// and a list with no override inherits the instance default. One sweep exercises
+// all three against a 60m instance default.
+func TestPerListConfirmWindowOverride(t *testing.T) {
+	ctx := context.Background()
+	t0 := time.Date(2027, 1, 1, 12, 0, 0, 0, time.UTC)
+	f := setup(t, t0, nil, 0) // instance decay off; only the confirm window matters
+	f.sweeper = decay.NewSweeper(f.store, f.fakeMail, f.clk, decay.Config{
+		ResponseWindow: 24 * time.Hour,
+		ConfirmWindow:  60 * time.Minute, // instance default
+	}, slog.New(slog.DiscardHandler))
+
+	shortID := f.pendingOnListWithOverride(t, t0, "short", ptr(10)) // override < default
+	longID := f.pendingOnListWithOverride(t, t0, "long", ptr(120))  // override > default
+	inheritID := f.pendingOnListWithOverride(t, t0, "inherit", nil) // nil → instance default
+
+	// 65m in: past the 10m override and the 60m default, but within the 120m override.
+	f.clk.Set(t0.Add(65 * time.Minute))
+	require.NoError(t, f.sweeper.Sweep(ctx))
+
+	assert.Equal(t, storage.StateExpired, f.stateOf(t, shortID),
+		"a shorter per-list override expires before the instance default")
+	assert.Equal(t, storage.StateExpired, f.stateOf(t, inheritID),
+		"a list with no override inherits the instance default (60m)")
+	assert.Equal(t, storage.StatePendingConfirmation, f.stateOf(t, longID),
+		"a longer per-list override holds past the instance default")
+}
+
 // TestPendingExcludedFromActiveDecay (#81, Addition B-ii): a pending reservation is
 // eligible ONLY for confirm-window expiry — never the active-reservation decay
 // path. With a short decay period but a long confirm window, advancing past the

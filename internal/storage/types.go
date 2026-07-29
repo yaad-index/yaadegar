@@ -118,8 +118,12 @@ type List struct {
 	// ReserverTier is the per-list reserver-identity tier override (ADR-0007): nil
 	// inherits the instance default. Stored as a nullable column (NULL = inherit).
 	ReserverTier *ReserverTier
-	Active       bool
-	CreatedAt    time.Time
+	// ReserverConfirmWindowMinutes is the per-list email_confirmed confirm-window
+	// override in minutes (ADR-0007): nil inherits the instance default. It mirrors
+	// DecayDays' encoding — the nil/-1 mapping lives entirely in the storage path.
+	ReserverConfirmWindowMinutes *int
+	Active                       bool
+	CreatedAt                    time.Time
 	// ItemCount is a derived read field: the number of items on the list. It is
 	// populated by reads (Get/GetBySlug/List) and left zero by Create.
 	ItemCount int
@@ -225,6 +229,10 @@ type DecayCandidate struct {
 	// default). The sweeper resolves the effective period; it never compares this
 	// raw value.
 	DecayDays *int
+	// ReserverConfirmWindowMinutes is the list's confirm-window override in minutes
+	// (nil = inherit the instance default). The sweeper resolves the effective
+	// window for a pending_confirmation reservation; it never compares this raw value.
+	ReserverConfirmWindowMinutes *int
 }
 
 // Contribution is a giver's pledge toward co-buying an item. ContactEmail is
