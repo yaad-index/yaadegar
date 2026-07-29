@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.1.0...yaadegar-v0.2.0) (2026-07-29)
+
+
+### Features
+
+* auto-fill a new item from a pasted product URL ([#11](https://github.com/yaad-index/yaadegar/issues/11)) ([#79](https://github.com/yaad-index/yaadegar/issues/79)) ([2af73d4](https://github.com/yaad-index/yaadegar/commit/2af73d4a4a7681bdc62eb659114324a9a18a53c9))
+* containerize the web frontend + full-stack compose ([#11](https://github.com/yaad-index/yaadegar/issues/11)) ([#74](https://github.com/yaad-index/yaadegar/issues/74)) ([9a2dec1](https://github.com/yaad-index/yaadegar/commit/9a2dec143c1c95504ebfd12c265dec9a3805d4f7))
+* item editor with rich display — url/note fields, thumbnails, safe notes ([#11](https://github.com/yaad-index/yaadegar/issues/11)) ([#78](https://github.com/yaad-index/yaadegar/issues/78)) ([0051fa5](https://github.com/yaad-index/yaadegar/commit/0051fa5a5e9514da50ae39ab7396bbac0aa3ec37))
+
+
+### Bug Fixes
+
+* make the co-buying confirm transition atomic under the item lock ([#36](https://github.com/yaad-index/yaadegar/issues/36)) ([#76](https://github.com/yaad-index/yaadegar/issues/76)) ([49fe90b](https://github.com/yaad-index/yaadegar/commit/49fe90b6aa8f0516507f8fac4938193e74a1bc34))
+* reclaim expired unverified custom-domain claims at add time ([#42](https://github.com/yaad-index/yaadegar/issues/42)) ([#77](https://github.com/yaad-index/yaadegar/issues/77)) ([1a168d7](https://github.com/yaad-index/yaadegar/commit/1a168d707ac228c772b6ecbf233f084af34ff9dc))
+* URL-preview must not fail on an empty name ([#11](https://github.com/yaad-index/yaadegar/issues/11)) ([#80](https://github.com/yaad-index/yaadegar/issues/80)) ([d0bd2f0](https://github.com/yaad-index/yaadegar/commit/d0bd2f01d488ca3cc43ad18e21062c5a8e814893))
+
 ## 0.1.0 (2026-07-29)
 
 
