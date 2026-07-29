@@ -3,7 +3,9 @@ package api_test
 import (
 	"context"
 	"net/http"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -11,6 +13,110 @@ import (
 	"github.com/yaad-index/yaadegar/internal/api/gen"
 	"github.com/yaad-index/yaadegar/internal/storage"
 )
+
+// otherTenant is a second tenant with an owner, for cross-tenant custom-domain
+// tests. Token mints a fresh owner JWT at the current fake-clock time — call it
+// after advancing h.clk so the token isn't already expired.
+type otherTenant struct {
+	h       *harness
+	host    string
+	ownerID string
+	tenID   string
+}
+
+func (h *harness) seedOwnerTenant(subdomain string) otherTenant {
+	h.t.Helper()
+	ctx := context.Background()
+	ten, err := h.store.CreateTenant(ctx, storage.Tenant{Subdomain: subdomain})
+	require.NoError(h.t, err)
+	owner, err := h.store.ForTenant(ten).Users().Create(ctx, storage.User{Name: subdomain})
+	require.NoError(h.t, err)
+	return otherTenant{h: h, host: subdomain + "." + baseDomain, ownerID: owner.ID, tenID: ten.ID}
+}
+
+func (o otherTenant) token() string { return o.h.tokenFor(o.ownerID, o.tenID) }
+
+func (h *harness) tryAddDomain(host, token, hostname string) *http.Response {
+	h.t.Helper()
+	resp, _ := h.req(http.MethodPost, "/api/v1/domains", host, token, map[string]any{"hostname": hostname})
+	return resp
+}
+
+// TestAddDomainReclaimsExpiredUnverified is the #42 guard: an unverified claim past
+// the TTL frees its hostname for another tenant, but blocks within the window.
+func TestAddDomainReclaimsExpiredUnverified(t *testing.T) {
+	h := newHarness(t)
+	const host = "squat.example.com"
+
+	alice := h.addDomain(host) // Alice parks it but never verifies.
+	bob := h.seedOwnerTenant("bob")
+
+	// Within the window, Bob still cannot take it.
+	assert.Equal(t, http.StatusConflict, h.tryAddDomain(bob.host, bob.token(), host).StatusCode,
+		"an unverified claim still blocks within the window")
+
+	// Past the window, Bob reclaims it.
+	h.clk.Advance(testDomainClaimTTL + time.Hour)
+	resp, body := h.req(http.MethodPost, "/api/v1/domains", bob.host, bob.token(), map[string]any{"hostname": host})
+	require.Equal(t, http.StatusCreated, resp.StatusCode, "body: %s", body)
+	assert.NotEqual(t, *alice.Id, *decode[gen.Domain](t, body).Id, "a fresh claim, not the stale row")
+
+	// Alice's stale claim is gone.
+	_, lb := h.req(http.MethodGet, "/api/v1/domains", h.ownerHost(), h.ownerToken(), nil)
+	assert.Empty(t, decode[[]gen.Domain](t, lb), "the reclaimed hostname left the original tenant")
+}
+
+// TestAddDomainVerifiedNeverReclaimed pins that a verified domain never expires by
+// this path, no matter how far past the window.
+func TestAddDomainVerifiedNeverReclaimed(t *testing.T) {
+	h := newHarness(t)
+	const host = "keep.example.com"
+
+	d := h.addDomain(host)
+	h.resolver.txt["_yaadegar-verify."+host] = []string{*d.VerificationToken}
+	resp, body := h.req(http.MethodPost, "/api/v1/domains/"+*d.Id+"/verify", h.ownerHost(), h.ownerToken(), nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.True(t, *decode[gen.Domain](t, body).Verified, "domain is verified before the reclaim attempt")
+
+	bob := h.seedOwnerTenant("bob")
+	h.clk.Advance(365 * 24 * time.Hour)
+	assert.Equal(t, http.StatusConflict, h.tryAddDomain(bob.host, bob.token(), host).StatusCode,
+		"a verified domain is never reclaimed")
+}
+
+// TestAddDomainConcurrentReclaimSingleWinner: two tenants race to reclaim the same
+// expired hostname at once; exactly one wins (the reclaim + insert is atomic).
+func TestAddDomainConcurrentReclaimSingleWinner(t *testing.T) {
+	h := newHarness(t)
+	const host = "race.example.com"
+	h.addDomain(host) // an unverified claim by the seeded owner
+	bravo := h.seedOwnerTenant("bravo")
+	charlie := h.seedOwnerTenant("charlie")
+	h.clk.Advance(testDomainClaimTTL + time.Hour) // now expired; mint tokens after.
+	racers := [][2]string{{bravo.host, bravo.token()}, {charlie.host, charlie.token()}}
+
+	var (
+		wg      sync.WaitGroup
+		mu      sync.Mutex
+		created int
+		start   = make(chan struct{})
+	)
+	for _, who := range racers {
+		wg.Add(1)
+		go func(host, token string) {
+			defer wg.Done()
+			<-start
+			if h.tryAddDomain(host, token, "race.example.com").StatusCode == http.StatusCreated {
+				mu.Lock()
+				created++
+				mu.Unlock()
+			}
+		}(who[0], who[1])
+	}
+	close(start)
+	wg.Wait()
+	assert.Equal(t, 1, created, "exactly one tenant reclaims the expired hostname")
+}
 
 // fakeResolver serves DNS TXT records from a map (no real DNS).
 type fakeResolver struct {

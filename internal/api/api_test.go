@@ -30,6 +30,10 @@ const baseDomain = "example.test"
 // testJWTSecret is a fixed >=32-byte signing secret for the test auth service.
 const testJWTSecret = "test-jwt-secret-of-sufficient-length-0123456789"
 
+// testDomainClaimTTL is the harness's unverified custom-domain claim window; tests
+// move h.clk past it to exercise reclaiming (#42).
+const testDomainClaimTTL = 7 * 24 * time.Hour
+
 // testClockStart is the fake "now" every harness starts at; time-gated tests move
 // it via h.clk.
 var testClockStart = time.Date(2027, 6, 15, 12, 0, 0, 0, time.UTC)
@@ -96,6 +100,7 @@ func newHarnessBuild(t *testing.T, adminEnabled bool, limiter auth.Limiter, trus
 		TrustForwardedHost: trustForwardedHost,
 		LoginLimiter:       limiter,
 		DomainCNAMETarget:  "cname.yaadegar.test",
+		DomainClaimTTL:     testDomainClaimTTL,
 	})
 	return &harness{t: t, h: h, store: store, tenant: tenant, owner: owner, email: fake, clk: clk, preview: pf, resolver: fr, authSvc: authSvc}
 }

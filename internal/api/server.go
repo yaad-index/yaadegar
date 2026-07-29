@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/yaad-index/yaadegar/internal/api/gen"
 	"github.com/yaad-index/yaadegar/internal/auth"
@@ -28,6 +29,7 @@ type Server struct {
 	trustForwardedHost bool
 	loginLimiter       auth.Limiter
 	domainCNAMETarget  string
+	domainClaimTTL     time.Duration
 	logger             *slog.Logger
 }
 
@@ -74,6 +76,10 @@ type Options struct {
 	// DomainCNAMETarget is the hostname owners point their custom domain's CNAME
 	// at; returned by addDomain.
 	DomainCNAMETarget string
+	// DomainClaimTTL is how long an unverified custom-domain claim holds its
+	// hostname before another tenant can reclaim it at add time (ADR-0004 §4). A
+	// verified domain is never reclaimed. Zero disables reclaiming.
+	DomainClaimTTL time.Duration
 }
 
 // NewHandler builds the full HTTP handler: the generated strict router wrapped in
@@ -95,6 +101,7 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 		trustForwardedHost: opts.TrustForwardedHost,
 		loginLimiter:       opts.LoginLimiter,
 		domainCNAMETarget:  opts.DomainCNAMETarget,
+		domainClaimTTL:     opts.DomainClaimTTL,
 		logger:             opts.Logger,
 	}
 	if s.logger == nil {

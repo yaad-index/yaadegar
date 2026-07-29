@@ -18,6 +18,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -157,4 +158,61 @@ func TestPostgres_ConcurrentConfirmSingleCompletion(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, storage.MatchBothConfirmed, final.State)
 	}
+}
+
+// TestPostgres_DomainReclaimConcurrentSingleWinner is the #42 guard on real
+// Postgres: two tenants race to reclaim the same expired unverified hostname; the
+// SELECT ... FOR UPDATE serializes them so exactly one wins and the hostname is
+// never double-claimed.
+func TestPostgres_DomainReclaimConcurrentSingleWinner(t *testing.T) {
+	ctx := context.Background()
+	st := newPostgresStore(t)
+	suffix := t.Name()
+	hostname := "reclaim-" + suffix + ".example.com"
+
+	// A squatter parks the hostname, unverified, long ago.
+	squat, err := st.CreateTenant(ctx, storage.Tenant{Subdomain: "sq-" + suffix})
+	require.NoError(t, err)
+	old := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	_, err = st.ForTenant(squat).Domains().Create(ctx, storage.Domain{
+		Hostname: hostname, VerificationToken: "tok-squat", CreatedAt: old,
+	})
+	require.NoError(t, err)
+
+	expiredBefore := old.Add(time.Hour) // the squatter's claim is past the window
+	var claimants []storage.TenantStore
+	for _, sub := range []string{"r1-" + suffix, "r2-" + suffix} {
+		ten, err := st.CreateTenant(ctx, storage.Tenant{Subdomain: sub})
+		require.NoError(t, err)
+		claimants = append(claimants, st.ForTenant(ten))
+	}
+
+	var (
+		wg    sync.WaitGroup
+		mu    sync.Mutex
+		wins  int
+		start = make(chan struct{})
+	)
+	for i, cs := range claimants {
+		wg.Add(1)
+		go func(i int, cs storage.TenantStore) {
+			defer wg.Done()
+			<-start
+			_, err := cs.Domains().CreateReclaimingExpired(ctx, storage.Domain{
+				Hostname: hostname, VerificationToken: fmt.Sprintf("tok-%d", i),
+				CreatedAt: expiredBefore.Add(time.Hour),
+			}, expiredBefore)
+			if err == nil {
+				mu.Lock()
+				wins++
+				mu.Unlock()
+			} else {
+				assert.ErrorIs(t, err, storage.ErrConflict)
+			}
+		}(i, cs)
+	}
+	close(start)
+	wg.Wait()
+
+	assert.Equal(t, 1, wins, "exactly one tenant reclaims the expired hostname under real FOR UPDATE concurrency")
 }
