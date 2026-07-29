@@ -70,6 +70,8 @@ type ServeCmd struct {
 
 	DomainCNAMETarget string `name:"domain-cname-target" env:"YAADEGAR_DOMAIN_CNAME_TARGET" help:"Hostname that owners point a custom domain's CNAME at (returned by add-domain)."`
 
+	DomainClaimTTL time.Duration `name:"domain-claim-ttl" default:"168h" env:"YAADEGAR_DOMAIN_CLAIM_TTL" help:"How long an unverified custom-domain claim holds its hostname before another tenant can reclaim it at add time (0 disables reclaiming). A verified domain is never reclaimed."`
+
 	// Auth config (ADR-0005). The JWT secret is a secret and comes from the
 	// environment only. At least one login method must be enabled and configured or
 	// the instance refuses to start.
@@ -157,6 +159,7 @@ func (c *ServeCmd) Run(cli *CLI) error {
 		TrustForwardedHost: c.TrustForwardedHost,
 		LoginLimiter:       auth.NewInMemoryLimiter(c.LoginRateMaxFailures, c.LoginRateWindow, clock.Real{}),
 		DomainCNAMETarget:  c.DomainCNAMETarget,
+		DomainClaimTTL:     c.DomainClaimTTL,
 	})
 
 	// Run the reservation-decay sweeper on a ticker alongside the server.

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/yaad-index/yaadegar/internal/api/gen"
 	"github.com/yaad-index/yaadegar/internal/storage"
@@ -62,11 +63,20 @@ func (s *Server) AddDomain(ctx context.Context, req gen.AddDomainRequestObject) 
 	if err != nil {
 		return nil, err
 	}
-	d, err := ts.Domains().Create(ctx, storage.Domain{
+	now := s.clock.Now()
+	// An unverified claim older than the TTL is reclaimable, so this add can take over
+	// a hostname a squatter parked but never verified (ADR-0004 §4). Zero TTL leaves
+	// expiredBefore zero, which matches no claim (reclaiming disabled).
+	var expiredBefore time.Time
+	if s.domainClaimTTL > 0 {
+		expiredBefore = now.Add(-s.domainClaimTTL)
+	}
+	d, err := ts.Domains().CreateReclaimingExpired(ctx, storage.Domain{
 		Hostname:          hostname,
 		CNAMETarget:       s.domainCNAMETarget,
 		VerificationToken: tok,
-	})
+		CreatedAt:         now,
+	}, expiredBefore)
 	if err != nil {
 		if errors.Is(err, storage.ErrConflict) {
 			return gen.AddDomain409ApplicationProblemPlusJSONResponse{

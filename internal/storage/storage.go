@@ -244,6 +244,15 @@ type MatchRepo interface {
 // DomainRepo persists custom domains within the bound tenant.
 type DomainRepo interface {
 	Create(ctx context.Context, d Domain) (Domain, error)
+	// CreateReclaimingExpired inserts the domain, first reclaiming an existing claim
+	// on the same hostname when that claim is unverified and was created before
+	// expiredBefore — freeing a hostname parked by an unverified squatter (the
+	// add-time namespace DoS, ADR-0004 §4). A verified claim is never reclaimed. The
+	// check + reclaim + insert are atomic under a row lock, so two concurrent adds
+	// cannot both reclaim. A zero expiredBefore disables reclaiming (behaves like
+	// Create). Returns ErrConflict when the hostname is held by a verified or
+	// still-within-window claim.
+	CreateReclaimingExpired(ctx context.Context, d Domain, expiredBefore time.Time) (Domain, error)
 	Get(ctx context.Context, id string) (Domain, error)
 	List(ctx context.Context) ([]Domain, error)
 	Update(ctx context.Context, d Domain) (Domain, error)
