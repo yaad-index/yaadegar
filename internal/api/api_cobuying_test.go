@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"net/http"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -101,6 +102,60 @@ func TestCoBuyingHandshake(t *testing.T) {
 	joined := reveal[0].Body + reveal[1].Body
 	assert.Contains(t, joined, aEmail)
 	assert.Contains(t, joined, bEmail)
+}
+
+// TestCoBuyingConcurrentConfirmSingleReveal is the load-bearing guard for #36:
+// when both parties confirm at the same instant, exactly one confirm completes the
+// match and the reveal email fires exactly once. The item lock in
+// ConfirmContribution serializes the all-confirmed check + both_confirmed flip, so
+// two concurrent confirms cannot both observe all-confirmed and double-reveal.
+// (On SQLite the single connection serializes; the race is real on Postgres, where
+// the same lock is a SELECT ... FOR UPDATE.)
+func TestCoBuyingConcurrentConfirmSingleReveal(t *testing.T) {
+	h := newHarness(t)
+	list := h.createList("Wedding")
+	item := h.pricedItem(*list.Id, 20000, "EUR")
+	_, a := h.pledge(*list.ShareSlug, *item.Id, 10000, "EUR", "a@example.com")
+	_, b := h.pledge(*list.ShareSlug, *item.Id, 10000, "EUR", "b@example.com")
+	require.NotNil(t, b.Match)
+	require.Len(t, h.email.Sent(), 2, "two proposal emails before any confirm")
+
+	matchID := *b.Match.Id
+	tokens := []string{*a.CapabilityToken, *b.CapabilityToken}
+
+	var (
+		wg        sync.WaitGroup
+		start     = make(chan struct{})
+		mu        sync.Mutex
+		completed int
+	)
+	for _, tok := range tokens {
+		wg.Add(1)
+		go func(tok string) {
+			defer wg.Done()
+			<-start // release both goroutines together
+			resp, body := h.confirm(matchID, tok, "confirm")
+			require.Equal(t, http.StatusOK, resp.StatusCode, "body: %s", body)
+			// The non-completer sees the match already both_confirmed, so its response
+			// carries an empty (non-nil) Contacts; only the completing confirm returns
+			// the actual contacts.
+			if c := decode[gen.Match](t, body).Contacts; c != nil && len(*c) > 0 {
+				mu.Lock()
+				completed++
+				mu.Unlock()
+			}
+		}(tok)
+	}
+	close(start)
+	wg.Wait()
+
+	assert.Equal(t, 1, completed, "exactly one confirm reveals the contacts")
+	assert.Len(t, h.email.Sent()[2:], 2, "the reveal fires exactly once (one email per party)")
+
+	// The match is settled; a further confirm is a no-op 409, never a second reveal.
+	resp, _ := h.confirm(matchID, *a.CapabilityToken, "confirm")
+	assert.Equal(t, http.StatusConflict, resp.StatusCode)
+	assert.Len(t, h.email.Sent()[2:], 2, "no extra reveal on a post-completion confirm")
 }
 
 func TestCoBuyingLoneFullPriceStaysPending(t *testing.T) {
