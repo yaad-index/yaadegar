@@ -69,7 +69,10 @@ export const actions: Actions = {
 		const itemId = String(fd.get('item_id') ?? '');
 		if (!itemId) return fail(400, {});
 		const client = backendClient({ host: locals.host, token: locals.token });
-		await client.DELETE('/api/v1/items/{itemId}', { params: { path: { itemId } } });
+		const { error: err } = await client.DELETE('/api/v1/items/{itemId}', {
+			params: { path: { itemId } }
+		});
+		if (err) return fail(400, { deleteError: 'Could not delete the item.' });
 		return { deleted: true };
 	}
 };
