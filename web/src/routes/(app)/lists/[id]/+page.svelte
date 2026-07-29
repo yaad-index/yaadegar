@@ -14,7 +14,9 @@
 	// send to givers (the giver flow lives at /l/<slug>).
 	const shareUrl = $derived(`${page.url.origin}/l/${data.list.share_slug ?? ''}`);
 	let copied = $state<'idle' | 'ok' | 'fail'>('idle');
+	let resetTimer: ReturnType<typeof setTimeout> | undefined;
 	async function copyShare() {
+		clearTimeout(resetTimer);
 		try {
 			// clipboard.writeText needs a secure context (https or localhost); it throws
 			// otherwise, so fall back to the always-selectable input below.
@@ -23,6 +25,8 @@
 		} catch {
 			copied = 'fail';
 		}
+		// Let the confirmation/nudge fade back to idle instead of lingering.
+		resetTimer = setTimeout(() => (copied = 'idle'), 2500);
 	}
 
 	// Availability is derived by the backend; it never carries reserver identity
