@@ -230,6 +230,15 @@ type MatchRepo interface {
 	ListByItem(ctx context.Context, itemID string) ([]Match, error)
 	// Update persists the match state transition.
 	Update(ctx context.Context, m Match) (Match, error)
+	// ConfirmContribution atomically marks one contribution confirmed within the
+	// match and, if that leaves every contribution on the match confirmed while the
+	// match is still proposed, transitions the match to both_confirmed — all under
+	// the item row lock (the same lock reserve/contribute use), so concurrent
+	// confirms serialize and the completion happens exactly once. completedNow is
+	// true only for the call that performs the transition; contribs holds the
+	// match's contributions (for the reveal) then, and is nil otherwise. The
+	// returned Match carries the current state either way.
+	ConfirmContribution(ctx context.Context, itemID, matchID, contributionID string) (m Match, contribs []Contribution, completedNow bool, err error)
 }
 
 // DomainRepo persists custom domains within the bound tenant.

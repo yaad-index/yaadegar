@@ -14,7 +14,9 @@ package sqlstore_test
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -84,4 +86,75 @@ func TestPostgres_RoundTripAndIsolation(t *testing.T) {
 	assert.ErrorIs(t, err, storage.ErrNotFound)
 	_, err = bs.Items().Get(ctx, item.ID)
 	assert.ErrorIs(t, err, storage.ErrNotFound)
+}
+
+// TestPostgres_ConcurrentConfirmSingleCompletion is the #36 guard on real
+// Postgres: two truly-parallel confirms on one match (the SQLite unit test
+// serializes via a single connection; here the pool is uncapped and the item lock
+// is a genuine SELECT ... FOR UPDATE). Exactly one confirm must observe the
+// completing transition, so the reveal fires once.
+func TestPostgres_ConcurrentConfirmSingleCompletion(t *testing.T) {
+	ctx := context.Background()
+	st := newPostgresStore(t)
+	suffix := t.Name()
+
+	ten, err := st.CreateTenant(ctx, storage.Tenant{Subdomain: "cc-" + suffix})
+	require.NoError(t, err)
+	s := st.ForTenant(ten)
+	owner, err := s.Users().Create(ctx, storage.User{Name: "Owner"})
+	require.NoError(t, err)
+	list, err := s.Lists().Create(ctx, storage.List{Title: "Co-buy"}, owner.ID)
+	require.NoError(t, err)
+	item, err := s.Items().Create(ctx, storage.Item{
+		ListID: list.ID, Name: "Espresso machine",
+		Price: &storage.Money{AmountMinor: 20000, Currency: "EUR"},
+	})
+	require.NoError(t, err)
+
+	// Repeat many times over fresh matches — each round is a real parallel race, so
+	// a missing lock would double-complete on at least one round.
+	for round := 0; round < 40; round++ {
+		c1, err := s.Contributions().Create(ctx, storage.Contribution{
+			ItemID: item.ID, Pledged: storage.Money{AmountMinor: 10000, Currency: "EUR"},
+			ContactEmail: "a@example.com", TokenHash: fmt.Sprintf("hash-%d-a", round),
+		})
+		require.NoError(t, err)
+		c2, err := s.Contributions().Create(ctx, storage.Contribution{
+			ItemID: item.ID, Pledged: storage.Money{AmountMinor: 10000, Currency: "EUR"},
+			ContactEmail: "b@example.com", TokenHash: fmt.Sprintf("hash-%d-b", round),
+		})
+		require.NoError(t, err)
+		match, err := s.Matches().Create(ctx, storage.Match{
+			ItemID: item.ID, ContributionIDs: []string{c1.ID, c2.ID},
+		})
+		require.NoError(t, err)
+
+		var (
+			wg        sync.WaitGroup
+			mu        sync.Mutex
+			completed int
+			start     = make(chan struct{})
+		)
+		for _, cid := range []string{c1.ID, c2.ID} {
+			wg.Add(1)
+			go func(cid string) {
+				defer wg.Done()
+				<-start // release both goroutines together
+				_, _, done, err := s.Matches().ConfirmContribution(ctx, item.ID, match.ID, cid)
+				assert.NoError(t, err)
+				if done {
+					mu.Lock()
+					completed++
+					mu.Unlock()
+				}
+			}(cid)
+		}
+		close(start)
+		wg.Wait()
+
+		require.Equal(t, 1, completed, "exactly one confirm completes the match (round %d)", round)
+		final, err := s.Matches().Get(ctx, match.ID)
+		require.NoError(t, err)
+		assert.Equal(t, storage.MatchBothConfirmed, final.State)
+	}
 }

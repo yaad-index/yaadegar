@@ -163,3 +163,96 @@ func (r matchRepo) Update(ctx context.Context, m storage.Match) (storage.Match, 
 	}
 	return r.Get(ctx, m.ID)
 }
+
+// ConfirmContribution runs the confirm transition atomically under the item lock:
+// mark the contribution confirmed, re-read the match's contributions, and — only
+// if the match is still proposed and all are now confirmed — flip it to
+// both_confirmed. The lock (FOR UPDATE on Postgres; a single connection on SQLite)
+// serializes concurrent confirms, so exactly one call observes the completing
+// transition and reports completedNow=true, and the reveal fires exactly once (#36).
+func (r matchRepo) ConfirmContribution(ctx context.Context, itemID, matchID, contributionID string) (storage.Match, []storage.Contribution, bool, error) {
+	var (
+		contribs     []storage.Contribution
+		completedNow bool
+	)
+	err := r.withItemLock(ctx, itemID, func(tx *sql.Tx) error {
+		// Read the match state under the lock. An already-resolved match (a concurrent
+		// confirm or decline got here first) takes no further transition.
+		var state string
+		if err := tx.QueryRowContext(ctx, r.rb(
+			`SELECT state FROM matches WHERE tenant_id = ? AND id = ?`),
+			r.tenantID, matchID).Scan(&state); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return storage.ErrNotFound
+			}
+			return err
+		}
+		if storage.MatchState(state) != storage.MatchProposed {
+			return nil
+		}
+		// Mark this contribution confirmed (scoped to the match as a guard).
+		res, err := tx.ExecContext(ctx, r.rb(
+			`UPDATE contributions SET status = ?
+			  WHERE tenant_id = ? AND id = ? AND match_id = ?`),
+			storage.ContributionConfirmed, r.tenantID, contributionID, matchID)
+		if err != nil {
+			return err
+		}
+		if err := expectOne(res); err != nil {
+			return err
+		}
+		// Re-read the match's contributions and check for full confirmation.
+		cs, err := r.contributionsByMatchTx(ctx, tx, matchID)
+		if err != nil {
+			return err
+		}
+		allConfirmed := len(cs) > 0
+		for _, c := range cs {
+			if c.Status != storage.ContributionConfirmed {
+				allConfirmed = false
+				break
+			}
+		}
+		if allConfirmed {
+			if _, err := tx.ExecContext(ctx, r.rb(
+				`UPDATE matches SET state = ? WHERE tenant_id = ? AND id = ?`),
+				storage.MatchBothConfirmed, r.tenantID, matchID); err != nil {
+				return err
+			}
+			completedNow = true
+			contribs = cs
+		}
+		return nil
+	})
+	if err != nil {
+		return storage.Match{}, nil, false, err
+	}
+	// The match's current (committed) state, for the caller's response.
+	m, err := r.Get(ctx, matchID)
+	if err != nil {
+		return storage.Match{}, nil, false, err
+	}
+	return m, contribs, completedNow, nil
+}
+
+// contributionsByMatchTx reads a match's contributions within the given tx.
+func (r matchRepo) contributionsByMatchTx(ctx context.Context, tx *sql.Tx, matchID string) ([]storage.Contribution, error) {
+	rows, err := tx.QueryContext(ctx, r.rb(
+		`SELECT `+contributionCols+` FROM contributions
+		  WHERE tenant_id = ? AND match_id = ?
+		  ORDER BY created_at, id`), r.tenantID, matchID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []storage.Contribution
+	for rows.Next() {
+		c, err := scanContribution(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
