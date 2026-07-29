@@ -103,12 +103,37 @@
 			bind:value={$form.quantity_wanted}
 		/>
 	</div>
-	<input
-		class="w-full rounded border p-2"
-		name="url"
-		placeholder="Link (optional)"
-		bind:value={$form.url}
-	/>
+	<!-- Paste a product link and fetch its details, or fill the fields manually. -->
+	<div class="flex gap-2">
+		<input
+			class="flex-1 rounded border p-2"
+			name="url"
+			placeholder="Paste a product link (optional)"
+			bind:value={$form.url}
+		/>
+		<button
+			type="submit"
+			formaction="?/preview"
+			class="rounded border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
+			disabled={$submitting}
+		>
+			Fetch details
+		</button>
+	</div>
+	<!-- Scraped image + price ride along into the create; the owner reviews first. -->
+	<input type="hidden" name="image_url" bind:value={$form.image_url} />
+	<input type="hidden" name="price_minor" bind:value={$form.price_minor} />
+	<input type="hidden" name="price_currency" bind:value={$form.price_currency} />
+	{#if $form.image_url || $form.price_minor}
+		<div class="flex items-center gap-2 text-sm text-gray-600">
+			{#if $form.image_url}
+				<img src={$form.image_url} alt="" class="h-10 w-10 rounded border object-cover" />
+			{/if}
+			{#if $form.price_minor && $form.price_currency}
+				<span>{($form.price_minor / 100).toFixed(2)} {$form.price_currency}</span>
+			{/if}
+		</div>
+	{/if}
 	<textarea
 		class="w-full rounded border p-2"
 		name="note"
@@ -124,7 +149,7 @@
 		</button>
 		{#if $errors.name}<span class="text-xs text-red-600">{$errors.name}</span>{/if}
 		{#if $errors.url}<span class="text-xs text-red-600">{$errors.url}</span>{/if}
-		{#if $message}<span class="text-xs text-red-600">{$message}</span>{/if}
+		{#if $message}<span class="text-xs text-gray-600">{$message}</span>{/if}
 	</div>
 </form>
 
