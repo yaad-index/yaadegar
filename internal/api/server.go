@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/yaad-index/yaadegar/internal/api/gen"
+	"github.com/yaad-index/yaadegar/internal/auth"
 	"github.com/yaad-index/yaadegar/internal/clock"
 	"github.com/yaad-index/yaadegar/internal/email"
 	"github.com/yaad-index/yaadegar/internal/preview"
@@ -16,14 +17,18 @@ import (
 // Server implements the generated strict server interface against the storage
 // layer.
 type Server struct {
-	store             storage.Store
-	baseDomain        string
-	email             email.Sender
-	clock             clock.Clock
-	previewer         *preview.Previewer
-	resolver          Resolver
-	domainCNAMETarget string
-	logger            *slog.Logger
+	store              storage.Store
+	baseDomain         string
+	email              email.Sender
+	clock              clock.Clock
+	previewer          *preview.Previewer
+	resolver           Resolver
+	auth               *auth.Service
+	adminEnabled       bool
+	trustForwardedHost bool
+	loginLimiter       auth.Limiter
+	domainCNAMETarget  string
+	logger             *slog.Logger
 }
 
 var _ gen.StrictServerInterface = (*Server)(nil)
@@ -47,6 +52,25 @@ type Options struct {
 	// Resolver does DNS TXT lookups for custom-domain verification. Defaults to
 	// the system resolver when nil; tests inject a fake.
 	Resolver Resolver
+	// Auth is the validated authentication core (ADR-0005): the owner-auth
+	// middleware and the login handler use it. It is required — NewHandler panics
+	// if nil, since the owner surface must never fall open (the fail-closed
+	// construction lives in NewService, called at startup).
+	Auth *auth.Service
+	// AdminEnabled turns on the instance-level superadmin surface (/admin). When
+	// false (no superadmin configured), the admin endpoints report 404 — the
+	// surface is simply absent, not a hard failure (ADR-0005 §6). Startup ensures
+	// the configured admin identity exists before setting this.
+	AdminEnabled bool
+	// LoginLimiter throttles brute-force login attempts (owner + admin). Defaults
+	// to a no-op limiter (no limiting) when nil.
+	LoginLimiter auth.Limiter
+	// TrustForwardedHost enables X-Forwarded-Host for tenant resolution (ADR-0004
+	// §7). DEFAULT FALSE — enable ONLY when the backend is reachable exclusively
+	// behind the trusted frontend proxy; a directly-exposed backend must keep it
+	// off, since the header is client-settable and would otherwise let any caller
+	// spoof any tenant.
+	TrustForwardedHost bool
 	// DomainCNAMETarget is the hostname owners point their custom domain's CNAME
 	// at; returned by addDomain.
 	DomainCNAMETarget string
@@ -56,18 +80,28 @@ type Options struct {
 // tenant-resolution and owner-auth middleware. It serves both surfaces and
 // /healthz.
 func NewHandler(store storage.Store, opts Options) http.Handler {
+	if opts.Auth == nil {
+		panic("api: Options.Auth is required (owner surface must not fall open)")
+	}
 	s := &Server{
-		store:             store,
-		baseDomain:        opts.BaseDomain,
-		email:             opts.Email,
-		clock:             opts.Clock,
-		previewer:         opts.Previewer,
-		resolver:          opts.Resolver,
-		domainCNAMETarget: opts.DomainCNAMETarget,
-		logger:            opts.Logger,
+		store:              store,
+		baseDomain:         opts.BaseDomain,
+		email:              opts.Email,
+		clock:              opts.Clock,
+		previewer:          opts.Previewer,
+		resolver:           opts.Resolver,
+		auth:               opts.Auth,
+		adminEnabled:       opts.AdminEnabled,
+		trustForwardedHost: opts.TrustForwardedHost,
+		loginLimiter:       opts.LoginLimiter,
+		domainCNAMETarget:  opts.DomainCNAMETarget,
+		logger:             opts.Logger,
 	}
 	if s.logger == nil {
 		s.logger = slog.Default()
+	}
+	if s.loginLimiter == nil {
+		s.loginLimiter = auth.NoopLimiter{}
 	}
 	if s.email == nil {
 		s.email = email.NewLogSender(s.logger)
@@ -100,12 +134,15 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 	mux := http.NewServeMux()
 	gen.HandlerFromMux(strict, mux)
 
-	// Middleware order (outermost first): resolve tenant, enforce owner auth, then
-	// lift any capability token into context for the giver handlers.
+	// Middleware order (outermost first): resolve tenant (skips /admin + /healthz),
+	// enforce owner auth on /api/v1, enforce superadmin auth on /admin, then lift
+	// any capability token into context for the giver handlers.
 	var h http.Handler = mux
 	h = captureCapabilityToken(h)
+	h = s.requireAdmin(h)
 	h = s.requireOwner(h)
 	h = s.resolveTenant(h)
+	h = captureClientIP(h)
 	return h
 }
 

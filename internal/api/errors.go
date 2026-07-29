@@ -47,6 +47,15 @@ func unauthorized(detail string) gen.UnauthorizedApplicationProblemPlusJSONRespo
 	return gen.UnauthorizedApplicationProblemPlusJSONResponse(problemDetail(http.StatusUnauthorized, detail))
 }
 
+func forbidden(detail string) gen.ForbiddenApplicationProblemPlusJSONResponse {
+	return gen.ForbiddenApplicationProblemPlusJSONResponse(problemDetail(http.StatusForbidden, detail))
+}
+
 func conflict(detail string) gen.ConflictApplicationProblemPlusJSONResponse {
 	return gen.ConflictApplicationProblemPlusJSONResponse(problemDetail(http.StatusConflict, detail))
+}
+
+func tooManyRequests() gen.TooManyRequestsApplicationProblemPlusJSONResponse {
+	return gen.TooManyRequestsApplicationProblemPlusJSONResponse(
+		problemDetail(http.StatusTooManyRequests, "too many failed attempts; try again later"))
 }

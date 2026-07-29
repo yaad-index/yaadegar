@@ -24,6 +24,62 @@ The backend is feature-complete and covered by tests. A web frontend is in progr
 - Pluggable storage: SQLite for development, PostgreSQL for production, behind one repository interface with structural per-tenant isolation.
 - OpenAPI-as-source-of-truth via oapi-codegen, with a CI drift guard.
 
+## Run it locally
+
+Bring up the whole app — web frontend, backend, and Postgres — with Docker:
+
+```sh
+docker compose up --build
+```
+
+The backend applies its migrations on start and runs on the internal compose
+network (its port is not published); the web UI is served at
+`http://localhost:3000`. Tenants are addressed by subdomain under `localhost`
+(e.g. `alice.localhost`), which resolves to the loopback with no `/etc/hosts`
+changes — so an owner logs in at `http://alice.localhost:3000`.
+
+Owner self-registration isn't built yet, so seed a tenant and an owner from the
+CLI (the same binary, inside the running backend container):
+
+```sh
+docker compose exec app yaadegar create-tenant --subdomain alice
+docker compose exec app yaadegar create-owner --tenant alice --username alice --password devpass
+```
+
+Then open `http://alice.localhost:3000`, log in as `alice`, create a list, and
+copy its share link to try the anonymous giver flow.
+
+To stand it up on a remote demo host (a LAN box with no TLS or DNS), override the
+origin, base domain, and published port at up-time — a nip.io host needs no DNS
+setup:
+
+```sh
+YAADEGAR_BASE_DOMAIN=203.0.113.10.nip.io \
+  ORIGIN=http://demo.203.0.113.10.nip.io:3000 \
+  WEB_PORT=3000 docker compose up --build --detach
+docker compose exec app yaadegar create-tenant --subdomain demo
+```
+
+`ORIGIN` must match the host the browser uses (it is the frontend's CSRF origin).
+Cookies are not marked `Secure` over plain http — fine for a LAN demo; a real TLS
+deployment fronts the web service with a terminating proxy (see ADR-0006 §5).
+
+> **Dev only.** The compose file ships intentionally weak, placeholder secrets for
+> local use. Never reuse them for anything real.
+
+## Container image
+
+Prebuilt multi-arch images (`linux/amd64`, `linux/arm64`) are published to GHCR:
+
+```sh
+docker pull ghcr.io/yaad-index/yaadegar:latest
+```
+
+Images are published on each release (`vX.Y.Z`, `X.Y`, and `latest`) and on every
+push to `main` (a rolling `main` tag plus a short-sha tag for bleeding-edge
+testing). To use one with the local compose setup, set the `app` service's `image:`
+to the tag you want instead of `build: .`.
+
 ## Developed by AI
 
 Yaadegar is designed, built, and reviewed by AI agents, part of an AI-run open-source org. Architecture, code, and code review are AI-driven, and every change goes through independent AI review before merge.

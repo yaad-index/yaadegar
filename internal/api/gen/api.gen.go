@@ -112,6 +112,21 @@ func (e ListVisibility) Valid() bool {
 	}
 }
 
+// Defines values for LoginResponseTokenType.
+const (
+	Bearer LoginResponseTokenType = "Bearer"
+)
+
+// Valid indicates whether the value is a known member of the LoginResponseTokenType enum.
+func (e LoginResponseTokenType) Valid() bool {
+	switch e {
+	case Bearer:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for MatchState.
 const (
 	MatchStateBothConfirmed MatchState = "both_confirmed"
@@ -152,6 +167,34 @@ func (e ConfirmMatchJSONBodyDecision) Valid() bool {
 	default:
 		return false
 	}
+}
+
+// AdminIdentity defines model for AdminIdentity.
+type AdminIdentity struct {
+	Id       *string `json:"id,omitempty"`
+	Username *string `json:"username,omitempty"`
+}
+
+// AdminOwner defines model for AdminOwner.
+type AdminOwner struct {
+	Email    *string `json:"email,omitempty"`
+	Id       *string `json:"id,omitempty"`
+	TenantId *string `json:"tenant_id,omitempty"`
+}
+
+// AdminOwnerCreate defines model for AdminOwnerCreate.
+type AdminOwnerCreate struct {
+	Email string `json:"email"`
+
+	// Password Plaintext; hashed server-side (argon2id). The email doubles as the login username.
+	Password string `json:"password"`
+	TenantId string `json:"tenant_id"`
+}
+
+// AdminTenantCreate defines model for AdminTenantCreate.
+type AdminTenantCreate struct {
+	// Subdomain Lowercase slug; the tenant is addressed at <subdomain>.<base-domain>.
+	Subdomain string `json:"subdomain"`
 }
 
 // Contribution A giver's pledge toward co-buying an item (giver-facing view).
@@ -319,6 +362,25 @@ type ListUpdate struct {
 // ListVisibility defines model for ListVisibility.
 type ListVisibility string
 
+// LoginRequest defines model for LoginRequest.
+type LoginRequest struct {
+	Password string `json:"password"`
+	Username string `json:"username"`
+}
+
+// LoginResponse defines model for LoginResponse.
+type LoginResponse struct {
+	// AccessToken Signed JWT to present as `Authorization: Bearer <token>`.
+	AccessToken string `json:"access_token"`
+
+	// ExpiresIn Access-token lifetime in seconds.
+	ExpiresIn int                    `json:"expires_in"`
+	TokenType LoginResponseTokenType `json:"token_type"`
+}
+
+// LoginResponseTokenType defines model for LoginResponse.TokenType.
+type LoginResponseTokenType string
+
 // Match A co-buying handshake between contributions on one item.
 type Match struct {
 	// Contacts Populated only once state is both_confirmed.
@@ -385,6 +447,12 @@ type ReservationCreated struct {
 	ReservationId   *string `json:"reservation_id,omitempty"`
 }
 
+// Tenant defines model for Tenant.
+type Tenant struct {
+	Id        *string `json:"id,omitempty"`
+	Subdomain *string `json:"subdomain,omitempty"`
+}
+
 // User defines model for User.
 type User struct {
 	Id     *string `json:"id,omitempty"`
@@ -416,8 +484,14 @@ type BadRequest = Problem
 // Conflict RFC 9457 problem detail.
 type Conflict = Problem
 
+// Forbidden RFC 9457 problem detail.
+type Forbidden = Problem
+
 // NotFound RFC 9457 problem detail.
 type NotFound = Problem
+
+// TooManyRequests RFC 9457 problem detail.
+type TooManyRequests = Problem
 
 // Unauthorized RFC 9457 problem detail.
 type Unauthorized = Problem
@@ -462,6 +536,18 @@ type ConfirmMatchJSONBody struct {
 // ConfirmMatchJSONBodyDecision defines parameters for ConfirmMatch.
 type ConfirmMatchJSONBodyDecision string
 
+// AdminLoginJSONRequestBody defines body for AdminLogin for application/json ContentType.
+type AdminLoginJSONRequestBody = LoginRequest
+
+// AdminCreateOwnerJSONRequestBody defines body for AdminCreateOwner for application/json ContentType.
+type AdminCreateOwnerJSONRequestBody = AdminOwnerCreate
+
+// AdminCreateTenantJSONRequestBody defines body for AdminCreateTenant for application/json ContentType.
+type AdminCreateTenantJSONRequestBody = AdminTenantCreate
+
+// LoginJSONRequestBody defines body for Login for application/json ContentType.
+type LoginJSONRequestBody = LoginRequest
+
 // AddDomainJSONRequestBody defines body for AddDomain for application/json ContentType.
 type AddDomainJSONRequestBody AddDomainJSONBody
 
@@ -497,6 +583,21 @@ type CreateReservationJSONRequestBody = ReservationCreate
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// AdminLogin Log in as the instance superadmin
+	// (POST /admin/auth/login)
+	AdminLogin(w http.ResponseWriter, r *http.Request)
+	// AdminGetMe The current superadmin
+	// (GET /admin/me)
+	AdminGetMe(w http.ResponseWriter, r *http.Request)
+	// AdminCreateOwner Create an owner with a password credential in a tenant (superadmin)
+	// (POST /admin/owners)
+	AdminCreateOwner(w http.ResponseWriter, r *http.Request)
+	// AdminCreateTenant Create a tenant (superadmin)
+	// (POST /admin/tenants)
+	AdminCreateTenant(w http.ResponseWriter, r *http.Request)
+	// Login Log in with a username and password
+	// (POST /api/v1/auth/login)
+	Login(w http.ResponseWriter, r *http.Request)
 	// ListDomains List the tenant's custom domains
 	// (GET /api/v1/domains)
 	ListDomains(w http.ResponseWriter, r *http.Request)
@@ -582,6 +683,76 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// AdminLogin operation middleware
+func (siw *ServerInterfaceWrapper) AdminLogin(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminLogin(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminGetMe operation middleware
+func (siw *ServerInterfaceWrapper) AdminGetMe(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminGetMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminCreateOwner operation middleware
+func (siw *ServerInterfaceWrapper) AdminCreateOwner(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminCreateOwner(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminCreateTenant operation middleware
+func (siw *ServerInterfaceWrapper) AdminCreateTenant(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminCreateTenant(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Login operation middleware
+func (siw *ServerInterfaceWrapper) Login(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Login(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // ListDomains operation middleware
 func (siw *ServerInterfaceWrapper) ListDomains(w http.ResponseWriter, r *http.Request) {
@@ -1325,6 +1496,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	}
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/healthz", wrapper.GetHealthz)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/login", wrapper.Login)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/admin/auth/login", wrapper.AdminLogin)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/admin/me", wrapper.AdminGetMe)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/admin/tenants", wrapper.AdminCreateTenant)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/admin/owners", wrapper.AdminCreateOwner)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/me", wrapper.GetCurrentUser)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/lists", wrapper.ListLists)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/lists", wrapper.CreateList)
@@ -1357,9 +1533,452 @@ type BadRequestApplicationProblemPlusJSONResponse Problem
 
 type ConflictApplicationProblemPlusJSONResponse Problem
 
+type ForbiddenApplicationProblemPlusJSONResponse Problem
+
 type NotFoundApplicationProblemPlusJSONResponse Problem
 
+type TooManyRequestsApplicationProblemPlusJSONResponse Problem
+
 type UnauthorizedApplicationProblemPlusJSONResponse Problem
+
+type AdminLoginRequestObject struct {
+	Body *AdminLoginJSONRequestBody
+}
+
+type AdminLoginResponseObject interface {
+	VisitAdminLoginResponse(w http.ResponseWriter) error
+}
+
+type AdminLogin200JSONResponse LoginResponse
+
+func (response AdminLogin200JSONResponse) VisitAdminLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminLogin400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response AdminLogin400ApplicationProblemPlusJSONResponse) VisitAdminLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminLogin401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response AdminLogin401ApplicationProblemPlusJSONResponse) VisitAdminLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminLogin404ApplicationProblemPlusJSONResponse Problem
+
+func (response AdminLogin404ApplicationProblemPlusJSONResponse) VisitAdminLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminLogin429ApplicationProblemPlusJSONResponse struct {
+	TooManyRequestsApplicationProblemPlusJSONResponse
+}
+
+func (response AdminLogin429ApplicationProblemPlusJSONResponse) VisitAdminLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetMeRequestObject struct {
+}
+
+type AdminGetMeResponseObject interface {
+	VisitAdminGetMeResponse(w http.ResponseWriter) error
+}
+
+type AdminGetMe200JSONResponse AdminIdentity
+
+func (response AdminGetMe200JSONResponse) VisitAdminGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetMe401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response AdminGetMe401ApplicationProblemPlusJSONResponse) VisitAdminGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetMe403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response AdminGetMe403ApplicationProblemPlusJSONResponse) VisitAdminGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetMe404ApplicationProblemPlusJSONResponse Problem
+
+func (response AdminGetMe404ApplicationProblemPlusJSONResponse) VisitAdminGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminCreateOwnerRequestObject struct {
+	Body *AdminCreateOwnerJSONRequestBody
+}
+
+type AdminCreateOwnerResponseObject interface {
+	VisitAdminCreateOwnerResponse(w http.ResponseWriter) error
+}
+
+type AdminCreateOwner201JSONResponse AdminOwner
+
+func (response AdminCreateOwner201JSONResponse) VisitAdminCreateOwnerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminCreateOwner400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response AdminCreateOwner400ApplicationProblemPlusJSONResponse) VisitAdminCreateOwnerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminCreateOwner401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response AdminCreateOwner401ApplicationProblemPlusJSONResponse) VisitAdminCreateOwnerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminCreateOwner403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response AdminCreateOwner403ApplicationProblemPlusJSONResponse) VisitAdminCreateOwnerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminCreateOwner404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response AdminCreateOwner404ApplicationProblemPlusJSONResponse) VisitAdminCreateOwnerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminCreateOwner409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response AdminCreateOwner409ApplicationProblemPlusJSONResponse) VisitAdminCreateOwnerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminCreateTenantRequestObject struct {
+	Body *AdminCreateTenantJSONRequestBody
+}
+
+type AdminCreateTenantResponseObject interface {
+	VisitAdminCreateTenantResponse(w http.ResponseWriter) error
+}
+
+type AdminCreateTenant201JSONResponse Tenant
+
+func (response AdminCreateTenant201JSONResponse) VisitAdminCreateTenantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminCreateTenant400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response AdminCreateTenant400ApplicationProblemPlusJSONResponse) VisitAdminCreateTenantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminCreateTenant401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response AdminCreateTenant401ApplicationProblemPlusJSONResponse) VisitAdminCreateTenantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminCreateTenant403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response AdminCreateTenant403ApplicationProblemPlusJSONResponse) VisitAdminCreateTenantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminCreateTenant404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response AdminCreateTenant404ApplicationProblemPlusJSONResponse) VisitAdminCreateTenantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminCreateTenant409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response AdminCreateTenant409ApplicationProblemPlusJSONResponse) VisitAdminCreateTenantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LoginRequestObject struct {
+	Body *LoginJSONRequestBody
+}
+
+type LoginResponseObject interface {
+	VisitLoginResponse(w http.ResponseWriter) error
+}
+
+type Login200JSONResponse LoginResponse
+
+func (response Login200JSONResponse) VisitLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Login400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response Login400ApplicationProblemPlusJSONResponse) VisitLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Login401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response Login401ApplicationProblemPlusJSONResponse) VisitLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Login404ApplicationProblemPlusJSONResponse Problem
+
+func (response Login404ApplicationProblemPlusJSONResponse) VisitLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Login429ApplicationProblemPlusJSONResponse struct {
+	TooManyRequestsApplicationProblemPlusJSONResponse
+}
+
+func (response Login429ApplicationProblemPlusJSONResponse) VisitLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type ListDomainsRequestObject struct {
 }
@@ -1654,6 +2273,22 @@ func (response DeleteItem401ApplicationProblemPlusJSONResponse) VisitDeleteItemR
 	return err
 }
 
+type DeleteItem403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteItem403ApplicationProblemPlusJSONResponse) VisitDeleteItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type DeleteItem404ApplicationProblemPlusJSONResponse struct {
 	NotFoundApplicationProblemPlusJSONResponse
 }
@@ -1705,6 +2340,22 @@ func (response UpdateItem401ApplicationProblemPlusJSONResponse) VisitUpdateItemR
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateItem403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateItem403ApplicationProblemPlusJSONResponse) VisitUpdateItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -1849,6 +2500,22 @@ func (response DeleteList401ApplicationProblemPlusJSONResponse) VisitDeleteListR
 	return err
 }
 
+type DeleteList403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteList403ApplicationProblemPlusJSONResponse) VisitDeleteListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type DeleteList404ApplicationProblemPlusJSONResponse struct {
 	NotFoundApplicationProblemPlusJSONResponse
 }
@@ -1899,6 +2566,22 @@ func (response GetList401ApplicationProblemPlusJSONResponse) VisitGetListRespons
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetList403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response GetList403ApplicationProblemPlusJSONResponse) VisitGetListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -1974,6 +2657,22 @@ func (response UpdateList401ApplicationProblemPlusJSONResponse) VisitUpdateListR
 	return err
 }
 
+type UpdateList403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateList403ApplicationProblemPlusJSONResponse) VisitUpdateListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type UpdateList404ApplicationProblemPlusJSONResponse struct {
 	NotFoundApplicationProblemPlusJSONResponse
 }
@@ -2025,6 +2724,22 @@ func (response ListItems401ApplicationProblemPlusJSONResponse) VisitListItemsRes
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListItems403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response ListItems403ApplicationProblemPlusJSONResponse) VisitListItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -2096,6 +2811,22 @@ func (response CreateItem401ApplicationProblemPlusJSONResponse) VisitCreateItemR
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateItem403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response CreateItem403ApplicationProblemPlusJSONResponse) VisitCreateItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -2704,6 +3435,21 @@ func (response CreateReservation410ApplicationProblemPlusJSONResponse) VisitCrea
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// AdminLogin Log in as the instance superadmin
+	// (POST /admin/auth/login)
+	AdminLogin(ctx context.Context, request AdminLoginRequestObject) (AdminLoginResponseObject, error)
+	// AdminGetMe The current superadmin
+	// (GET /admin/me)
+	AdminGetMe(ctx context.Context, request AdminGetMeRequestObject) (AdminGetMeResponseObject, error)
+	// AdminCreateOwner Create an owner with a password credential in a tenant (superadmin)
+	// (POST /admin/owners)
+	AdminCreateOwner(ctx context.Context, request AdminCreateOwnerRequestObject) (AdminCreateOwnerResponseObject, error)
+	// AdminCreateTenant Create a tenant (superadmin)
+	// (POST /admin/tenants)
+	AdminCreateTenant(ctx context.Context, request AdminCreateTenantRequestObject) (AdminCreateTenantResponseObject, error)
+	// Login Log in with a username and password
+	// (POST /api/v1/auth/login)
+	Login(ctx context.Context, request LoginRequestObject) (LoginResponseObject, error)
 	// ListDomains List the tenant's custom domains
 	// (GET /api/v1/domains)
 	ListDomains(ctx context.Context, request ListDomainsRequestObject) (ListDomainsResponseObject, error)
@@ -2818,6 +3564,154 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// AdminLogin operation middleware
+func (sh *strictHandler) AdminLogin(w http.ResponseWriter, r *http.Request) {
+	var request AdminLoginRequestObject
+
+	var body AdminLoginJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminLogin(ctx, request.(AdminLoginRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminLogin")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminLoginResponseObject); ok {
+		if err := validResponse.VisitAdminLoginResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminGetMe operation middleware
+func (sh *strictHandler) AdminGetMe(w http.ResponseWriter, r *http.Request) {
+	var request AdminGetMeRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminGetMe(ctx, request.(AdminGetMeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminGetMe")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminGetMeResponseObject); ok {
+		if err := validResponse.VisitAdminGetMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminCreateOwner operation middleware
+func (sh *strictHandler) AdminCreateOwner(w http.ResponseWriter, r *http.Request) {
+	var request AdminCreateOwnerRequestObject
+
+	var body AdminCreateOwnerJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminCreateOwner(ctx, request.(AdminCreateOwnerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminCreateOwner")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminCreateOwnerResponseObject); ok {
+		if err := validResponse.VisitAdminCreateOwnerResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminCreateTenant operation middleware
+func (sh *strictHandler) AdminCreateTenant(w http.ResponseWriter, r *http.Request) {
+	var request AdminCreateTenantRequestObject
+
+	var body AdminCreateTenantJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminCreateTenant(ctx, request.(AdminCreateTenantRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminCreateTenant")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminCreateTenantResponseObject); ok {
+		if err := validResponse.VisitAdminCreateTenantResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// Login operation middleware
+func (sh *strictHandler) Login(w http.ResponseWriter, r *http.Request) {
+	var request LoginRequestObject
+
+	var body LoginJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.Login(ctx, request.(LoginRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Login")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(LoginResponseObject); ok {
+		if err := validResponse.VisitLoginResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // ListDomains operation middleware
