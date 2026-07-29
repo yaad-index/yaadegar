@@ -3,11 +3,13 @@ import { superValidate, message } from 'sveltekit-superforms';
 import { zod4 } from 'sveltekit-superforms/adapters';
 import { z } from 'zod';
 import { backendClient } from '$lib/server/api';
+import { renderNote } from '$lib/server/markdown';
 import type { Actions, PageServerLoad } from './$types';
 
 const addItemSchema = z.object({
 	name: z.string().min(1, 'Name is required'),
 	url: z.string().url('Must be a valid URL').optional().or(z.literal('')),
+	note: z.string().max(4000).optional(),
 	quantity_wanted: z.coerce.number().int().min(1).default(1)
 });
 
@@ -22,9 +24,13 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	if (listRes.error || !listRes.data) {
 		error(listRes.response.status || 404, 'List not found.');
 	}
+	const items = itemsRes.data?.items ?? [];
 	return {
 		list: listRes.data,
-		items: itemsRes.data?.items ?? [],
+		items,
+		// Notes are rendered to sanitized HTML server-side; {@html} only ever touches
+		// this map, never a raw note (ADR-0006 security boundary).
+		noteHtml: Object.fromEntries(items.map((i) => [i.id ?? '', renderNote(i.note)])),
 		addForm: await superValidate(zod4(addItemSchema))
 	};
 };
@@ -39,9 +45,10 @@ export const actions: Actions = {
 			body: {
 				name: form.data.name,
 				url: form.data.url || undefined,
+				note: form.data.note || undefined,
 				quantity_wanted: form.data.quantity_wanted,
-				// priority isn't surfaced in the F2 UI; send the default (the spec marks
-				// it required, though the backend defaults it too).
+				// priority isn't surfaced in the UI; send the default (the spec marks it
+				// required, though the backend defaults it too).
 				priority: 0
 			}
 		});
@@ -53,12 +60,21 @@ export const actions: Actions = {
 		const fd = await request.formData();
 		const itemId = String(fd.get('item_id') ?? '');
 		const name = String(fd.get('name') ?? '').trim();
+		const url = String(fd.get('url') ?? '').trim();
+		const note = String(fd.get('note') ?? '').trim();
 		const quantity = Number(fd.get('quantity_wanted') ?? 1);
 		if (!itemId || !name) return fail(400, { editError: 'Name is required.' });
 		const client = backendClient({ host: locals.host, token: locals.token });
+		// The item PATCH is set-if-present; send only the fields with values (clearing a
+		// field back to empty is not supported by the current backend semantics).
 		const { error: err } = await client.PATCH('/api/v1/items/{itemId}', {
 			params: { path: { itemId } },
-			body: { name, quantity_wanted: Number.isFinite(quantity) ? quantity : 1 }
+			body: {
+				name,
+				quantity_wanted: Number.isFinite(quantity) ? quantity : 1,
+				url: url || undefined,
+				note: note || undefined
+			}
 		});
 		if (err) return fail(400, { editError: 'Could not update the item.' });
 		return { edited: true };

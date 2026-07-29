@@ -96,23 +96,40 @@
 				{#each data.list.items ?? [] as item (item.id)}
 					{@const reservedByYou = !!item.id && data.reservedItemIds.includes(item.id)}
 					<li class="flex items-start justify-between gap-4 p-4">
-						<div class="min-w-0">
-							<p class="font-medium">{item.name}</p>
-							{#if item.note}<p class="mt-0.5 text-sm text-gray-600">{item.note}</p>{/if}
-							<p class="mt-1 flex flex-wrap gap-x-3 text-sm text-gray-500">
-								{#if price(item.price)}<span>{price(item.price)}</span>{/if}
-								<span>{availabilityLabel[item.availability ?? ''] ?? 'Available'}</span>
-								{#if item.url}
-									<!-- eslint-disable svelte/no-navigation-without-resolve -- external, user-provided product URL -->
-									<a
-										href={item.url}
-										class="text-blue-700 underline"
-										rel="noreferrer"
-										target="_blank">View item</a
-									>
-									<!-- eslint-enable svelte/no-navigation-without-resolve -->
+						<div class="flex min-w-0 gap-3">
+							{#if item.image_url}
+								<img
+									src={item.image_url}
+									alt={item.name}
+									class="h-14 w-14 shrink-0 rounded border object-cover"
+								/>
+							{/if}
+							<div class="min-w-0">
+								<p class="font-medium">{item.name}</p>
+								{#if item.id && data.noteHtml[item.id]}
+									<!-- data.noteHtml is sanitized server-side (marked → sanitize-html tight
+									     allowlist); {@html} only ever touches this pre-sanitized field. -->
+									<!-- eslint-disable svelte/no-at-html-tags -->
+									<div class="prose prose-sm mt-0.5 max-w-none text-sm text-gray-600">
+										{@html data.noteHtml[item.id]}
+									</div>
+									<!-- eslint-enable svelte/no-at-html-tags -->
 								{/if}
-							</p>
+								<p class="mt-1 flex flex-wrap gap-x-3 text-sm text-gray-500">
+									{#if price(item.price)}<span>{price(item.price)}</span>{/if}
+									<span>{availabilityLabel[item.availability ?? ''] ?? 'Available'}</span>
+									{#if item.url}
+										<!-- eslint-disable svelte/no-navigation-without-resolve -- external, user-provided product URL -->
+										<a
+											href={item.url}
+											class="text-blue-700 underline"
+											rel="noreferrer"
+											target="_blank">View item</a
+										>
+										<!-- eslint-enable svelte/no-navigation-without-resolve -->
+									{/if}
+								</p>
+							</div>
 						</div>
 						<div class="shrink-0 text-right">
 							{#if reservedByYou}
