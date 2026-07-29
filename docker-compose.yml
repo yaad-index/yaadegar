@@ -1,9 +1,23 @@
-# Local, hands-on Yaadegar: `docker compose up --build` brings up the app + a
-# Postgres database. The app applies its migrations at boot. See the README's
-# "Run it locally" section for seeding a tenant + owner and logging in.
+# Local, hands-on Yaadegar: `docker compose up --build` brings up the whole app —
+# the SvelteKit web frontend, the Go backend, and Postgres. The backend applies
+# its migrations at boot. Seed a tenant + owner via `docker compose exec app ...`
+# (the backend port is not published), then log in through the web UI at
+# http://<tenant>.<base-domain>:<web-port>.
 #
 # ⚠️  DEV ONLY. The secrets below are intentionally weak, committed placeholders
 # for local use — never reuse them for anything real.
+#
+# Remote demo (a LAN host, no TLS, no DNS): override ORIGIN, YAADEGAR_BASE_DOMAIN,
+# and WEB_PORT at up-time. A nip.io host needs no DNS setup — e.g. tenant "demo":
+#   YAADEGAR_BASE_DOMAIN=203.0.113.10.nip.io \
+#   ORIGIN=http://demo.203.0.113.10.nip.io:3000 \
+#   WEB_PORT=3000 docker compose up --build --detach
+#   docker compose exec app yaadegar create-tenant --subdomain demo
+# ORIGIN must match the host the browser uses (SvelteKit's CSRF origin check).
+# Cookies are not Secure over plain http — fine for a LAN demo. A real TLS deploy
+# instead fronts the web service with a terminating proxy and sets
+# PROTOCOL_HEADER=x-forwarded-proto + HOST_HEADER=x-forwarded-host (ADR-0006 §5),
+# which yields per-tenant https origins and the Secure cookie flag.
 
 services:
   db:
@@ -31,12 +45,38 @@ services:
       # DEV ONLY — a throwaway signing secret so the instance starts locally.
       YAADEGAR_AUTH_JWT_SECRET: dev-only-insecure-jwt-signing-secret-change-me
       YAADEGAR_AUTH_PASSWORD_ENABLED: "true"
-      # Tenants are addressed as <subdomain>.localhost, which resolves to the
-      # loopback in browsers and curl with no /etc/hosts edits.
-      YAADEGAR_BASE_DOMAIN: localhost
+      # Tenants are addressed as <subdomain>.<base-domain>. Defaults to localhost
+      # for local browsers/curl; override for a remote demo host (e.g. a nip.io host).
+      YAADEGAR_BASE_DOMAIN: ${YAADEGAR_BASE_DOMAIN:-localhost}
       YAADEGAR_HTTP_ADDR: ":8080"
+      # The web service is the sole trusted proxy and forwards the tenant host as
+      # X-Forwarded-Host; trust it because the backend port is not published
+      # (ADR-0004 §7 — trust only when the backend isn't externally reachable).
+      YAADEGAR_TRUST_FORWARDED_HOST: "true"
+    # Intentionally no published ports: the backend is reachable only on the
+    # internal compose network. Seed with `docker compose exec app yaadegar ...`.
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/yaadegar", "health"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+      start_period: 5s
+
+  web:
+    build: ./web
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      # The backend, over the internal compose network.
+      BACKEND_ORIGIN: http://app:8080
+      # The public origin the browser uses; must match the host you browse to
+      # (SvelteKit CSRF). Override for a remote demo host.
+      ORIGIN: ${ORIGIN:-http://localhost:3000}
+      PORT: "3000"
+      HOST: 0.0.0.0
     ports:
-      - "8080:8080"
+      - "${WEB_PORT:-3000}:3000"
 
 volumes:
   yaadegar-db:

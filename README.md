@@ -26,34 +26,43 @@ The backend is feature-complete and covered by tests. A web frontend is in progr
 
 ## Run it locally
 
-Bring up the app and a Postgres database with Docker:
+Bring up the whole app — web frontend, backend, and Postgres — with Docker:
 
 ```sh
 docker compose up --build
 ```
 
-The app applies its migrations on start and listens on `http://localhost:8080`.
-Tenants are addressed by subdomain under `localhost` (e.g. `alice.localhost`),
-which resolves to the loopback with no `/etc/hosts` changes.
+The backend applies its migrations on start and runs on the internal compose
+network (its port is not published); the web UI is served at
+`http://localhost:3000`. Tenants are addressed by subdomain under `localhost`
+(e.g. `alice.localhost`), which resolves to the loopback with no `/etc/hosts`
+changes — so an owner logs in at `http://alice.localhost:3000`.
 
 Owner self-registration isn't built yet, so seed a tenant and an owner from the
-CLI (the same binary):
+CLI (the same binary, inside the running backend container):
 
 ```sh
-docker compose run --rm app create-tenant --subdomain alice
-docker compose run --rm app create-owner --tenant alice --username alice --password devpass
+docker compose exec app yaadegar create-tenant --subdomain alice
+docker compose exec app yaadegar create-owner --tenant alice --username alice --password devpass
 ```
 
-Then log in to get a session token and use it on the owner surface:
+Then open `http://alice.localhost:3000`, log in as `alice`, create a list, and
+copy its share link to try the anonymous giver flow.
+
+To stand it up on a remote demo host (a LAN box with no TLS or DNS), override the
+origin, base domain, and published port at up-time — a nip.io host needs no DNS
+setup:
 
 ```sh
-curl -sX POST http://alice.localhost:8080/api/v1/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"alice","password":"devpass"}'
-# → {"access_token":"<jwt>","token_type":"Bearer","expires_in":43200}
-
-curl -s http://alice.localhost:8080/api/v1/me -H 'Authorization: Bearer <jwt>'
+YAADEGAR_BASE_DOMAIN=203.0.113.10.nip.io \
+  ORIGIN=http://demo.203.0.113.10.nip.io:3000 \
+  WEB_PORT=3000 docker compose up --build --detach
+docker compose exec app yaadegar create-tenant --subdomain demo
 ```
+
+`ORIGIN` must match the host the browser uses (it is the frontend's CSRF origin).
+Cookies are not marked `Secure` over plain http — fine for a LAN demo; a real TLS
+deployment fronts the web service with a terminating proxy (see ADR-0006 §5).
 
 > **Dev only.** The compose file ships intentionally weak, placeholder secrets for
 > local use. Never reuse them for anything real.
