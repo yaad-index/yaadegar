@@ -360,6 +360,9 @@ type List struct {
 	Id        *string             `json:"id,omitempty"`
 	ItemCount *int                `json:"item_count,omitempty"`
 
+	// ReserverConfirmWindow The confirm-window override in minutes; null inherits the instance default.
+	ReserverConfirmWindow *int `json:"reserver_confirm_window,omitempty"`
+
 	// ReserverTier The reserver-identity tier override; null inherits the instance default.
 	ReserverTier *string         `json:"reserver_tier,omitempty"`
 	ShareSlug    *string         `json:"share_slug,omitempty"`
@@ -374,6 +377,9 @@ type ListCreate struct {
 
 	// EventDate Optional. After this date the list auto-disables (read-only).
 	EventDate *openapi_types.Date `json:"event_date,omitempty"`
+
+	// ReserverConfirmWindow email_confirmed confirm-window override in minutes (ADR-0007). Omit (or null) to inherit the instance default; 0 means an unconfirmed hold never auto-expires; N means it expires N minutes after reserve if unconfirmed.
+	ReserverConfirmWindow *int `json:"reserver_confirm_window,omitempty"`
 
 	// ReserverTier Reserver-identity tier override (ADR-0007): full_guest | email_confirmed | registered. Omit (or null) to inherit the instance default. full_guest reserves with a one-time capability token; email_confirmed requires the giver to confirm an email before the reservation activates; registered (deferred) requires a giver account.
 	ReserverTier *string         `json:"reserver_tier,omitempty"`
@@ -391,12 +397,13 @@ type ListPage struct {
 
 // ListUpdate defines model for ListUpdate.
 type ListUpdate struct {
-	Active       *bool               `json:"active,omitempty"`
-	DecayDays    *int                `json:"decay_days,omitempty"`
-	EventDate    *openapi_types.Date `json:"event_date,omitempty"`
-	ReserverTier *string             `json:"reserver_tier,omitempty"`
-	Title        *string             `json:"title,omitempty"`
-	Visibility   *ListVisibility     `json:"visibility,omitempty"`
+	Active                *bool               `json:"active,omitempty"`
+	DecayDays             *int                `json:"decay_days,omitempty"`
+	EventDate             *openapi_types.Date `json:"event_date,omitempty"`
+	ReserverConfirmWindow *int                `json:"reserver_confirm_window,omitempty"`
+	ReserverTier          *string             `json:"reserver_tier,omitempty"`
+	Title                 *string             `json:"title,omitempty"`
+	Visibility            *ListVisibility     `json:"visibility,omitempty"`
 }
 
 // ListVisibility defines model for ListVisibility.

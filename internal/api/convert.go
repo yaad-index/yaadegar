@@ -55,16 +55,17 @@ func toGenList(l storage.List) gen.List {
 		tier = &t
 	}
 	return gen.List{
-		Id:           ptr(l.ID),
-		Title:        ptr(l.Title),
-		Visibility:   ptr(gen.ListVisibility(l.Visibility)),
-		ShareSlug:    ptr(l.ShareSlug),
-		EventDate:    toGenDate(l.EventDate),
-		DecayDays:    l.DecayDays, // *int: nil = inheriting the instance default
-		ReserverTier: tier,        // nil = inheriting the instance default
-		Active:       ptr(l.Active),
-		ItemCount:    ptr(l.ItemCount),
-		CreatedAt:    ptr(l.CreatedAt),
+		Id:                    ptr(l.ID),
+		Title:                 ptr(l.Title),
+		Visibility:            ptr(gen.ListVisibility(l.Visibility)),
+		ShareSlug:             ptr(l.ShareSlug),
+		EventDate:             toGenDate(l.EventDate),
+		DecayDays:             l.DecayDays,                    // *int: nil = inheriting the instance default
+		ReserverTier:          tier,                           // nil = inheriting the instance default
+		ReserverConfirmWindow: l.ReserverConfirmWindowMinutes, // *int minutes: nil = inherit
+		Active:                ptr(l.Active),
+		ItemCount:             ptr(l.ItemCount),
+		CreatedAt:             ptr(l.CreatedAt),
 	}
 }
 

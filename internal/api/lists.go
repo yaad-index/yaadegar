@@ -26,12 +26,13 @@ func (s *Server) CreateList(ctx context.Context, req gen.CreateListRequestObject
 		}, nil
 	}
 	created, err := ts.Lists().Create(ctx, storage.List{
-		Title:        req.Body.Title,
-		Visibility:   fromGenVisibility(req.Body.Visibility),
-		EventDate:    fromGenDate(req.Body.EventDate),
-		DecayDays:    req.Body.DecayDays, // nil (absent) = inherit the instance default
-		ReserverTier: tier,               // nil (absent) = inherit the instance default
-		Active:       true,
+		Title:                        req.Body.Title,
+		Visibility:                   fromGenVisibility(req.Body.Visibility),
+		EventDate:                    fromGenDate(req.Body.EventDate),
+		DecayDays:                    req.Body.DecayDays,             // nil (absent) = inherit the instance default
+		ReserverTier:                 tier,                           // nil (absent) = inherit the instance default
+		ReserverConfirmWindowMinutes: req.Body.ReserverConfirmWindow, // nil (absent) = inherit
+		Active:                       true,
 	}, owner.ID)
 	if err != nil {
 		return nil, err
@@ -143,6 +144,9 @@ func (s *Server) UpdateList(ctx context.Context, req gen.UpdateListRequestObject
 	}
 	if req.Body.DecayDays != nil {
 		l.DecayDays = req.Body.DecayDays
+	}
+	if req.Body.ReserverConfirmWindow != nil {
+		l.ReserverConfirmWindowMinutes = req.Body.ReserverConfirmWindow
 	}
 	if req.Body.ReserverTier != nil {
 		tier, ok := parseReserverTier(req.Body.ReserverTier)
