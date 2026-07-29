@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.2.0...yaadegar-v0.3.0) (2026-07-29)
+
+
+### Features
+
+* email_confirmed reserve + confirm endpoint + email ([#81](https://github.com/yaad-index/yaadegar/issues/81)) ([#85](https://github.com/yaad-index/yaadegar/issues/85)) ([8404dac](https://github.com/yaad-index/yaadegar/commit/8404dacf8fc65434a25f8046418d246b4cc34466))
+* reserver-tier foundations + confirm-window expiry ([#81](https://github.com/yaad-index/yaadegar/issues/81)) ([#83](https://github.com/yaad-index/yaadegar/issues/83)) ([b4d65cd](https://github.com/yaad-index/yaadegar/commit/b4d65cd22f2840f2bca0ee1cd8fccb132e22a476))
+
 ## [0.2.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.1.0...yaadegar-v0.2.0) (2026-07-29)
 
 
