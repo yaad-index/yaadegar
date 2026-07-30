@@ -365,3 +365,87 @@ func TestPostgres_ReserveCoBuyMutualExclusionRace(t *testing.T) {
 			round, reserved, cobuy)
 	}
 }
+
+// TestPostgres_MatchExpiryVsConfirmRace races the co-buy auto-expiry sweep (#101)
+// against a full confirmation of the same proposed match on real Postgres. Both the
+// expiry and every confirm run under the item row lock, so the two transitions
+// serialize: the match must land in exactly one consistent terminal shape — either
+// both_confirmed with every pledge confirmed, or expired with every pledge expired —
+// never a torn mix. 40 rounds, each on a fresh match.
+func TestPostgres_MatchExpiryVsConfirmRace(t *testing.T) {
+	ctx := context.Background()
+	st := newPostgresStore(t)
+	suffix := t.Name()
+
+	ten, err := st.CreateTenant(ctx, storage.Tenant{Subdomain: "mex-" + suffix})
+	require.NoError(t, err)
+	s := st.ForTenant(ten)
+	owner, err := s.Users().Create(ctx, storage.User{Name: "Owner"})
+	require.NoError(t, err)
+	list, err := s.Lists().Create(ctx, storage.List{Title: "Expiry"}, owner.ID)
+	require.NoError(t, err)
+
+	for round := 0; round < 40; round++ {
+		item, err := s.Items().Create(ctx, storage.Item{
+			ListID: list.ID, Name: "Gift", QuantityWanted: 1,
+			Price: &storage.Money{AmountMinor: 10000, Currency: "EUR"},
+		})
+		require.NoError(t, err)
+
+		// Two pledges + a proposed match linking them (the store-level shape).
+		var ids []string
+		for i := 0; i < 2; i++ {
+			c, err := s.Contributions().Create(ctx, storage.Contribution{
+				ItemID: item.ID, Pledged: storage.Money{AmountMinor: 5000, Currency: "EUR"},
+				ContactEmail: fmt.Sprintf("p%d-%d@example.com", i, round),
+				TokenHash:    fmt.Sprintf("cap-%d-%d", i, round),
+			})
+			require.NoError(t, err)
+			ids = append(ids, c.ID)
+		}
+		m, err := s.Matches().Create(ctx, storage.Match{ItemID: item.ID, ContributionIDs: ids})
+		require.NoError(t, err)
+
+		var (
+			wg    sync.WaitGroup
+			start = make(chan struct{})
+		)
+		wg.Add(2)
+		// Sweep: expire the still-proposed match.
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := s.Matches().ExpireIfProposed(ctx, item.ID, m.ID, time.Now().UTC())
+			assert.NoError(t, err)
+		}()
+		// Confirmation: both parties confirm, completing the match if it wins the race.
+		go func() {
+			defer wg.Done()
+			<-start
+			for _, id := range ids {
+				if _, _, _, err := s.Matches().ConfirmContribution(ctx, item.ID, m.ID, id); err != nil {
+					assert.NoError(t, err)
+				}
+			}
+		}()
+		close(start)
+		wg.Wait()
+
+		// Whichever won, the result is internally consistent — no torn state.
+		final, err := s.Matches().Get(ctx, m.ID)
+		require.NoError(t, err)
+		require.Contains(t, []storage.MatchState{storage.MatchBothConfirmed, storage.MatchExpired},
+			final.State, "round %d: match must be a single terminal state", round)
+
+		want := storage.ContributionConfirmed
+		if final.State == storage.MatchExpired {
+			want = storage.ContributionExpired
+		}
+		for _, id := range ids {
+			c, err := s.Contributions().Get(ctx, id)
+			require.NoError(t, err)
+			require.Equalf(t, want, c.Status,
+				"round %d: match %s → every pledge must be %s (got %s)", round, final.State, want, c.Status)
+		}
+	}
+}

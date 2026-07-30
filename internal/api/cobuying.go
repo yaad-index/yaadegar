@@ -240,8 +240,15 @@ func (s *Server) WithdrawContribution(ctx context.Context, req gen.WithdrawContr
 					ConflictApplicationProblemPlusJSONResponse: conflict("cannot withdraw after both parties confirmed"),
 				}, nil
 			}
-			if err := s.dissolveMatch(ctx, ts, m, c.ID); err != nil {
-				return nil, err
+			// Only a still-proposed match is dissolved here. A match already in a
+			// terminal state (declined, or expired by the auto-expiry sweep #101) has
+			// released or expired its pledges; re-running dissolveMatch on it would flip
+			// the terminal siblings back to pending, resurrecting them and re-blocking
+			// reserve under #93. A terminal match just falls through to the delete below.
+			if m.State == storage.MatchProposed {
+				if err := s.dissolveMatch(ctx, ts, m, c.ID); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}

@@ -23,6 +23,7 @@ import (
 const (
 	ContributionStatusConfirmed ContributionStatus = "confirmed"
 	ContributionStatusDeclined  ContributionStatus = "declined"
+	ContributionStatusExpired   ContributionStatus = "expired"
 	ContributionStatusMatched   ContributionStatus = "matched"
 	ContributionStatusPending   ContributionStatus = "pending"
 	ContributionStatusWithdrawn ContributionStatus = "withdrawn"
@@ -34,6 +35,8 @@ func (e ContributionStatus) Valid() bool {
 	case ContributionStatusConfirmed:
 		return true
 	case ContributionStatusDeclined:
+		return true
+	case ContributionStatusExpired:
 		return true
 	case ContributionStatusMatched:
 		return true
@@ -132,6 +135,7 @@ const (
 	MatchStateBothConfirmed MatchState = "both_confirmed"
 	MatchStateDeclined      MatchState = "declined"
 	MatchStateDone          MatchState = "done"
+	MatchStateExpired       MatchState = "expired"
 	MatchStateProposed      MatchState = "proposed"
 )
 
@@ -143,6 +147,8 @@ func (e MatchState) Valid() bool {
 	case MatchStateDeclined:
 		return true
 	case MatchStateDone:
+		return true
+	case MatchStateExpired:
 		return true
 	case MatchStateProposed:
 		return true
@@ -239,8 +245,10 @@ type Contribution struct {
 	MatchId *string `json:"match_id,omitempty"`
 
 	// Pledged An exact monetary amount as minor units plus ISO-4217 currency.
-	Pledged *Money              `json:"pledged,omitempty"`
-	Status  *ContributionStatus `json:"status,omitempty"`
+	Pledged *Money `json:"pledged,omitempty"`
+
+	// Status tracks a pledge through the co-buying handshake. The terminal statuses (declined, withdrawn, expired) free the item; expired is set by the match auto-expiry sweep when a proposed match's confirm window elapses.
+	Status *ContributionStatus `json:"status,omitempty"`
 }
 
 // ContributionCreate defines model for ContributionCreate.
@@ -263,7 +271,7 @@ type ContributionCreated struct {
 	Match *Match `json:"match,omitempty"`
 }
 
-// ContributionStatus defines model for ContributionStatus.
+// ContributionStatus tracks a pledge through the co-buying handshake. The terminal statuses (declined, withdrawn, expired) free the item; expired is set by the match auto-expiry sweep when a proposed match's confirm window elapses.
 type ContributionStatus string
 
 // Domain defines model for Domain.
@@ -435,10 +443,12 @@ type Match struct {
 	ContributionIds *[]string              `json:"contribution_ids,omitempty"`
 	Id              *string                `json:"id,omitempty"`
 	ItemId          *string                `json:"item_id,omitempty"`
-	State           *MatchState            `json:"state,omitempty"`
+
+	// State is the lifecycle state of a co-buying match. The terminal `expired` is set by the match auto-expiry sweep when a proposed match sits past its confirm window; its pledges are released.
+	State *MatchState `json:"state,omitempty"`
 }
 
-// MatchState defines model for MatchState.
+// MatchState is the lifecycle state of a co-buying match. The terminal `expired` is set by the match auto-expiry sweep when a proposed match sits past its confirm window; its pledges are released.
 type MatchState string
 
 // Money An exact monetary amount as minor units plus ISO-4217 currency.

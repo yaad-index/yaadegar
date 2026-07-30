@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/yaad-index/yaadegar/internal/storage"
 )
@@ -233,6 +234,49 @@ func (r matchRepo) ConfirmContribution(ctx context.Context, itemID, matchID, con
 		return storage.Match{}, nil, false, err
 	}
 	return m, contribs, completedNow, nil
+}
+
+// ExpireIfProposed tears down a still-proposed match under the item lock: match →
+// expired, all its contributions → expired (terminal, freeing the item) with their
+// scoped tokens cleared. The from-state guard under the lock makes it a
+// single-winner, idempotent no-op (moved=false) when a concurrent confirm/decline
+// already resolved the match (#101).
+func (r matchRepo) ExpireIfProposed(ctx context.Context, itemID, matchID string, at time.Time) (bool, error) {
+	moved := false
+	err := r.withItemLock(ctx, itemID, func(tx *sql.Tx) error {
+		var state string
+		if err := tx.QueryRowContext(ctx, r.rb(
+			`SELECT state FROM matches WHERE tenant_id = ? AND id = ?`),
+			r.tenantID, matchID).Scan(&state); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return storage.ErrNotFound
+			}
+			return err
+		}
+		if storage.MatchState(state) != storage.MatchProposed {
+			return nil
+		}
+		// Every pledge on the match goes terminal; the scoped match-action tokens are
+		// spent, so clear them. match_id is left in place as the audit link.
+		if _, err := tx.ExecContext(ctx, r.rb(
+			`UPDATE contributions
+			    SET status = ?, match_action_token_hash = '', match_action_token_expires_at = NULL
+			  WHERE tenant_id = ? AND match_id = ?`),
+			storage.ContributionExpired, r.tenantID, matchID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, r.rb(
+			`UPDATE matches SET state = ? WHERE tenant_id = ? AND id = ?`),
+			storage.MatchExpired, r.tenantID, matchID); err != nil {
+			return err
+		}
+		moved = true
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return moved, nil
 }
 
 // contributionsByMatchTx reads a match's contributions within the given tx.

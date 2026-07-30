@@ -80,9 +80,11 @@ export const load: PageServerLoad = async ({ params, locals, cookies, url }) => 
 			headers: { 'X-Capability-Token': entry.token }
 		});
 		if (c) {
-			// declined/withdrawn pledges are spent — forget them so the item reverts to
-			// its normal offer state for this browser.
-			if (c.status === 'declined' || c.status === 'withdrawn') {
+			// Terminal pledges are spent — forget them so the item reverts to its normal
+			// offer state for this browser. `expired` is the auto-expiry sweep's outcome
+			// (#101); without it the pledged panel would keep showing a stale "you're
+			// chipping in" with a dead handshake link.
+			if (c.status === 'declined' || c.status === 'withdrawn' || c.status === 'expired') {
 				removeContribCap(cookies, params.shareSlug, itemId, isSecure(url));
 				continue;
 			}

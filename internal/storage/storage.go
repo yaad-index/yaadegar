@@ -96,6 +96,12 @@ type Store interface {
 	// ForTenant. Each candidate carries its tenant id and the list's decay period.
 	DecayCandidates(ctx context.Context) ([]DecayCandidate, error)
 
+	// ExpiredMatchCandidates returns still-proposed matches created before `before`
+	// across all tenants — the input to the co-buy match auto-expiry sweep (#101).
+	// Like DecayCandidates it is a trusted system-level read (the same unscoped class
+	// as Migrate); the dissolution it drives is applied tenant-scoped via ForTenant.
+	ExpiredMatchCandidates(ctx context.Context, before time.Time) ([]MatchExpiryCandidate, error)
+
 	// Ping verifies connectivity.
 	Ping(ctx context.Context) error
 	// Close releases the underlying connection pool.
@@ -266,6 +272,17 @@ type MatchRepo interface {
 	// match's contributions (for the reveal) then, and is nil otherwise. The
 	// returned Match carries the current state either way.
 	ConfirmContribution(ctx context.Context, itemID, matchID, contributionID string) (m Match, contribs []Contribution, completedNow bool, err error)
+	// ExpireIfProposed atomically tears down a match that is still proposed: it
+	// drives the match to MatchExpired and every one of its contributions to
+	// ContributionExpired (terminal, so the item frees for either track under #93),
+	// and clears their scoped match-action tokens. It runs under the item row lock —
+	// the same lock confirm/decline/reserve/contribute take — so a sweep racing a
+	// confirm or decline is a single-winner: it returns false (no error, no change)
+	// when the match already left the proposed state. itemID scopes the lock;
+	// ErrNotFound if the match row is absent. The auto-expiry sweep is its only
+	// caller (#101). Contribution match_id links are left in place for the audit
+	// trail (symmetric with a declined contribution).
+	ExpireIfProposed(ctx context.Context, itemID, matchID string, at time.Time) (bool, error)
 }
 
 // DomainRepo persists custom domains within the bound tenant.

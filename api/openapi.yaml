@@ -1156,7 +1156,11 @@ components:
 
     ContributionStatus:
       type: string
-      enum: [pending, matched, confirmed, declined, withdrawn]
+      description: >
+        tracks a pledge through the co-buying handshake. The terminal statuses
+        (declined, withdrawn, expired) free the item; expired is set by the match
+        auto-expiry sweep when a proposed match's confirm window elapses.
+      enum: [pending, matched, confirmed, declined, withdrawn, expired]
 
     ContributionCreate:
       type: object
@@ -1197,7 +1201,11 @@ components:
 
     MatchState:
       type: string
-      enum: [proposed, both_confirmed, done, declined]
+      description: >
+        is the lifecycle state of a co-buying match. The terminal `expired` is set
+        by the match auto-expiry sweep when a proposed match sits past its confirm
+        window; its pledges are released.
+      enum: [proposed, both_confirmed, done, declined, expired]
 
     Match:
       type: object

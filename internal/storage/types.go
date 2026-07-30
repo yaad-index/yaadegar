@@ -38,6 +38,12 @@ const (
 	ContributionConfirmed ContributionStatus = "confirmed"
 	ContributionDeclined  ContributionStatus = "declined"
 	ContributionWithdrawn ContributionStatus = "withdrawn"
+	// ContributionExpired is a terminal status set by the match auto-expiry sweep
+	// (#101) when the confirm window elapses on a still-proposed match: every pledge
+	// in that match is driven here, distinct from the giver-initiated declined /
+	// withdrawn so the outcome reads honestly ("this group buy expired", not
+	// "someone declined"). Terminal like the other two, so it frees the item.
+	ContributionExpired ContributionStatus = "expired"
 )
 
 // MatchState tracks a co-buying handshake between contributions on one item.
@@ -48,6 +54,11 @@ const (
 	MatchBothConfirmed MatchState = "both_confirmed"
 	MatchDone          MatchState = "done"
 	MatchDeclined      MatchState = "declined"
+	// MatchExpired is the terminal state set by the match auto-expiry sweep (#101)
+	// when a match sits proposed past the confirm window: the match and every pledge
+	// on it are torn down so the item frees for either track. Distinct from declined
+	// (a giver's action) so the state reads truthfully.
+	MatchExpired MatchState = "expired"
 )
 
 // TLSStatus is a custom domain's certificate state. Provisioning is deferred
@@ -266,6 +277,17 @@ type Match struct {
 	State           MatchState
 	ContributionIDs []string
 	CreatedAt       time.Time
+}
+
+// MatchExpiryCandidate is a still-proposed match the auto-expiry sweep may need to
+// dissolve, carrying just enough to apply the transition tenant-scoped: its tenant,
+// id, item (for the row lock), and proposal time (the window is measured from it).
+// Returned by the system-level, cross-tenant Store.ExpiredMatchCandidates read.
+type MatchExpiryCandidate struct {
+	TenantID  string
+	MatchID   string
+	ItemID    string
+	CreatedAt time.Time
 }
 
 // Domain is a custom hostname pointed at a tenant (bring-your-own-domain).
