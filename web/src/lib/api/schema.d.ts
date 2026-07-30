@@ -1498,6 +1498,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            /** @description An email_confirmed reservation could not send its confirmation email; the provisional hold was rolled back and the slot freed. Transient — retry the reservation. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     releaseReservation: {

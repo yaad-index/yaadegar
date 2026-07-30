@@ -3607,6 +3607,20 @@ func (response CreateReservation410ApplicationProblemPlusJSONResponse) VisitCrea
 	return err
 }
 
+type CreateReservation503ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateReservation503ApplicationProblemPlusJSONResponse) VisitCreateReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// AdminLogin Log in as the instance superadmin

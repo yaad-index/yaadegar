@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -292,6 +293,33 @@ func TestConfirmOnDeletedItemDoesNotError(t *testing.T) {
 	resp, _ = h.confirmReservation(tok)
 	assert.Contains(t, []int{http.StatusOK, http.StatusNotFound, http.StatusGone}, resp.StatusCode,
 		"confirm on a deleted item must resolve cleanly, not 500")
+}
+
+// TestEmailConfirmedSendFailureRollsBack (#86): when the confirmation email can't
+// be sent, the provisional hold is rolled back (slot freed immediately) and the
+// caller gets a 503 — not a stranded 202. Contrast decay mail, which stays and
+// retries; a pending hold is useless without its confirm link.
+func TestEmailConfirmedSendFailureRollsBack(t *testing.T) {
+	h := newHarness(t)
+	list := h.createEmailConfirmedList("Wedding")
+	item := h.createItem(*list.Id, "Single", 1) // single slot
+
+	// The confirmation email fails to send.
+	h.email.FailWith(errors.New("smtp down"))
+	resp, body := h.reserveWithEmail(*list.ShareSlug, *item.Id, "giver@example.com")
+	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, "body: %s", body)
+	assert.NotContains(t, string(body), "giver@example.com", "no reserver email in the error body")
+
+	// The hold was rolled back → the item reads available again on the owner surface.
+	assert.Equal(t, gen.Available, h.itemAvailability(t, *list.Id, *item.Id))
+
+	// The slot is genuinely free (no orphaned hold): with sending restored, a fresh
+	// reserve on the same single-slot item succeeds (202 pending), which it could
+	// not if a phantom hold still occupied the slot.
+	h.email.FailWith(nil)
+	resp, _ = h.reserveWithEmail(*list.ShareSlug, *item.Id, "giver2@example.com")
+	require.Equal(t, http.StatusAccepted, resp.StatusCode)
+	assert.Equal(t, gen.Reserved, h.itemAvailability(t, *list.Id, *item.Id))
 }
 
 // TestFullGuestReserveUnchanged: a default (full_guest) list still reserves

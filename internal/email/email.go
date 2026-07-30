@@ -46,12 +46,25 @@ func (s *LogSender) Send(ctx context.Context, m Message) error {
 type FakeSender struct {
 	mu   sync.Mutex
 	sent []Message
+	err  error
 }
 
-// Send records m.
+// FailWith makes subsequent Send calls fail with err (nil restores success),
+// standing in for a transient delivery outage. A failed Send records nothing.
+func (f *FakeSender) FailWith(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.err = err
+}
+
+// Send records m, or returns the configured error (recording nothing) when the
+// sender is set to fail.
 func (f *FakeSender) Send(_ context.Context, m Message) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.err != nil {
+		return f.err
+	}
 	f.sent = append(f.sent, m)
 	return nil
 }
