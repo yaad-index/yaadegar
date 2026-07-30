@@ -86,6 +86,11 @@ func (s *Server) CreateReservation(ctx context.Context, req gen.CreateReservatio
 		State:      storage.StateActive,
 	}, item.QuantityWanted)
 	if err != nil {
+		if errors.Is(err, storage.ErrCrossTrackConflict) {
+			return gen.CreateReservation409ApplicationProblemPlusJSONResponse(
+				problemDetail(409, "this item is being co-bought and can't be reserved"),
+			), nil
+		}
 		if errors.Is(err, storage.ErrCapacityExceeded) {
 			return gen.CreateReservation409ApplicationProblemPlusJSONResponse(
 				problemDetail(409, "the item is already fully reserved"),
@@ -150,6 +155,11 @@ func (s *Server) reserveEmailConfirmed(ctx context.Context, ts storage.TenantSto
 		State:            storage.StatePendingConfirmation,
 	}, item.QuantityWanted)
 	if err != nil {
+		if errors.Is(err, storage.ErrCrossTrackConflict) {
+			return gen.CreateReservation409ApplicationProblemPlusJSONResponse(
+				problemDetail(409, "this item is being co-bought and can't be reserved"),
+			), nil
+		}
 		if errors.Is(err, storage.ErrCapacityExceeded) {
 			return gen.CreateReservation409ApplicationProblemPlusJSONResponse(
 				problemDetail(409, "the item is already fully reserved"),
