@@ -36,7 +36,10 @@ type Server struct {
 	// publicLinkBase is the base URL of the giver-facing site, used to build the
 	// email_confirmed confirmation link. Empty yields a relative link.
 	publicLinkBase string
-	logger         *slog.Logger
+	// cobuyConfirmWindow is how long a scoped match-action token stays valid after a
+	// match is proposed (#96). Non-positive means the token never expires.
+	cobuyConfirmWindow time.Duration
+	logger             *slog.Logger
 }
 
 var _ gen.StrictServerInterface = (*Server)(nil)
@@ -93,6 +96,9 @@ type Options struct {
 	// email_confirmed confirmation link (mirrors the decay link base). Empty
 	// yields a relative link.
 	PublicLinkBase string
+	// CobuyConfirmWindow is how long a scoped match-action token stays valid after
+	// a match is proposed (#96). Non-positive means it never expires.
+	CobuyConfirmWindow time.Duration
 }
 
 // NewHandler builds the full HTTP handler: the generated strict router wrapped in
@@ -117,6 +123,7 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 		domainClaimTTL:      opts.DomainClaimTTL,
 		defaultReserverTier: opts.DefaultReserverTier,
 		publicLinkBase:      opts.PublicLinkBase,
+		cobuyConfirmWindow:  opts.CobuyConfirmWindow,
 		logger:              opts.Logger,
 	}
 	if s.logger == nil {

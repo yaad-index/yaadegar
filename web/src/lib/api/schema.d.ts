@@ -470,6 +470,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/public/matches/{matchId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                matchId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Read a co-buying match's state (anonymous giver)
+         * @description Returns a match's proposed/confirmed state so a contributor can load the confirm/decline handshake — including cross-device from the emailed link. Authorized by X-Capability-Token carrying EITHER the contributor's capability token (same-browser) or the scoped match-action token (cross-device); the token must belong to this match. Contacts are revealed only once the match is both_confirmed (ADR-0002 §6).
+         */
+        get: operations["getMatch"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/public/matches/{matchId}/confirm": {
         parameters: {
             query?: never;
@@ -1728,6 +1750,39 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    getMatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                matchId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The match state; contacts present only when both_confirmed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Match"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description The scoped match-action token has expired. */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     confirmMatch: {

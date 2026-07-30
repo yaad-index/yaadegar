@@ -732,6 +732,9 @@ type ServerInterface interface {
 	// ReleaseByDecayToken Release a stale reservation via its one-click decay token (anonymous)
 	// (POST /public/decay-release)
 	ReleaseByDecayToken(w http.ResponseWriter, r *http.Request)
+	// GetMatch Read a co-buying match's state (anonymous giver)
+	// (GET /public/matches/{matchId})
+	GetMatch(w http.ResponseWriter, r *http.Request, matchId string)
 	// ConfirmMatch Confirm or decline a proposed co-buying match
 	// (POST /public/matches/{matchId}/confirm)
 	ConfirmMatch(w http.ResponseWriter, r *http.Request, matchId string)
@@ -1304,6 +1307,32 @@ func (siw *ServerInterfaceWrapper) ReleaseByDecayToken(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// GetMatch operation middleware
+func (siw *ServerInterfaceWrapper) GetMatch(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "matchId" -------------
+	var matchId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "matchId", r.PathValue("matchId"), &matchId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "matchId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMatch(w, r, matchId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ConfirmMatch operation middleware
 func (siw *ServerInterfaceWrapper) ConfirmMatch(w http.ResponseWriter, r *http.Request) {
 
@@ -1616,6 +1645,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/public/{shareSlug}/items/{itemId}/contributions", wrapper.CreateContribution)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/public/contributions/{contributionId}", wrapper.WithdrawContribution)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/public/contributions/{contributionId}", wrapper.GetContribution)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/public/matches/{matchId}", wrapper.GetMatch)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/public/matches/{matchId}/confirm", wrapper.ConfirmMatch)
 
 	return m
@@ -3204,6 +3234,74 @@ func (response ReleaseByDecayToken410ApplicationProblemPlusJSONResponse) VisitRe
 	return err
 }
 
+type GetMatchRequestObject struct {
+	MatchId string `json:"matchId"`
+}
+
+type GetMatchResponseObject interface {
+	VisitGetMatchResponse(w http.ResponseWriter) error
+}
+
+type GetMatch200JSONResponse Match
+
+func (response GetMatch200JSONResponse) VisitGetMatchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMatch401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetMatch401ApplicationProblemPlusJSONResponse) VisitGetMatchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMatch404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response GetMatch404ApplicationProblemPlusJSONResponse) VisitGetMatchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMatch410ApplicationProblemPlusJSONResponse Problem
+
+func (response GetMatch410ApplicationProblemPlusJSONResponse) VisitGetMatchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ConfirmMatchRequestObject struct {
 	MatchId string `json:"matchId"`
 	Body    *ConfirmMatchJSONRequestBody
@@ -3698,6 +3796,9 @@ type StrictServerInterface interface {
 	// ReleaseByDecayToken Release a stale reservation via its one-click decay token (anonymous)
 	// (POST /public/decay-release)
 	ReleaseByDecayToken(ctx context.Context, request ReleaseByDecayTokenRequestObject) (ReleaseByDecayTokenResponseObject, error)
+	// GetMatch Read a co-buying match's state (anonymous giver)
+	// (GET /public/matches/{matchId})
+	GetMatch(ctx context.Context, request GetMatchRequestObject) (GetMatchResponseObject, error)
 	// ConfirmMatch Confirm or decline a proposed co-buying match
 	// (POST /public/matches/{matchId}/confirm)
 	ConfirmMatch(ctx context.Context, request ConfirmMatchRequestObject) (ConfirmMatchResponseObject, error)
@@ -4459,6 +4560,32 @@ func (sh *strictHandler) ReleaseByDecayToken(w http.ResponseWriter, r *http.Requ
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ReleaseByDecayTokenResponseObject); ok {
 		if err := validResponse.VisitReleaseByDecayTokenResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetMatch operation middleware
+func (sh *strictHandler) GetMatch(w http.ResponseWriter, r *http.Request, matchId string) {
+	var request GetMatchRequestObject
+
+	request.MatchId = matchId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetMatch(ctx, request.(GetMatchRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMatch")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMatchResponseObject); ok {
+		if err := validResponse.VisitGetMatchResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -82,6 +82,11 @@
 # (env YAADEGAR_RESERVER_DEFAULT_TIER, flag --reserver-default-tier)
 # reserver-default-tier: "full_guest"
 
+# How long a co-buying match's emailed confirm/decline link stays valid after the
+# match is proposed. 0 means it never expires.
+# (env YAADEGAR_COBUY_CONFIRM_WINDOW, flag --cobuy-confirm-window)
+# cobuy-confirm-window: "168h"
+
 # --- Custom domains (ADR-0004) --------------------------------------------------
 
 # Hostname that owners point a custom domain's CNAME at (returned by add-domain).

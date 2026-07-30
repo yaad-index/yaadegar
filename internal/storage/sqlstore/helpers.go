@@ -61,6 +61,15 @@ func nullDate(t *time.Time) sql.NullString {
 	return sql.NullString{String: t.UTC().Format(dateLayout), Valid: true}
 }
 
+// nullTime maps an optional timestamp to a nullable full-timestamp column value
+// (same encoding as fmtTime, so parseTime reads it back).
+func nullTime(t *time.Time) any {
+	if t == nil {
+		return nil
+	}
+	return fmtTime(*t)
+}
+
 // datePtr maps a nullable date-only column back to an optional date.
 func datePtr(ns sql.NullString) (*time.Time, error) {
 	if !ns.Valid {

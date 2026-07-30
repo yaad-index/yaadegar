@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/yaad-index/yaadegar/internal/storage"
 )
@@ -11,23 +12,32 @@ import (
 type contributionRepo struct{ baseRepo }
 
 const contributionCols = `id, tenant_id, item_id, pledged_amount_minor,
-	pledged_currency, giver_name, contact_email, status, match_id, token_hash, created_at`
+	pledged_currency, giver_name, contact_email, status, match_id, token_hash,
+	match_action_token_hash, match_action_token_expires_at, created_at`
 
 func scanContribution(s scanner) (storage.Contribution, error) {
 	var (
-		c         storage.Contribution
-		giverName sql.NullString
-		matchID   sql.NullString
-		createdAt string
+		c            storage.Contribution
+		giverName    sql.NullString
+		matchID      sql.NullString
+		actionExpiry sql.NullString
+		createdAt    string
 	)
 	if err := s.Scan(&c.ID, &c.TenantID, &c.ItemID, &c.Pledged.AmountMinor,
 		&c.Pledged.Currency, &giverName, &c.ContactEmail, &c.Status, &matchID,
-		&c.TokenHash, &createdAt); err != nil {
+		&c.TokenHash, &c.MatchActionTokenHash, &actionExpiry, &createdAt); err != nil {
 		return storage.Contribution{}, err
 	}
 	ts, err := parseTime(createdAt)
 	if err != nil {
 		return storage.Contribution{}, err
+	}
+	if actionExpiry.Valid {
+		exp, perr := parseTime(actionExpiry.String)
+		if perr != nil {
+			return storage.Contribution{}, perr
+		}
+		c.MatchActionTokenExpiresAt = &exp
 	}
 	c.GiverName = strPtr(giverName)
 	c.MatchID = strPtr(matchID)
@@ -54,10 +64,11 @@ func (r contributionRepo) prep(c storage.Contribution) storage.Contribution {
 func (r contributionRepo) insert(ctx context.Context, x execer, c storage.Contribution) error {
 	_, err := x.ExecContext(ctx, r.rb(
 		`INSERT INTO contributions (`+contributionCols+`)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		c.ID, c.TenantID, c.ItemID, c.Pledged.AmountMinor, c.Pledged.Currency,
 		nullStr(c.GiverName), c.ContactEmail, c.Status, nullStr(c.MatchID),
-		c.TokenHash, fmtTime(c.CreatedAt))
+		c.TokenHash, c.MatchActionTokenHash, nullTime(c.MatchActionTokenExpiresAt),
+		fmtTime(c.CreatedAt))
 	return err
 }
 
@@ -166,6 +177,40 @@ func (r contributionRepo) Update(ctx context.Context, c storage.Contribution) (s
 func (r contributionRepo) Delete(ctx context.Context, id string) error {
 	res, err := r.db.ExecContext(ctx, r.rb(
 		`DELETE FROM contributions WHERE tenant_id = ? AND id = ?`), r.tenantID, id)
+	if err != nil {
+		return err
+	}
+	return expectOne(res)
+}
+
+// ByMatchActionTokenHash looks a contribution up by the hash of its scoped
+// match-action token. An empty hash never matches (the default for contributions
+// not in a proposed match), so it can't be used to fish for a row.
+func (r contributionRepo) ByMatchActionTokenHash(ctx context.Context, tokenHash string) (storage.Contribution, error) {
+	if tokenHash == "" {
+		return storage.Contribution{}, storage.ErrNotFound
+	}
+	row := r.db.QueryRowContext(ctx, r.rb(
+		`SELECT `+contributionCols+` FROM contributions
+		  WHERE tenant_id = ? AND match_action_token_hash = ?`), r.tenantID, tokenHash)
+	c, err := scanContribution(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return storage.Contribution{}, storage.ErrNotFound
+		}
+		return storage.Contribution{}, err
+	}
+	return c, nil
+}
+
+// SetMatchActionToken installs (or, with an empty hash + nil expiry, clears) the
+// scoped match-action token. It touches only those two columns, so it is safe to
+// call alongside the match-linkage writes without disturbing status/match_id.
+func (r contributionRepo) SetMatchActionToken(ctx context.Context, id, tokenHash string, expiresAt *time.Time) error {
+	res, err := r.db.ExecContext(ctx, r.rb(
+		`UPDATE contributions SET match_action_token_hash = ?, match_action_token_expires_at = ?
+		  WHERE tenant_id = ? AND id = ?`),
+		tokenHash, nullTime(expiresAt), r.tenantID, id)
 	if err != nil {
 		return err
 	}

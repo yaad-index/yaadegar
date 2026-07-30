@@ -248,7 +248,14 @@ type Contribution struct {
 	Status       ContributionStatus
 	MatchID      *string
 	TokenHash    string
-	CreatedAt    time.Time
+	// MatchActionTokenHash is the hash of a purpose-scoped, expiring token minted
+	// when this contribution enters a proposed match and emailed to the giver, so a
+	// cross-device confirm/decline link works without the capability cookie. It can
+	// ONLY confirm/decline this contribution's match (never withdraw); it is cleared
+	// when the match dissolves (#96, ADR-0002 §6).
+	MatchActionTokenHash      string
+	MatchActionTokenExpiresAt *time.Time
+	CreatedAt                 time.Time
 }
 
 // Match is the two-sided co-buying handshake linking contributions on one item.
