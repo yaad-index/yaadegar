@@ -201,10 +201,10 @@
 									>
 								{:else if pledge}
 									<p class="text-sm font-medium text-green-700">✓ You're chipping in</p>
-									{#if pledge.matched}
+									{#if pledge.matched && pledge.match_id}
 										<a
 											class="mt-1 block text-sm text-blue-700 underline"
-											href={resolve('/cobuy/[cid]', { cid: pledge.contribution_id ?? '' })}
+											href={resolve('/cobuy/[matchId]', { matchId: pledge.match_id })}
 											>Confirm the group buy →</a
 										>
 									{:else}

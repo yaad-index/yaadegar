@@ -16,6 +16,19 @@ export interface MatchView {
 	released: boolean;
 }
 
+// matchLoadFailureState classifies a failed GET-match on the handshake load. A
+// scoped (emailed) token is CLEARED once the match resolves, so a 401/404 on that
+// path most likely means "already resolved — check your email", NOT an error; the
+// same-browser cap token keeps working, so its 401/404 is a genuinely bad link.
+export function matchLoadFailureState(
+	status: number | undefined,
+	scoped: boolean
+): 'expired' | 'resolved' | 'invalid' | 'error' {
+	if (status === 410) return 'expired';
+	if (status === 401 || status === 404) return scoped ? 'resolved' : 'invalid';
+	return 'error';
+}
+
 export function matchView(m: Match | null | undefined): MatchView {
 	const state = (m?.state ?? 'unknown') as MatchViewState;
 	return {

@@ -11,7 +11,8 @@ import {
 	addContribCap,
 	contribCapsForList,
 	removeContribCap,
-	findContribCap
+	findContribCap,
+	findContribCapByMatch
 } from './caps';
 
 // A minimal in-memory Cookies stand-in — enough for the get/set/delete the caps
@@ -153,5 +154,29 @@ describe('co-buy contribution caps', () => {
 		});
 		expect(findContribCap(cookies, 'nope')).toBeUndefined();
 		expect(findContribCap(fakeCookies(), 'c1')).toBeUndefined();
+	});
+
+	// findContribCapByMatch powers the same-browser handshake, reached by /cobuy/
+	// <matchId>: it resolves the cap token for the contribution in that match, so the
+	// link needs no token in the URL.
+	it('finds a contribution cap by match id, once the match id is recorded', () => {
+		const cookies = fakeCookies();
+		addContribCap(cookies, 'slug', 'item-1', { contribution_id: 'c1', token: 't1' }, false);
+		// Before a match forms, there's nothing to find by match id.
+		expect(findContribCapByMatch(cookies, 'm1')).toBeUndefined();
+		// The list load records the match id on the entry once known.
+		addContribCap(
+			cookies,
+			'slug',
+			'item-1',
+			{ contribution_id: 'c1', token: 't1', match_id: 'm1' },
+			false
+		);
+		expect(findContribCapByMatch(cookies, 'm1')).toEqual({
+			shareSlug: 'slug',
+			itemId: 'item-1',
+			token: 't1'
+		});
+		expect(findContribCapByMatch(cookies, 'other')).toBeUndefined();
 	});
 });
