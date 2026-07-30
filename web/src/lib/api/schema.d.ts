@@ -737,8 +737,11 @@ export interface components {
             /** @description Returned once, on the confirming request that activates the reservation. Absent on an idempotent re-confirm of an already-active reservation (it cannot be re-issued). */
             capability_token?: string;
         };
-        /** @enum {string} */
-        ContributionStatus: "pending" | "matched" | "confirmed" | "declined" | "withdrawn";
+        /**
+         * @description tracks a pledge through the co-buying handshake. The terminal statuses (declined, withdrawn, expired) free the item; expired is set by the match auto-expiry sweep when a proposed match's confirm window elapses.
+         * @enum {string}
+         */
+        ContributionStatus: "pending" | "matched" | "confirmed" | "declined" | "withdrawn" | "expired";
         ContributionCreate: {
             /** @description The share this giver pledges toward the item's price. */
             pledged: components["schemas"]["Money"];
@@ -765,8 +768,11 @@ export interface components {
             /** @description A proposed match if this pledge completed funding; else null. */
             match?: components["schemas"]["Match"] | null;
         };
-        /** @enum {string} */
-        MatchState: "proposed" | "both_confirmed" | "done" | "declined";
+        /**
+         * @description is the lifecycle state of a co-buying match. The terminal `expired` is set by the match auto-expiry sweep when a proposed match sits past its confirm window; its pledges are released.
+         * @enum {string}
+         */
+        MatchState: "proposed" | "both_confirmed" | "done" | "declined" | "expired";
         /** @description A co-buying handshake between contributions on one item. */
         Match: {
             id?: string;

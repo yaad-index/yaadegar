@@ -25,6 +25,7 @@ import (
 	"github.com/yaad-index/yaadegar/internal/api"
 	"github.com/yaad-index/yaadegar/internal/auth"
 	"github.com/yaad-index/yaadegar/internal/clock"
+	"github.com/yaad-index/yaadegar/internal/cobuy"
 	"github.com/yaad-index/yaadegar/internal/decay"
 	"github.com/yaad-index/yaadegar/internal/email"
 	"github.com/yaad-index/yaadegar/internal/server"
@@ -191,13 +192,18 @@ func (c *ServeCmd) Run(cli *CLI) error {
 	})
 
 	// Run the reservation-decay sweeper on a ticker alongside the server.
-	sweeper := decay.NewSweeper(store, sender, clock.Real{}, decay.Config{
+	decaySweeper := decay.NewSweeper(store, sender, clock.Real{}, decay.Config{
 		DefaultDecayDays: c.DecayDefaultDays,
 		ResponseWindow:   c.DecayResponseWindow,
 		ConfirmWindow:    c.ReserverConfirmWindow,
 		LinkBase:         linkBase,
 	}, logger)
-	go runSweeper(ctx, sweeper, c.DecaySweepInterval, logger)
+	go runSweeper(ctx, "decay", decaySweeper, c.DecaySweepInterval, logger)
+
+	// Run the co-buy match auto-expiry sweeper on the same ticker cadence (#101): it
+	// dissolves proposed matches whose confirm window has elapsed, freeing the item.
+	cobuySweeper := cobuy.NewSweeper(store, clock.Real{}, c.CobuyConfirmWindow, logger)
+	go runSweeper(ctx, "cobuy-expiry", cobuySweeper, c.DecaySweepInterval, logger)
 
 	return server.New(c.HTTPAddr, handler, logger).Run(ctx)
 }
@@ -239,9 +245,15 @@ func buildSender(c *ServeCmd, logger *slog.Logger) (email.Sender, error) {
 	}, logger)
 }
 
-// runSweeper runs the decay sweep on interval until ctx is cancelled. A
-// non-positive interval disables it.
-func runSweeper(ctx context.Context, s *decay.Sweeper, interval time.Duration, logger *slog.Logger) {
+// sweeper is one background sweep pass — the decay and co-buy-expiry sweepers both
+// satisfy it, so they share the ticker loop below.
+type sweeper interface {
+	Sweep(ctx context.Context) error
+}
+
+// runSweeper runs a sweep on interval until ctx is cancelled. A non-positive
+// interval disables it. name labels the sweep in error logs.
+func runSweeper(ctx context.Context, name string, s sweeper, interval time.Duration, logger *slog.Logger) {
 	if interval <= 0 {
 		return
 	}
@@ -253,7 +265,7 @@ func runSweeper(ctx context.Context, s *decay.Sweeper, interval time.Duration, l
 			return
 		case <-t.C:
 			if err := s.Sweep(ctx); err != nil {
-				logger.Error("decay sweep failed", "err", err)
+				logger.Error("sweep failed", "sweep", name, "err", err)
 			}
 		}
 	}

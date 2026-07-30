@@ -53,6 +53,15 @@ describe('matchView', () => {
 		expect(v.contacts).toEqual([]);
 	});
 
+	// An auto-expired match (#101) is released just like a decline — the pledges are
+	// terminal, so the giver can chip in again — and never reveals contacts.
+	it('marks an expired match released and reveals nothing', () => {
+		const v = matchView({ state: 'expired', contribution_ids: ['a', 'b'], contacts: [] });
+		expect(v.state).toBe('expired');
+		expect(v.released).toBe(true);
+		expect(v.contacts).toEqual([]);
+	});
+
 	it('is defensive about a missing/blank match', () => {
 		expect(matchView(null)).toEqual({
 			state: 'unknown',

@@ -75,6 +75,12 @@
 				<li>{contact}</li>
 			{/each}
 		</ul>
+	{:else if loaded.state === 'expired'}
+		<h1 class="text-2xl font-bold">This group buy expired</h1>
+		<p class="mt-3 text-gray-600">
+			No one confirmed in time, so the match was called off and your pledge released. You can chip
+			in again from the list if you like.
+		</p>
 	{:else if loaded.released}
 		<h1 class="text-2xl font-bold">This group buy was dissolved</h1>
 		<p class="mt-3 text-gray-600">Your pledge has been released.</p>
