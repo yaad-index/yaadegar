@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/oapi-codegen/nullable"
+
 	"github.com/yaad-index/yaadegar/internal/api/gen"
 	"github.com/yaad-index/yaadegar/internal/storage"
 )
@@ -36,7 +38,7 @@ func TestReserverTierRoundTrip(t *testing.T) {
 
 	// Update the override.
 	resp, body = h.req(http.MethodPatch, "/api/v1/lists/"+*created.Id, h.ownerHost(), h.ownerToken(),
-		gen.ListUpdate{ReserverTier: sptr("full_guest")})
+		gen.ListUpdate{ReserverTier: nullable.NewNullableWithValue("full_guest")})
 	require.Equal(t, http.StatusOK, resp.StatusCode, "body: %s", body)
 	require.NotNil(t, decode[gen.List](t, body).ReserverTier)
 	assert.Equal(t, "full_guest", *decode[gen.List](t, body).ReserverTier)
@@ -67,7 +69,7 @@ func TestReserverConfirmWindowRoundTrip(t *testing.T) {
 
 	// Update the override.
 	_, body = h.req(http.MethodPatch, "/api/v1/lists/"+*created.Id, h.ownerHost(), h.ownerToken(),
-		gen.ListUpdate{ReserverConfirmWindow: ptr(120)})
+		gen.ListUpdate{ReserverConfirmWindow: nullable.NewNullableWithValue(120)})
 	require.NotNil(t, decode[gen.List](t, body).ReserverConfirmWindow)
 	assert.Equal(t, 120, *decode[gen.List](t, body).ReserverConfirmWindow)
 }

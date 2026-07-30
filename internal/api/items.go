@@ -167,11 +167,14 @@ func (s *Server) UpdateItem(ctx context.Context, req gen.UpdateItemRequestObject
 	if req.Body.QuantityWanted != nil {
 		it.QuantityWanted = *req.Body.QuantityWanted
 	}
-	// Merge-patch: a present allow_cobuy sets the item override (#100). Like the
-	// other nullable overrides, it can be set on/off but not cleared back to
-	// inherit through PATCH — the repo-wide clear-semantics limitation.
-	if req.Body.AllowCobuy != nil {
-		it.AllowCobuy = req.Body.AllowCobuy
+	// Three-state merge-patch (#111): absent leaves the override unchanged, explicit
+	// null clears it back to inheriting the list default, a value sets it on/off.
+	if req.Body.AllowCobuy.IsSpecified() {
+		if req.Body.AllowCobuy.IsNull() {
+			it.AllowCobuy = nil
+		} else {
+			it.AllowCobuy = ptr(req.Body.AllowCobuy.MustGet())
+		}
 	}
 
 	updated, err := ts.Items().Update(ctx, it)

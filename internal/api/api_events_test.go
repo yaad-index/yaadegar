@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/oapi-codegen/nullable"
+
 	"github.com/yaad-index/yaadegar/internal/api/gen"
 )
 
@@ -79,7 +81,7 @@ func TestEventDatedListLifecycle(t *testing.T) {
 
 		// Clearing the event date brings the list back to life.
 		resp, _ = h3.req(http.MethodPatch, "/api/v1/lists/"+*l.Id, h3.ownerHost(), h3.ownerToken(),
-			gen.ListUpdate{Active: ptr(true), EventDate: &openapi_types.Date{Time: time.Date(2027, 12, 31, 0, 0, 0, 0, time.UTC)}})
+			gen.ListUpdate{Active: ptr(true), EventDate: nullable.NewNullableWithValue(openapi_types.Date{Time: time.Date(2027, 12, 31, 0, 0, 0, 0, time.UTC)})})
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 		pub, _, _ = h3.giverStatuses(*l.ShareSlug, *it.Id)
 		assert.Equal(t, http.StatusOK, pub, "extending the date reactivates the giver surface")

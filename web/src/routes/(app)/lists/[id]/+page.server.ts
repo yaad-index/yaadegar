@@ -101,11 +101,11 @@ export const actions: Actions = {
 		const url = String(fd.get('url') ?? '').trim();
 		const note = String(fd.get('note') ?? '').trim();
 		const quantity = Number(fd.get('quantity_wanted') ?? 1);
-		// Per-item co-buy override (#100): 'true'/'false' set it, '' (use list default)
-		// sends nothing — like the other overrides, PATCH can set but not clear it.
+		// Per-item co-buy override (#100/#111): 'true'/'false' set it; '' ("use list
+		// default") sends explicit null, which clears the override back to inheriting
+		// the list default (three-state PATCH).
 		const allowCobuyRaw = String(fd.get('allow_cobuy') ?? '');
-		const allow_cobuy =
-			allowCobuyRaw === 'true' ? true : allowCobuyRaw === 'false' ? false : undefined;
+		const allow_cobuy = allowCobuyRaw === 'true' ? true : allowCobuyRaw === 'false' ? false : null;
 		if (!itemId || !name) return fail(400, { editError: 'Name is required.' });
 		const client = backendClient({ host: locals.host, token: locals.token });
 		// The item PATCH is set-if-present; send only the fields with values (clearing a

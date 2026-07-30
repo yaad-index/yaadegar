@@ -580,6 +580,11 @@ export interface components {
             /** @description Access-token lifetime in seconds. */
             expires_in: number;
         };
+        NullableBool: boolean | null;
+        NullableInt: number | null;
+        NullableString: string | null;
+        /** Format: date */
+        NullableDate: string | null;
         /** @enum {string} */
         ListVisibility: "public" | "unlisted" | "private";
         ListCreate: {
@@ -600,12 +605,11 @@ export interface components {
         ListUpdate: {
             title?: string;
             visibility?: components["schemas"]["ListVisibility"];
-            /** Format: date */
-            event_date?: string | null;
-            decay_days?: number | null;
+            event_date?: components["schemas"]["NullableDate"];
+            decay_days?: components["schemas"]["NullableInt"];
             active?: boolean;
-            reserver_tier?: string | null;
-            reserver_confirm_window?: number | null;
+            reserver_tier?: components["schemas"]["NullableString"];
+            reserver_confirm_window?: components["schemas"]["NullableInt"];
             /** @description List-level default for whether items may be co-bought (#100). Items inherit this unless they set their own override. Defaults to true; a new list is always created co-buy-enabled and is toggled here. */
             allow_cobuy?: boolean;
         };
@@ -674,8 +678,7 @@ export interface components {
             note?: string | null;
             priority?: number;
             quantity_wanted?: number;
-            /** @description Per-item co-buy override (#100): true/false forces co-buying on/off. Like the other overrides it can be set but not cleared back to inherit through PATCH. */
-            allow_cobuy?: boolean | null;
+            allow_cobuy?: components["schemas"]["NullableBool"];
         };
         Item: {
             id?: string;
