@@ -947,6 +947,36 @@ components:
           type: integer
           description: Access-token lifetime in seconds.
 
+    # Three-state nullable wrappers for PATCH override fields (#111): they map to
+    # oapi-codegen/nullable.Nullable[T], which distinguishes an absent field (leave
+    # as-is) from an explicit null (clear back to inherit / no value) from a value
+    # (set). Used only on the *Update request bodies where clear-semantics matter.
+    NullableBool:
+      type: [boolean, "null"]
+      x-go-type: nullable.Nullable[bool]
+      x-go-type-skip-optional-pointer: true
+      x-go-type-import:
+        path: github.com/oapi-codegen/nullable
+    NullableInt:
+      type: [integer, "null"]
+      x-go-type: nullable.Nullable[int]
+      x-go-type-skip-optional-pointer: true
+      x-go-type-import:
+        path: github.com/oapi-codegen/nullable
+    NullableString:
+      type: [string, "null"]
+      x-go-type: nullable.Nullable[string]
+      x-go-type-skip-optional-pointer: true
+      x-go-type-import:
+        path: github.com/oapi-codegen/nullable
+    NullableDate:
+      type: [string, "null"]
+      format: date
+      x-go-type: nullable.Nullable[openapi_types.Date]
+      x-go-type-skip-optional-pointer: true
+      x-go-type-import:
+        path: github.com/oapi-codegen/nullable
+
     ListVisibility:
       type: string
       enum: [public, unlisted, private]
@@ -987,14 +1017,17 @@ components:
 
     ListUpdate:
       type: object
+      # The override fields below are three-state (#111): absent leaves the value,
+      # null clears it (to inherit the instance default, or no event date), a value
+      # sets it. See the Nullable* wrapper schemas.
       properties:
         title: { type: string }
         visibility: { $ref: "#/components/schemas/ListVisibility" }
-        event_date: { type: [string, "null"], format: date }
-        decay_days: { type: [integer, "null"], minimum: 0 }
+        event_date: { $ref: "#/components/schemas/NullableDate" }
+        decay_days: { $ref: "#/components/schemas/NullableInt" }
         active: { type: boolean }
-        reserver_tier: { type: [string, "null"] }
-        reserver_confirm_window: { type: [integer, "null"], minimum: 0 }
+        reserver_tier: { $ref: "#/components/schemas/NullableString" }
+        reserver_confirm_window: { $ref: "#/components/schemas/NullableInt" }
         allow_cobuy:
           type: boolean
           description: >
@@ -1077,12 +1110,9 @@ components:
         note: { type: [string, "null"] }
         priority: { type: integer, minimum: 0 }
         quantity_wanted: { type: integer, minimum: 1 }
-        allow_cobuy:
-          type: [boolean, "null"]
-          description: >
-            Per-item co-buy override (#100): true/false forces co-buying on/off.
-            Like the other overrides it can be set but not cleared back to inherit
-            through PATCH.
+        # Per-item co-buy override (#100): true/false sets it, null clears back to
+        # inheriting the list default, absent leaves it unchanged (#111).
+        allow_cobuy: { $ref: "#/components/schemas/NullableBool" }
 
     Item:
       type: object

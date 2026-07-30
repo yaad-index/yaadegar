@@ -139,23 +139,45 @@ func (s *Server) UpdateList(ctx context.Context, req gen.UpdateListRequestObject
 	if req.Body.Visibility != nil {
 		l.Visibility = storage.Visibility(*req.Body.Visibility)
 	}
-	if req.Body.EventDate != nil {
-		l.EventDate = fromGenDate(req.Body.EventDate)
-	}
-	if req.Body.DecayDays != nil {
-		l.DecayDays = req.Body.DecayDays
-	}
-	if req.Body.ReserverConfirmWindow != nil {
-		l.ReserverConfirmWindowMinutes = req.Body.ReserverConfirmWindow
-	}
-	if req.Body.ReserverTier != nil {
-		tier, ok := parseReserverTier(req.Body.ReserverTier)
-		if !ok {
-			return gen.UpdateList400ApplicationProblemPlusJSONResponse{
-				BadRequestApplicationProblemPlusJSONResponse: badRequest("invalid reserver_tier"),
-			}, nil
+	// The override fields are three-state (#111): absent leaves the value, explicit
+	// null clears it (event_date → no date; the others → inherit the instance
+	// default), a value sets it. Storage already treats a nil domain pointer as
+	// inherit, so a clear just writes nil.
+	if req.Body.EventDate.IsSpecified() {
+		if req.Body.EventDate.IsNull() {
+			l.EventDate = nil
+		} else {
+			d := req.Body.EventDate.MustGet()
+			l.EventDate = fromGenDate(&d)
 		}
-		l.ReserverTier = tier
+	}
+	if req.Body.DecayDays.IsSpecified() {
+		if req.Body.DecayDays.IsNull() {
+			l.DecayDays = nil
+		} else {
+			l.DecayDays = ptr(req.Body.DecayDays.MustGet())
+		}
+	}
+	if req.Body.ReserverConfirmWindow.IsSpecified() {
+		if req.Body.ReserverConfirmWindow.IsNull() {
+			l.ReserverConfirmWindowMinutes = nil
+		} else {
+			l.ReserverConfirmWindowMinutes = ptr(req.Body.ReserverConfirmWindow.MustGet())
+		}
+	}
+	if req.Body.ReserverTier.IsSpecified() {
+		if req.Body.ReserverTier.IsNull() {
+			l.ReserverTier = nil
+		} else {
+			s := req.Body.ReserverTier.MustGet()
+			tier, ok := parseReserverTier(&s)
+			if !ok {
+				return gen.UpdateList400ApplicationProblemPlusJSONResponse{
+					BadRequestApplicationProblemPlusJSONResponse: badRequest("invalid reserver_tier"),
+				}, nil
+			}
+			l.ReserverTier = tier
+		}
 	}
 	if req.Body.Active != nil {
 		l.Active = *req.Body.Active

@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/oapi-codegen/nullable"
 	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
@@ -351,11 +352,10 @@ type ItemPage struct {
 
 // ItemUpdate defines model for ItemUpdate.
 type ItemUpdate struct {
-	// AllowCobuy Per-item co-buy override (#100): true/false forces co-buying on/off. Like the other overrides it can be set but not cleared back to inherit through PATCH.
-	AllowCobuy *bool   `json:"allow_cobuy,omitempty"`
-	ImageUrl   *string `json:"image_url,omitempty"`
-	Name       *string `json:"name,omitempty"`
-	Note       *string `json:"note,omitempty"`
+	AllowCobuy NullableBool `json:"allow_cobuy,omitempty"`
+	ImageUrl   *string      `json:"image_url,omitempty"`
+	Name       *string      `json:"name,omitempty"`
+	Note       *string      `json:"note,omitempty"`
 
 	// Price An exact monetary amount as minor units plus ISO-4217 currency.
 	Price          *Money  `json:"price,omitempty"`
@@ -418,13 +418,13 @@ type ListUpdate struct {
 	Active *bool `json:"active,omitempty"`
 
 	// AllowCobuy List-level default for whether items may be co-bought (#100). Items inherit this unless they set their own override. Defaults to true; a new list is always created co-buy-enabled and is toggled here.
-	AllowCobuy            *bool               `json:"allow_cobuy,omitempty"`
-	DecayDays             *int                `json:"decay_days,omitempty"`
-	EventDate             *openapi_types.Date `json:"event_date,omitempty"`
-	ReserverConfirmWindow *int                `json:"reserver_confirm_window,omitempty"`
-	ReserverTier          *string             `json:"reserver_tier,omitempty"`
-	Title                 *string             `json:"title,omitempty"`
-	Visibility            *ListVisibility     `json:"visibility,omitempty"`
+	AllowCobuy            *bool           `json:"allow_cobuy,omitempty"`
+	DecayDays             NullableInt     `json:"decay_days,omitempty"`
+	EventDate             NullableDate    `json:"event_date,omitempty"`
+	ReserverConfirmWindow NullableInt     `json:"reserver_confirm_window,omitempty"`
+	ReserverTier          NullableString  `json:"reserver_tier,omitempty"`
+	Title                 *string         `json:"title,omitempty"`
+	Visibility            *ListVisibility `json:"visibility,omitempty"`
 }
 
 // ListVisibility defines model for ListVisibility.
@@ -470,6 +470,18 @@ type Money struct {
 	AmountMinor int    `json:"amount_minor"`
 	Currency    string `json:"currency"`
 }
+
+// NullableBool defines model for NullableBool.
+type NullableBool = nullable.Nullable[bool]
+
+// NullableDate defines model for NullableDate.
+type NullableDate = nullable.Nullable[openapi_types.Date]
+
+// NullableInt defines model for NullableInt.
+type NullableInt = nullable.Nullable[int]
+
+// NullableString defines model for NullableString.
+type NullableString = nullable.Nullable[string]
 
 // Problem RFC 9457 problem detail.
 type Problem struct {

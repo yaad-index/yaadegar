@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/oapi-codegen/nullable"
+
 	"github.com/yaad-index/yaadegar/internal/api/gen"
 	"github.com/yaad-index/yaadegar/internal/storage"
 )
@@ -20,7 +22,7 @@ func (h *harness) createEmailConfirmedList(title string) gen.List {
 	h.t.Helper()
 	l := h.createList(title)
 	resp, body := h.req(http.MethodPatch, "/api/v1/lists/"+*l.Id, h.ownerHost(), h.ownerToken(),
-		gen.ListUpdate{ReserverTier: sptr("email_confirmed")})
+		gen.ListUpdate{ReserverTier: nullable.NewNullableWithValue("email_confirmed")})
 	require.Equal(h.t, http.StatusOK, resp.StatusCode, "body: %s", body)
 	return decode[gen.List](h.t, body)
 }
