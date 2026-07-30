@@ -43,9 +43,15 @@ jobs:
           images: ${{ env.IMAGE }}
           # Versioned + major.minor + latest on release; a rolling branch tag on
           # main; a short-sha tag always (bleeding-edge / traceability).
+          #
+          # release-please cuts a component-prefixed git tag (yaadegar-v0.4.0), which
+          # type=semver cannot parse — so releases published only :latest, with no
+          # pinnable version. type=match strips the yaadegar-v prefix off the tag ref
+          # to emit :X.Y.Z and :X.Y. These match only when the ref is such a tag
+          # (i.e. on a release), never on a branch push.
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=match,pattern=yaadegar-v(.*),group=1
+            type=match,pattern=yaadegar-v(\d+\.\d+),group=1
             type=raw,value=latest,enable=${{ github.event_name == 'release' }}
             type=ref,event=branch
             type=sha
