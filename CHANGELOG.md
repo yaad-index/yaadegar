@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.4.0...yaadegar-v0.5.0) (2026-07-30)
+
+
+### Features
+
+* **api:** three-state clear-semantics for nullable override fields ([#111](https://github.com/yaad-index/yaadegar/issues/111)) ([#112](https://github.com/yaad-index/yaadegar/issues/112)) ([ed7a8ed](https://github.com/yaad-index/yaadegar/commit/ed7a8edf0b1322cd0bbf11ff7e1ea16946c9f48f))
+* **cobuy:** auto-expire stale proposed matches ([#101](https://github.com/yaad-index/yaadegar/issues/101)) ([#109](https://github.com/yaad-index/yaadegar/issues/109)) ([7e84f68](https://github.com/yaad-index/yaadegar/commit/7e84f6860ba53ebf84d6e21ec22831d832af39c9))
+* **cobuy:** make reserve and co-buy mutually exclusive per item ([#93](https://github.com/yaad-index/yaadegar/issues/93)) ([#107](https://github.com/yaad-index/yaadegar/issues/107)) ([5d719a2](https://github.com/yaad-index/yaadegar/commit/5d719a257d5164e68e3c6b241ea5bfbaed1a3b8b))
+* **cobuy:** owner opt-out of group-buying ([#100](https://github.com/yaad-index/yaadegar/issues/100)) ([#110](https://github.com/yaad-index/yaadegar/issues/110)) ([67709a2](https://github.com/yaad-index/yaadegar/commit/67709a21e03e3e99c53b5fa32128b7430457cc87))
+* cross-device co-buy — scoped match-action token + match-read endpoint ([#96](https://github.com/yaad-index/yaadegar/issues/96)) ([#103](https://github.com/yaad-index/yaadegar/issues/103)) ([31be210](https://github.com/yaad-index/yaadegar/commit/31be210d9d7d46be237e71fac67191adf4003cc6))
+* cross-device co-buy handshake — /cobuy URL-token wiring ([#96](https://github.com/yaad-index/yaadegar/issues/96) Cut 2) ([#105](https://github.com/yaad-index/yaadegar/issues/105)) ([a07c147](https://github.com/yaad-index/yaadegar/commit/a07c147228176f661663ed07f87966c9c50b1c7d))
+
 ## [0.4.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.3.0...yaadegar-v0.4.0) (2026-07-30)
 
 
