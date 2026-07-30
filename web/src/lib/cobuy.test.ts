@@ -1,5 +1,26 @@
 import { describe, it, expect } from 'vitest';
-import { matchView } from './cobuy';
+import { matchView, matchLoadFailureState } from './cobuy';
+
+describe('matchLoadFailureState', () => {
+	// A scoped (emailed) token is cleared once the match resolves, so a 401/404 on
+	// the cross-device path means "already resolved — check your email", never an error.
+	it('treats a cleared scoped token (401/404) as resolved, not an error', () => {
+		expect(matchLoadFailureState(401, true)).toBe('resolved');
+		expect(matchLoadFailureState(404, true)).toBe('resolved');
+	});
+	it('treats a same-browser cap 401/404 as a genuinely invalid link', () => {
+		expect(matchLoadFailureState(401, false)).toBe('invalid');
+		expect(matchLoadFailureState(404, false)).toBe('invalid');
+	});
+	it('maps 410 to expired regardless of token kind', () => {
+		expect(matchLoadFailureState(410, true)).toBe('expired');
+		expect(matchLoadFailureState(410, false)).toBe('expired');
+	});
+	it('falls back to error for anything else', () => {
+		expect(matchLoadFailureState(502, true)).toBe('error');
+		expect(matchLoadFailureState(undefined, false)).toBe('error');
+	});
+});
 
 describe('matchView', () => {
 	// The load-bearing anonymity guard: contacts surface ONLY at both_confirmed.

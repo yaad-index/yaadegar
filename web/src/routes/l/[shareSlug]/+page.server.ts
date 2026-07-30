@@ -36,6 +36,7 @@ interface PledgeState {
 	contribution_id: string;
 	status: string;
 	matched: boolean;
+	match_id: string | null;
 }
 
 const isSecure = (url: URL) => url.protocol === 'https:';
@@ -88,8 +89,20 @@ export const load: PageServerLoad = async ({ params, locals, cookies, url }) => 
 			pledged[itemId] = {
 				contribution_id: entry.contribution_id,
 				status: c.status ?? 'pending',
-				matched: !!c.match_id
+				matched: !!c.match_id,
+				match_id: c.match_id ?? null
 			};
+			// Record the match id on the stored cap so the same-browser handshake link
+			// can be a clean /cobuy/<matchId> and the token resolved server-side.
+			if (c.match_id && entry.match_id !== c.match_id) {
+				addContribCap(
+					cookies,
+					params.shareSlug,
+					itemId,
+					{ contribution_id: entry.contribution_id, token: entry.token, match_id: c.match_id },
+					isSecure(url)
+				);
+			}
 		} else if (cr?.status === 401 || cr?.status === 404) {
 			removeContribCap(cookies, params.shareSlug, itemId, isSecure(url));
 		}
