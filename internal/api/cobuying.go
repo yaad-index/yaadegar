@@ -66,6 +66,14 @@ func (s *Server) CreateContribution(ctx context.Context, req gen.CreateContribut
 			BadRequestApplicationProblemPlusJSONResponse: badRequest("this item has no price to co-buy toward"),
 		}, nil
 	}
+	// Owner opt-out (#100): resolved before the capacity layer so policy never
+	// reaches storage. 403 (not 409) — the item is not capacity-conflicted, the
+	// owner has simply disallowed co-buying, so it is reserve-only.
+	if !resolveAllowCobuy(item, list) {
+		return gen.CreateContribution403ApplicationProblemPlusJSONResponse(
+			problemDetail(403, "co-buying is turned off for this item"),
+		), nil
+	}
 	if pledged.Currency != item.Price.Currency {
 		return gen.CreateContribution400ApplicationProblemPlusJSONResponse{
 			BadRequestApplicationProblemPlusJSONResponse: badRequest("pledge currency must match the item price currency"),

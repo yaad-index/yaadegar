@@ -6,11 +6,19 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/yaad-index/yaadegar/internal/api/gen"
+	"github.com/yaad-index/yaadegar/internal/settings"
 	"github.com/yaad-index/yaadegar/internal/storage"
 )
 
 // ptr returns a pointer to v — the generated optional fields are all pointers.
 func ptr[T any](v T) *T { return &v }
+
+// resolveAllowCobuy resolves whether an item may be co-bought (#100): the item's
+// own override if set, otherwise the list-level default. This is the single choke
+// point for the policy — the giver surface and the contribute gate both use it.
+func resolveAllowCobuy(item storage.Item, list storage.List) bool {
+	return settings.Resolve(item.AllowCobuy, list.AllowCobuy)
+}
 
 func toGenDate(t *time.Time) *openapi_types.Date {
 	if t == nil {
@@ -63,6 +71,7 @@ func toGenList(l storage.List) gen.List {
 		DecayDays:             l.DecayDays,                    // *int: nil = inheriting the instance default
 		ReserverTier:          tier,                           // nil = inheriting the instance default
 		ReserverConfirmWindow: l.ReserverConfirmWindowMinutes, // *int minutes: nil = inherit
+		AllowCobuy:            ptr(l.AllowCobuy),              // the list-level co-buy default (#100)
 		Active:                ptr(l.Active),
 		ItemCount:             ptr(l.ItemCount),
 		CreatedAt:             ptr(l.CreatedAt),
@@ -101,12 +110,13 @@ func toGenItem(it storage.Item, avail storage.Availability, reservedQty int) gen
 		QuantityWanted:   ptr(it.QuantityWanted),
 		Availability:     ptr(gen.ItemAvailability(avail)),
 		ReservedQuantity: ptr(reservedQty),
+		AllowCobuy:       it.AllowCobuy, // *bool: nil = inheriting the list default (#100)
 	}
 }
 
 // toGenPublicItem maps a stored item to the giver-facing PublicItem: availability
 // state and funded amount only, never who reserved or is buying (ADR-0002 §5/§6).
-func toGenPublicItem(it storage.Item, avail storage.Availability, funded storage.Money) gen.PublicItem {
+func toGenPublicItem(it storage.Item, avail storage.Availability, funded storage.Money, allowCobuy bool) gen.PublicItem {
 	var amountFunded *gen.Money
 	if funded.AmountMinor > 0 {
 		amountFunded = toGenMoney(&funded)
@@ -120,6 +130,9 @@ func toGenPublicItem(it storage.Item, avail storage.Availability, funded storage
 		Note:         it.Note,
 		Availability: ptr(gen.ItemAvailability(avail)),
 		AmountFunded: amountFunded,
+		// The resolved co-buy eligibility (#100). The giver surface shows the chip-in
+		// affordance only when this is true AND the item is priced.
+		AllowCobuy: ptr(allowCobuy),
 	}
 }
 

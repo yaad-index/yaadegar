@@ -60,6 +60,7 @@ func (s *Server) CreateItem(ctx context.Context, req gen.CreateItemRequestObject
 		Note:           req.Body.Note,
 		Priority:       derefOr(req.Body.Priority, 0),
 		QuantityWanted: derefOr(req.Body.QuantityWanted, 1),
+		AllowCobuy:     req.Body.AllowCobuy, // *bool: nil (absent) = inherit the list default (#100)
 	})
 	if err != nil {
 		return nil, err
@@ -165,6 +166,12 @@ func (s *Server) UpdateItem(ctx context.Context, req gen.UpdateItemRequestObject
 	}
 	if req.Body.QuantityWanted != nil {
 		it.QuantityWanted = *req.Body.QuantityWanted
+	}
+	// Merge-patch: a present allow_cobuy sets the item override (#100). Like the
+	// other nullable overrides, it can be set on/off but not cleared back to
+	// inherit through PATCH — the repo-wide clear-semantics limitation.
+	if req.Body.AllowCobuy != nil {
+		it.AllowCobuy = req.Body.AllowCobuy
 	}
 
 	updated, err := ts.Items().Update(ctx, it)

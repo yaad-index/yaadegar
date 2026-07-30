@@ -86,6 +86,19 @@
 	{/if}
 </section>
 
+<!-- List settings: the co-buy default items inherit unless they override it (#100). -->
+<section class="mt-3 rounded border p-3">
+	<p class="text-sm font-medium">List settings</p>
+	<form method="post" action="?/settings" use:formEnhance class="mt-2 flex items-center gap-2">
+		<label class="text-sm text-gray-700" for="list-allow-cobuy">Group-buying default</label>
+		<select id="list-allow-cobuy" name="allow_cobuy" class="rounded border p-1.5 text-sm">
+			<option value="true" selected={data.list.allow_cobuy !== false}>Allowed</option>
+			<option value="false" selected={data.list.allow_cobuy === false}>Not allowed</option>
+		</select>
+		<button class="rounded bg-black px-3 py-1.5 text-sm text-white">Save</button>
+	</form>
+</section>
+
 <!-- Add item -->
 <form method="post" action="?/add" use:enhance class="mt-4 space-y-2 rounded border p-3">
 	<div class="flex gap-2">
@@ -239,6 +252,16 @@
 						rows="3"
 						placeholder="Note (optional — supports light markdown)">{item.note ?? ''}</textarea
 					>
+					<label class="block text-sm text-gray-600">
+						Group-buying
+						<!-- Per-item co-buy override (#100). "Use list default" keeps the item
+						     inheriting; switching to Allowed/Not allowed sets an explicit override. -->
+						<select name="allow_cobuy" class="mt-1 w-full rounded border p-2 text-sm">
+							<option value="" selected={item.allow_cobuy == null}>Use list default</option>
+							<option value="true" selected={item.allow_cobuy === true}>Allowed</option>
+							<option value="false" selected={item.allow_cobuy === false}>Not allowed</option>
+						</select>
+					</label>
 					<div class="flex gap-2">
 						<button class="rounded bg-black px-3 py-1.5 text-sm text-white">Save</button>
 						<button
