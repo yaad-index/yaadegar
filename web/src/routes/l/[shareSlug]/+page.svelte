@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { resolve } from '$app/paths';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -201,9 +202,11 @@
 								{:else if pledge}
 									<p class="text-sm font-medium text-green-700">✓ You're chipping in</p>
 									{#if pledge.matched}
-										<p class="mt-1 max-w-[12rem] text-xs text-gray-600">
-											A match formed — check your email to confirm the group buy.
-										</p>
+										<a
+											class="mt-1 block text-sm text-blue-700 underline"
+											href={resolve('/cobuy/[cid]', { cid: pledge.contribution_id ?? '' })}
+											>Confirm the group buy →</a
+										>
 									{:else}
 										<button
 											class="mt-1 block text-sm text-gray-600 underline"
