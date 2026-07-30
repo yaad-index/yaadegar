@@ -606,6 +606,8 @@ export interface components {
             active?: boolean;
             reserver_tier?: string | null;
             reserver_confirm_window?: number | null;
+            /** @description List-level default for whether items may be co-bought (#100). Items inherit this unless they set their own override. Defaults to true; a new list is always created co-buy-enabled and is toggled here. */
+            allow_cobuy?: boolean;
         };
         List: {
             id?: string;
@@ -620,6 +622,8 @@ export interface components {
             reserver_tier?: string | null;
             /** @description The confirm-window override in minutes; null inherits the instance default. */
             reserver_confirm_window?: number | null;
+            /** @description The list-level default for whether items may be co-bought (#100). */
+            allow_cobuy?: boolean;
             active?: boolean;
             item_count?: number;
             /** Format: date-time */
@@ -657,6 +661,8 @@ export interface components {
             priority: number;
             /** @default 1 */
             quantity_wanted: number;
+            /** @description Per-item co-buy override (#100): omit (or null) to inherit the list default, true/false to force co-buying on/off for this item. */
+            allow_cobuy?: boolean | null;
         };
         ItemUpdate: {
             name?: string;
@@ -668,6 +674,8 @@ export interface components {
             note?: string | null;
             priority?: number;
             quantity_wanted?: number;
+            /** @description Per-item co-buy override (#100): true/false forces co-buying on/off. Like the other overrides it can be set but not cleared back to inherit through PATCH. */
+            allow_cobuy?: boolean | null;
         };
         Item: {
             id?: string;
@@ -684,6 +692,8 @@ export interface components {
             availability?: components["schemas"]["ItemAvailability"];
             /** @description How many units are reserved (owner view). This is a count only and never identifies who reserved them (ADR-0002 §5). */
             reserved_quantity?: number;
+            /** @description The per-item co-buy override (#100), owner view: null means inheriting the list default, true/false an explicit override. */
+            allow_cobuy?: boolean | null;
         };
         ItemPage: {
             items?: components["schemas"]["Item"][];
@@ -703,6 +713,8 @@ export interface components {
             note?: string | null;
             availability?: components["schemas"]["ItemAvailability"];
             amount_funded?: components["schemas"]["Money"];
+            /** @description Whether this item may be co-bought (#100, resolved from the item override and list default). The giver UI shows the chip-in affordance only when this is true AND the item is priced. */
+            allow_cobuy?: boolean;
         };
         PublicList: {
             title?: string;
@@ -1690,6 +1702,15 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            /** @description Co-buying is turned off for this item by the owner (#100). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             404: components["responses"]["NotFound"];
             /** @description The item is already fully funded or reserved. */
             409: {

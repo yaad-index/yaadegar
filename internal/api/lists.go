@@ -160,6 +160,9 @@ func (s *Server) UpdateList(ctx context.Context, req gen.UpdateListRequestObject
 	if req.Body.Active != nil {
 		l.Active = *req.Body.Active
 	}
+	if req.Body.AllowCobuy != nil {
+		l.AllowCobuy = *req.Body.AllowCobuy // list-level co-buy default (#100)
+	}
 
 	updated, err := ts.Lists().Update(ctx, l)
 	if err != nil {

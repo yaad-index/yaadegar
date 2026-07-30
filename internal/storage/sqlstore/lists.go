@@ -15,9 +15,10 @@ type listRepo struct{ baseRepo }
 const listCols = `id, tenant_id, title, visibility, share_slug,
 	event_date, decay_days, active, created_at, reserver_tier, reserver_confirm_window`
 
-// listSelectCols is listCols plus two correlated subqueries used for reads: the
-// derived item_count, and the (v1 sole) owner id resolved from list_owners.
-const listSelectCols = listCols + `,
+// listSelectCols is listCols plus allow_cobuy (the list co-buy default, #100 — read
+// only; Create relies on its NOT NULL DEFAULT 1) and two correlated subqueries used
+// for reads: the derived item_count, and the (v1 sole) owner id from list_owners.
+const listSelectCols = listCols + `, allow_cobuy,
 	(SELECT COUNT(*) FROM items
 	  WHERE items.tenant_id = lists.tenant_id AND items.list_id = lists.id) AS item_count,
 	(SELECT user_id FROM list_owners
@@ -84,6 +85,23 @@ func reserverTierToStorage(p *storage.ReserverTier) any {
 	return string(*p)
 }
 
+// items.allow_cobuy is a nullable INTEGER: NULL means "inherit the list default",
+// so the item override is a plain pointer (nil = inherit), 0/1 an explicit off/on.
+func allowCobuyFromStorage(v sql.NullInt64) *bool {
+	if !v.Valid {
+		return nil
+	}
+	b := v.Int64 != 0
+	return &b
+}
+
+func allowCobuyToStorage(p *bool) any {
+	if p == nil {
+		return nil // NULL = inherit the list default
+	}
+	return boolToInt(*p)
+}
+
 func scanList(s scanner) (storage.List, error) {
 	var (
 		l             storage.List
@@ -93,17 +111,19 @@ func scanList(s scanner) (storage.List, error) {
 		createdAt     string
 		reserverTier  sql.NullString
 		confirmWindow int
+		allowCobuy    int
 		ownerID       sql.NullString
 	)
 	if err := s.Scan(&l.ID, &l.TenantID, &l.Title, &l.Visibility,
 		&l.ShareSlug, &eventDate, &decayDays, &active, &createdAt, &reserverTier,
-		&confirmWindow, &l.ItemCount, &ownerID); err != nil {
+		&confirmWindow, &allowCobuy, &l.ItemCount, &ownerID); err != nil {
 		return storage.List{}, err
 	}
 	l.OwnerID = ownerID.String // derived: the v1 sole owner (empty only if orphaned)
 	l.DecayDays = decayDaysFromStorage(decayDays)
 	l.ReserverTier = reserverTierFromStorage(reserverTier)
 	l.ReserverConfirmWindowMinutes = confirmWindowFromStorage(confirmWindow)
+	l.AllowCobuy = allowCobuy != 0
 	ed, err := datePtr(eventDate)
 	if err != nil {
 		return storage.List{}, err
@@ -164,6 +184,10 @@ func (r listRepo) Create(ctx context.Context, l storage.List, ownerID string) (s
 	if err := tx.Commit(); err != nil {
 		return storage.List{}, err
 	}
+	// allow_cobuy is omitted from the INSERT so its NOT NULL DEFAULT 1 applies — a
+	// new list is always co-buy-enabled; the owner opts out later via Update. Mirror
+	// that default onto the returned struct (Create does not re-read).
+	l.AllowCobuy = true
 	return l, nil
 }
 
@@ -225,11 +249,13 @@ func (r listRepo) List(ctx context.Context, ownerID string, p storage.Page) ([]s
 func (r listRepo) Update(ctx context.Context, l storage.List) (storage.List, error) {
 	res, err := r.db.ExecContext(ctx, r.rb(
 		`UPDATE lists SET title = ?, visibility = ?, event_date = ?,
-		        decay_days = ?, active = ?, reserver_tier = ?, reserver_confirm_window = ?
+		        decay_days = ?, active = ?, reserver_tier = ?, reserver_confirm_window = ?,
+		        allow_cobuy = ?
 		  WHERE tenant_id = ? AND id = ?`),
 		l.Title, l.Visibility, nullDate(l.EventDate), decayDaysToStorage(l.DecayDays),
 		boolToInt(l.Active), reserverTierToStorage(l.ReserverTier),
-		confirmWindowToStorage(l.ReserverConfirmWindowMinutes), r.tenantID, l.ID)
+		confirmWindowToStorage(l.ReserverConfirmWindowMinutes), boolToInt(l.AllowCobuy),
+		r.tenantID, l.ID)
 	if err != nil {
 		return storage.List{}, err
 	}

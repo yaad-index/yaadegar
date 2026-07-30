@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { matchView, matchLoadFailureState } from './cobuy';
+import { matchView, matchLoadFailureState, chipInAllowed } from './cobuy';
 
 describe('matchLoadFailureState', () => {
 	// A scoped (emailed) token is cleared once the match resolves, so a 401/404 on
@@ -19,6 +19,23 @@ describe('matchLoadFailureState', () => {
 	it('falls back to error for anything else', () => {
 		expect(matchLoadFailureState(502, true)).toBe('error');
 		expect(matchLoadFailureState(undefined, false)).toBe('error');
+	});
+});
+
+describe('chipInAllowed', () => {
+	const priced = { amount_minor: 10000, currency: 'EUR' };
+
+	it('allows chip-in for a priced item the owner still allows', () => {
+		expect(chipInAllowed({ price: priced, allow_cobuy: true })).toBe(true);
+	});
+	it('hides chip-in when the owner opted the item out (#100)', () => {
+		expect(chipInAllowed({ price: priced, allow_cobuy: false })).toBe(false);
+	});
+	it('hides chip-in on an unpriced item even when co-buy is allowed', () => {
+		expect(chipInAllowed({ price: undefined, allow_cobuy: true })).toBe(false);
+		expect(chipInAllowed({ price: { amount_minor: 0, currency: 'EUR' }, allow_cobuy: true })).toBe(
+			false
+		);
 	});
 });
 

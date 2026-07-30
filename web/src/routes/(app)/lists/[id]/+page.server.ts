@@ -101,6 +101,11 @@ export const actions: Actions = {
 		const url = String(fd.get('url') ?? '').trim();
 		const note = String(fd.get('note') ?? '').trim();
 		const quantity = Number(fd.get('quantity_wanted') ?? 1);
+		// Per-item co-buy override (#100): 'true'/'false' set it, '' (use list default)
+		// sends nothing — like the other overrides, PATCH can set but not clear it.
+		const allowCobuyRaw = String(fd.get('allow_cobuy') ?? '');
+		const allow_cobuy =
+			allowCobuyRaw === 'true' ? true : allowCobuyRaw === 'false' ? false : undefined;
 		if (!itemId || !name) return fail(400, { editError: 'Name is required.' });
 		const client = backendClient({ host: locals.host, token: locals.token });
 		// The item PATCH is set-if-present; send only the fields with values (clearing a
@@ -111,11 +116,25 @@ export const actions: Actions = {
 				name,
 				quantity_wanted: Number.isFinite(quantity) ? quantity : 1,
 				url: url || undefined,
-				note: note || undefined
+				note: note || undefined,
+				allow_cobuy
 			}
 		});
 		if (err) return fail(400, { editError: 'Could not update the item.' });
 		return { edited: true };
+	},
+
+	// List-level co-buy default (#100): items with no override inherit it.
+	settings: async ({ request, locals, params }) => {
+		const fd = await request.formData();
+		const allow_cobuy = String(fd.get('allow_cobuy') ?? 'true') === 'true';
+		const client = backendClient({ host: locals.host, token: locals.token });
+		const { error: err } = await client.PATCH('/api/v1/lists/{listId}', {
+			params: { path: { listId: params.id } },
+			body: { allow_cobuy }
+		});
+		if (err) return fail(400, { settingsError: 'Could not update list settings.' });
+		return { settingsSaved: true };
 	},
 
 	delete: async ({ request, locals }) => {

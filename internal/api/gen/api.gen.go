@@ -292,6 +292,9 @@ type DomainTlsStatus string
 
 // Item defines model for Item.
 type Item struct {
+	// AllowCobuy The per-item co-buy override (#100), owner view: null means inheriting the list default, true/false an explicit override.
+	AllowCobuy *bool `json:"allow_cobuy,omitempty"`
+
 	// Availability Availability only. Never reveals who reserved or is buying.
 	Availability *ItemAvailability `json:"availability,omitempty"`
 	Id           *string           `json:"id,omitempty"`
@@ -315,9 +318,11 @@ type ItemAvailability string
 
 // ItemCreate defines model for ItemCreate.
 type ItemCreate struct {
-	ImageUrl *string `json:"image_url,omitempty"`
-	Name     string  `json:"name"`
-	Note     *string `json:"note,omitempty"`
+	// AllowCobuy Per-item co-buy override (#100): omit (or null) to inherit the list default, true/false to force co-buying on/off for this item.
+	AllowCobuy *bool   `json:"allow_cobuy,omitempty"`
+	ImageUrl   *string `json:"image_url,omitempty"`
+	Name       string  `json:"name"`
+	Note       *string `json:"note,omitempty"`
 
 	// Price An exact monetary amount as minor units plus ISO-4217 currency.
 	Price          *Money  `json:"price,omitempty"`
@@ -346,9 +351,11 @@ type ItemPage struct {
 
 // ItemUpdate defines model for ItemUpdate.
 type ItemUpdate struct {
-	ImageUrl *string `json:"image_url,omitempty"`
-	Name     *string `json:"name,omitempty"`
-	Note     *string `json:"note,omitempty"`
+	// AllowCobuy Per-item co-buy override (#100): true/false forces co-buying on/off. Like the other overrides it can be set but not cleared back to inherit through PATCH.
+	AllowCobuy *bool   `json:"allow_cobuy,omitempty"`
+	ImageUrl   *string `json:"image_url,omitempty"`
+	Name       *string `json:"name,omitempty"`
+	Note       *string `json:"note,omitempty"`
 
 	// Price An exact monetary amount as minor units plus ISO-4217 currency.
 	Price          *Money  `json:"price,omitempty"`
@@ -359,8 +366,11 @@ type ItemUpdate struct {
 
 // List defines model for List.
 type List struct {
-	Active    *bool      `json:"active,omitempty"`
-	CreatedAt *time.Time `json:"created_at,omitempty"`
+	Active *bool `json:"active,omitempty"`
+
+	// AllowCobuy The list-level default for whether items may be co-bought (#100).
+	AllowCobuy *bool      `json:"allow_cobuy,omitempty"`
+	CreatedAt  *time.Time `json:"created_at,omitempty"`
 
 	// DecayDays The decay-period override; null means inheriting the instance default.
 	DecayDays *int                `json:"decay_days,omitempty"`
@@ -405,7 +415,10 @@ type ListPage struct {
 
 // ListUpdate defines model for ListUpdate.
 type ListUpdate struct {
-	Active                *bool               `json:"active,omitempty"`
+	Active *bool `json:"active,omitempty"`
+
+	// AllowCobuy List-level default for whether items may be co-bought (#100). Items inherit this unless they set their own override. Defaults to true; a new list is always created co-buy-enabled and is toggled here.
+	AllowCobuy            *bool               `json:"allow_cobuy,omitempty"`
 	DecayDays             *int                `json:"decay_days,omitempty"`
 	EventDate             *openapi_types.Date `json:"event_date,omitempty"`
 	ReserverConfirmWindow *int                `json:"reserver_confirm_window,omitempty"`
@@ -468,6 +481,9 @@ type Problem struct {
 
 // PublicItem An item as a giver sees it — availability only, no reserver identity.
 type PublicItem struct {
+	// AllowCobuy Whether this item may be co-bought (#100, resolved from the item override and list default). The giver UI shows the chip-in affordance only when this is true AND the item is priced.
+	AllowCobuy *bool `json:"allow_cobuy,omitempty"`
+
 	// AmountFunded An exact monetary amount as minor units plus ISO-4217 currency.
 	AmountFunded *Money `json:"amount_funded,omitempty"`
 
@@ -3569,6 +3585,20 @@ func (response CreateContribution400ApplicationProblemPlusJSONResponse) VisitCre
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateContribution403ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateContribution403ApplicationProblemPlusJSONResponse) VisitCreateContributionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }

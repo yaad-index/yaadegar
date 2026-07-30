@@ -133,8 +133,13 @@ type List struct {
 	// override in minutes (ADR-0007): nil inherits the instance default. It mirrors
 	// DecayDays' encoding — the nil/-1 mapping lives entirely in the storage path.
 	ReserverConfirmWindowMinutes *int
-	Active                       bool
-	CreatedAt                    time.Time
+	// AllowCobuy is the list-level default for whether items may be co-bought (#100).
+	// It defaults to true (co-buying enabled); an item inherits it unless the item
+	// sets its own override. A new list is always created enabled — the owner opts
+	// out later via update.
+	AllowCobuy bool
+	Active     bool
+	CreatedAt  time.Time
 	// ItemCount is a derived read field: the number of items on the list. It is
 	// populated by reads (Get/GetBySlug/List) and left zero by Create.
 	ItemCount int
@@ -164,7 +169,10 @@ type Item struct {
 	Note           *string
 	Priority       int
 	QuantityWanted int
-	CreatedAt      time.Time
+	// AllowCobuy overrides the list's co-buy default for this item (#100): nil
+	// inherits the list, non-nil forces on/off. Resolved against List.AllowCobuy.
+	AllowCobuy *bool
+	CreatedAt  time.Time
 }
 
 // ReservationState tracks a reservation through its lifecycle. The email_confirmed

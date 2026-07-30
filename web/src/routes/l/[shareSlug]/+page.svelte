@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
+	import { chipInAllowed } from '$lib/cobuy';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -225,14 +226,14 @@
 										name="item_id"
 										value={item.id}>Reserve it</button
 									>
-									{#if priceMajor > 0}
+									{#if chipInAllowed(item)}
 										<button
 											type="button"
 											class="mt-1 block text-sm text-blue-700 underline"
 											onclick={() => item.id && openChipIn(item.id)}>Chip in instead</button
 										>
 									{/if}
-								{:else if item.availability === 'co_buying'}
+								{:else if item.availability === 'co_buying' && chipInAllowed(item)}
 									<button
 										type="button"
 										class="rounded bg-black px-3 py-2 text-sm text-white"
@@ -246,7 +247,7 @@
 							</div>
 						</div>
 
-						{#if openPledge === item.id && item.price}
+						{#if openPledge === item.id && item.price && chipInAllowed(item)}
 							<!-- Inline chip-in form for this item. Amount is in the item's currency
 							     (hidden field); the backend rejects a currency mismatch. -->
 							<div class="mt-3 rounded border bg-gray-50 p-3">

@@ -666,6 +666,11 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ContributionCreated" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "403":
+          description: Co-buying is turned off for this item by the owner (#100).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409":
           description: The item is already fully funded or reserved.
@@ -990,6 +995,12 @@ components:
         active: { type: boolean }
         reserver_tier: { type: [string, "null"] }
         reserver_confirm_window: { type: [integer, "null"], minimum: 0 }
+        allow_cobuy:
+          type: boolean
+          description: >
+            List-level default for whether items may be co-bought (#100). Items
+            inherit this unless they set their own override. Defaults to true; a new
+            list is always created co-buy-enabled and is toggled here.
 
     List:
       type: object
@@ -1008,6 +1019,9 @@ components:
         reserver_confirm_window:
           type: [integer, "null"]
           description: The confirm-window override in minutes; null inherits the instance default.
+        allow_cobuy:
+          type: boolean
+          description: The list-level default for whether items may be co-bought (#100).
         active: { type: boolean }
         item_count: { type: integer }
         created_at: { type: string, format: date-time }
@@ -1047,6 +1061,11 @@ components:
         note: { type: [string, "null"] }
         priority: { type: integer, minimum: 0, default: 0 }
         quantity_wanted: { type: integer, minimum: 1, default: 1 }
+        allow_cobuy:
+          type: [boolean, "null"]
+          description: >
+            Per-item co-buy override (#100): omit (or null) to inherit the list
+            default, true/false to force co-buying on/off for this item.
 
     ItemUpdate:
       type: object
@@ -1058,6 +1077,12 @@ components:
         note: { type: [string, "null"] }
         priority: { type: integer, minimum: 0 }
         quantity_wanted: { type: integer, minimum: 1 }
+        allow_cobuy:
+          type: [boolean, "null"]
+          description: >
+            Per-item co-buy override (#100): true/false forces co-buying on/off.
+            Like the other overrides it can be set but not cleared back to inherit
+            through PATCH.
 
     Item:
       type: object
@@ -1077,6 +1102,11 @@ components:
           description: >
             How many units are reserved (owner view). This is a count only and
             never identifies who reserved them (ADR-0002 §5).
+        allow_cobuy:
+          type: [boolean, "null"]
+          description: >
+            The per-item co-buy override (#100), owner view: null means inheriting
+            the list default, true/false an explicit override.
 
     ItemPage:
       type: object
@@ -1100,6 +1130,12 @@ components:
         note: { type: [string, "null"] }
         availability: { $ref: "#/components/schemas/ItemAvailability" }
         amount_funded: { $ref: "#/components/schemas/Money" }
+        allow_cobuy:
+          type: boolean
+          description: >
+            Whether this item may be co-bought (#100, resolved from the item override
+            and list default). The giver UI shows the chip-in affordance only when
+            this is true AND the item is priced.
 
     PublicList:
       type: object

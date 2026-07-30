@@ -49,7 +49,7 @@ func (s *Server) GetPublicList(ctx context.Context, req gen.GetPublicListRequest
 	out := make([]gen.PublicItem, 0, len(items))
 	for _, it := range items {
 		avail := deriveAvailability(it.QuantityWanted, reserved[it.ID], funded[it.ID])
-		out = append(out, toGenPublicItem(it, avail, funded[it.ID]))
+		out = append(out, toGenPublicItem(it, avail, funded[it.ID], resolveAllowCobuy(it, list)))
 	}
 	return gen.GetPublicList200JSONResponse(gen.PublicList{
 		Title:     ptr(list.Title),

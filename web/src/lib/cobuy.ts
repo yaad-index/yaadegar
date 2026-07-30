@@ -1,6 +1,15 @@
 import type { components } from '$lib/api/schema';
 
 type Match = components['schemas']['Match'];
+type PublicItem = components['schemas']['PublicItem'];
+
+// chipInAllowed reports whether a giver may co-buy an item (#100): it must be
+// priced (a positive amount to split) AND the owner must still allow co-buying
+// (allow_cobuy resolved true). Availability (available vs co_buying) is handled
+// separately in the view; this is only the priced-AND-allowed gate.
+export function chipInAllowed(item: Pick<PublicItem, 'price' | 'allow_cobuy'>): boolean {
+	return !!item.price && (item.price.amount_minor ?? 0) > 0 && item.allow_cobuy === true;
+}
 
 export type MatchViewState =
 	'proposed' | 'both_confirmed' | 'declined' | 'done' | 'expired' | 'unknown';
