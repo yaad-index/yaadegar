@@ -522,6 +522,14 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+        "503":
+          description: >
+            An email_confirmed reservation could not send its confirmation email;
+            the provisional hold was rolled back and the slot freed. Transient —
+            retry the reservation.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
 
   /public/reservations/{reservationId}:
     parameters:

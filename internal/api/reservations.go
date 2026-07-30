@@ -163,16 +163,30 @@ func (s *Server) reserveEmailConfirmed(ctx context.Context, ts storage.TenantSto
 		return nil, err
 	}
 
-	// Email the confirm link. A send failure does not fail the reserve (the slot
-	// simply auto-expires unconfirmed); it is logged, never swallowed.
+	// Email the confirm link. Unlike a decay reminder (which nudges an already
+	// active reservation, so a failed send just retries next sweep), a pending hold
+	// is useless without its confirm link — the giver can never confirm it, and it
+	// would occupy the slot until the confirm window expires. So on a send failure
+	// we roll the hold back (delete frees the slot immediately, sentinel and all)
+	// and return 503 so the giver can retry now rather than wait out the window.
 	link := s.publicLinkBase + "/confirm?token=" + confirmRaw
 	if err := s.email.Send(ctx, email.Message{
 		To:      *giverEmail,
 		Subject: "Confirm your reservation",
 		Body:    "Confirm your reservation for " + item.Name + ": " + link,
 	}); err != nil {
-		s.logger.ErrorContext(ctx, "confirm email send failed; reservation will expire unconfirmed",
+		s.logger.ErrorContext(ctx, "confirm email send failed; rolling back the pending hold",
 			"reservation_id", res.ID, "error", err)
+		if derr := ts.Reservations().Delete(ctx, res.ID); derr != nil {
+			// The hold is stranded but will still auto-expire at the confirm window;
+			// surface a 500 so the failure is not mistaken for a clean rollback.
+			s.logger.ErrorContext(ctx, "rollback of unconfirmable pending hold failed",
+				"reservation_id", res.ID, "error", derr)
+			return nil, derr
+		}
+		return gen.CreateReservation503ApplicationProblemPlusJSONResponse(
+			problemDetail(503, "could not send the confirmation email; please try reserving again"),
+		), nil
 	}
 
 	return gen.CreateReservation202JSONResponse(gen.ReservationCreated{
