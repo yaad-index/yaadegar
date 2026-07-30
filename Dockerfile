@@ -3,7 +3,12 @@
 # runtime image carries only the binary — nothing else to ship.
 
 # --- builder ---
-FROM golang:1.26.2 AS build
+# Base images are pinned by digest (reproducible, tamper-evident); the readable tag
+# sits on the comment line above each digest. Both digests are multi-arch
+# manifest-list digests, so the arm64 + amd64 publish build still resolves each
+# platform.
+# golang:1.26.2
+FROM golang@sha256:b54cbf583d390341599d7bcbc062425c081105cc5ef6d170ced98ef9d047c716 AS build
 WORKDIR /src
 
 # Cache module downloads separately from the source.
@@ -16,7 +21,8 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/yaadegar ./cmd/yaadegar
 
 # --- runtime ---
-FROM gcr.io/distroless/static-debian12:nonroot
+# gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian12@sha256:f5b485ea962d9bd1186b2f6b3a061191539b905b82ec395de78cbfae51f20e35
 COPY --from=build /out/yaadegar /usr/local/bin/yaadegar
 EXPOSE 8080
 USER nonroot:nonroot
