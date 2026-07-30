@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.3.0...yaadegar-v0.4.0) (2026-07-30)
+
+
+### Features
+
+* co-buying confirm/decline handshake page ([#92](https://github.com/yaad-index/yaadegar/issues/92) Cut 2) ([#97](https://github.com/yaad-index/yaadegar/issues/97)) ([fea062c](https://github.com/yaad-index/yaadegar/commit/fea062cfd69a0839925ae43ff27c619c3cb68b47))
+* co-buying pledge, track, and withdraw on the giver page ([#92](https://github.com/yaad-index/yaadegar/issues/92) Cut 1) ([#95](https://github.com/yaad-index/yaadegar/issues/95)) ([895bb6e](https://github.com/yaad-index/yaadegar/commit/895bb6e92c157f5c18995483ad0b996e97e4d0b6))
+* giver-facing /confirm page for email_confirmed reservations ([#82](https://github.com/yaad-index/yaadegar/issues/82)) ([#87](https://github.com/yaad-index/yaadegar/issues/87)) ([76fc6c0](https://github.com/yaad-index/yaadegar/commit/76fc6c02613dc6b61242a8f26550a1892df95dfd))
+* per-list email_confirmed confirm-window override ([#81](https://github.com/yaad-index/yaadegar/issues/81)) ([#89](https://github.com/yaad-index/yaadegar/issues/89)) ([1be83c6](https://github.com/yaad-index/yaadegar/commit/1be83c69cb6a9aae59c7558a4107ade2f789ced8))
+
+
+### Bug Fixes
+
+* roll back an email_confirmed hold when the confirm email can't send ([#86](https://github.com/yaad-index/yaadegar/issues/86)) ([#91](https://github.com/yaad-index/yaadegar/issues/91)) ([b3ead27](https://github.com/yaad-index/yaadegar/commit/b3ead272dd6d47c7dcc6dec82caf460c34e2260a))
+
 ## [0.3.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.2.0...yaadegar-v0.3.0) (2026-07-29)
 
 
