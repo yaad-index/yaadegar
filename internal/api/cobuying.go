@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/yaad-index/yaadegar/internal/api/gen"
 	"github.com/yaad-index/yaadegar/internal/email"
@@ -150,8 +151,27 @@ func (s *Server) maybeProposeMatch(ctx context.Context, ts storage.TenantStore, 
 	if err != nil {
 		return storage.Match{}, false, err
 	}
-	s.emailMatch(ctx, pending, "A co-buying match is proposed",
-		"A group gift you pledged toward is fully funded. Confirm or decline with your capability token.")
+
+	// Mint a scoped, expiring match-action token per participant so the emailed
+	// confirm/decline link works on any device (#96). A non-positive window means
+	// no expiry. The raw token rides only the email link; only its hash is stored.
+	var expiresAt *time.Time
+	if s.cobuyConfirmWindow > 0 {
+		exp := s.clock.Now().Add(s.cobuyConfirmWindow)
+		expiresAt = &exp
+	}
+	links := make(map[string]string, len(pending))
+	for _, c := range pending {
+		raw, hash, err := token.New()
+		if err != nil {
+			return storage.Match{}, false, err
+		}
+		if err := ts.Contributions().SetMatchActionToken(ctx, c.ID, hash, expiresAt); err != nil {
+			return storage.Match{}, false, err
+		}
+		links[c.ID] = s.publicLinkBase + "/cobuy/" + m.ID + "?t=" + raw
+	}
+	s.emailMatch(ctx, pending, links)
 	return m, true, nil
 }
 
@@ -239,9 +259,18 @@ func (s *Server) ConfirmMatch(ctx context.Context, req gen.ConfirmMatchRequestOb
 	if !ok {
 		return nil, errMissingContext
 	}
+	// Dual-auth: the capability token (same-browser) OR the scoped match-action
+	// token (cross-device, #96). Either way the token must belong to this match.
 	raw := capTokenFromContext(ctx)
-	if raw == "" {
-		return confirmUnauthorized("missing capability token"), nil
+	c, err := s.resolveMatchActor(ctx, ts, raw, req.MatchId)
+	if err != nil {
+		switch {
+		case errors.Is(err, errTokenUnauthorized), errors.Is(err, errActionTokenExpired):
+			return confirmUnauthorized("invalid or expired token"), nil
+		case errors.Is(err, errActorNotInMatch):
+			return confirmNotFound("this token is not part of that match"), nil
+		}
+		return nil, err
 	}
 	m, err := ts.Matches().Get(ctx, req.MatchId)
 	if err != nil {
@@ -249,16 +278,6 @@ func (s *Server) ConfirmMatch(ctx context.Context, req gen.ConfirmMatchRequestOb
 			return confirmNotFound("match not found"), nil
 		}
 		return nil, err
-	}
-	c, err := ts.Contributions().ByTokenHash(ctx, token.Hash(raw))
-	if err != nil {
-		if errors.Is(err, storage.ErrNotFound) {
-			return confirmUnauthorized("invalid capability token"), nil
-		}
-		return nil, err
-	}
-	if c.MatchID == nil || *c.MatchID != m.ID {
-		return confirmNotFound("this token is not part of that match"), nil
 	}
 	if m.State != storage.MatchProposed {
 		return gen.ConfirmMatch409ApplicationProblemPlusJSONResponse(
@@ -269,6 +288,11 @@ func (s *Server) ConfirmMatch(ctx context.Context, req gen.ConfirmMatchRequestOb
 	if req.Body != nil && req.Body.Decision == gen.Decline {
 		c.Status = storage.ContributionDeclined
 		if _, err := ts.Contributions().Update(ctx, c); err != nil {
+			return nil, err
+		}
+		// The decliner's action token is spent; the others' are cleared as they are
+		// released back to pending in dissolveMatch.
+		if err := ts.Contributions().SetMatchActionToken(ctx, c.ID, "", nil); err != nil {
 			return nil, err
 		}
 		if err := s.dissolveMatch(ctx, ts, m, c.ID); err != nil {
@@ -292,9 +316,110 @@ func (s *Server) ConfirmMatch(ctx context.Context, req gen.ConfirmMatchRequestOb
 	contacts := make([]string, 0, len(contribs))
 	for _, cc := range contribs {
 		contacts = append(contacts, cc.ContactEmail)
+		// The match is resolved; the scoped tokens are spent, so clear them.
+		if err := ts.Contributions().SetMatchActionToken(ctx, cc.ID, "", nil); err != nil {
+			return nil, err
+		}
 	}
 	s.emailReveal(ctx, contribs)
 	return gen.ConfirmMatch200JSONResponse(toGenMatch(m, contacts)), nil
+}
+
+// resolveMatchActor authenticates a match action from the token in the capability
+// header, accepting EITHER the contribution's capability token (same-browser) or
+// its scoped, expiring match-action token (cross-device, #96), and returns the
+// contribution only when it belongs to matchID. The cap-token path enforces the
+// same participation fence, so a valid capability token from a DIFFERENT match
+// cannot read or act on this one. The scoped token additionally must not be expired.
+func (s *Server) resolveMatchActor(ctx context.Context, ts storage.TenantStore, raw, matchID string) (storage.Contribution, error) {
+	if raw == "" {
+		return storage.Contribution{}, errTokenUnauthorized
+	}
+	hash := token.Hash(raw)
+
+	// Capability token (same-browser).
+	c, err := ts.Contributions().ByTokenHash(ctx, hash)
+	if err == nil {
+		if c.MatchID == nil || *c.MatchID != matchID {
+			return storage.Contribution{}, errActorNotInMatch
+		}
+		return c, nil
+	}
+	if !errors.Is(err, storage.ErrNotFound) {
+		return storage.Contribution{}, err
+	}
+
+	// Scoped match-action token (cross-device).
+	c, err = ts.Contributions().ByMatchActionTokenHash(ctx, hash)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return storage.Contribution{}, errTokenUnauthorized
+		}
+		return storage.Contribution{}, err
+	}
+	if c.MatchID == nil || *c.MatchID != matchID {
+		return storage.Contribution{}, errActorNotInMatch
+	}
+	if c.MatchActionTokenExpiresAt != nil && !s.clock.Now().Before(*c.MatchActionTokenExpiresAt) {
+		return storage.Contribution{}, errActionTokenExpired
+	}
+	return c, nil
+}
+
+var (
+	errActorNotInMatch    = errors.New("token is not part of that match")
+	errActionTokenExpired = errors.New("match-action token expired")
+)
+
+// GetMatch returns a match's state so the /cobuy handshake can load it — including
+// cross-device via the scoped token. Authorized by resolveMatchActor (cap or scoped
+// token, scoped to this match). Contacts are revealed only once both_confirmed,
+// through the same toGenMatch boundary as confirmMatch.
+func (s *Server) GetMatch(ctx context.Context, req gen.GetMatchRequestObject) (gen.GetMatchResponseObject, error) {
+	ts, _, ok := s.tenantStore(ctx)
+	if !ok {
+		return nil, errMissingContext
+	}
+	raw := capTokenFromContext(ctx)
+	if _, err := s.resolveMatchActor(ctx, ts, raw, req.MatchId); err != nil {
+		switch {
+		case errors.Is(err, errTokenUnauthorized):
+			return gen.GetMatch401ApplicationProblemPlusJSONResponse{
+				UnauthorizedApplicationProblemPlusJSONResponse: unauthorized("invalid capability token"),
+			}, nil
+		case errors.Is(err, errActorNotInMatch):
+			return gen.GetMatch404ApplicationProblemPlusJSONResponse{
+				NotFoundApplicationProblemPlusJSONResponse: notFound("match not found"),
+			}, nil
+		case errors.Is(err, errActionTokenExpired):
+			return gen.GetMatch410ApplicationProblemPlusJSONResponse(
+				problemDetail(410, "this confirmation link has expired"),
+			), nil
+		}
+		return nil, err
+	}
+	m, err := ts.Matches().Get(ctx, req.MatchId)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return gen.GetMatch404ApplicationProblemPlusJSONResponse{
+				NotFoundApplicationProblemPlusJSONResponse: notFound("match not found"),
+			}, nil
+		}
+		return nil, err
+	}
+	// Contacts only when both_confirmed; toGenMatch is the boundary, but gather them
+	// only in that state so we never even read a contact early.
+	var contacts []string
+	if m.State == storage.MatchBothConfirmed {
+		for _, id := range m.ContributionIDs {
+			cc, err := ts.Contributions().Get(ctx, id)
+			if err != nil {
+				return nil, err
+			}
+			contacts = append(contacts, cc.ContactEmail)
+		}
+	}
+	return gen.GetMatch200JSONResponse(toGenMatch(m, contacts)), nil
 }
 
 func confirmUnauthorized(d string) gen.ConfirmMatchResponseObject {
@@ -357,6 +482,11 @@ func (s *Server) dissolveMatch(ctx context.Context, ts storage.TenantStore, m st
 		if _, err := ts.Contributions().Update(ctx, c); err != nil {
 			return err
 		}
+		// The released contribution's scoped token is spent; clear it so a re-pledge
+		// into a new match starts clean (no stale residue).
+		if err := ts.Contributions().SetMatchActionToken(ctx, c.ID, "", nil); err != nil {
+			return err
+		}
 	}
 	m.State = storage.MatchDeclined
 	if _, err := ts.Matches().Update(ctx, m); err != nil {
@@ -365,11 +495,16 @@ func (s *Server) dissolveMatch(ctx context.Context, ts storage.TenantStore, m st
 	return nil
 }
 
-// emailMatch sends the same non-revealing notice to each party. The body carries
-// no other party's contact.
-func (s *Server) emailMatch(ctx context.Context, contribs []storage.Contribution, subject, body string) {
+// emailMatch sends each party their own scoped confirm/decline link (from links,
+// keyed by contribution id). The notice reveals nothing about the other parties —
+// only that the item is funded and can be confirmed.
+func (s *Server) emailMatch(ctx context.Context, contribs []storage.Contribution, links map[string]string) {
 	for _, c := range contribs {
-		if err := s.email.Send(ctx, email.Message{To: c.ContactEmail, Subject: subject, Body: body}); err != nil {
+		body := "A group gift you pledged toward is now fully funded. " +
+			"Confirm or decline the group buy: " + links[c.ID]
+		if err := s.email.Send(ctx, email.Message{
+			To: c.ContactEmail, Subject: "A co-buying match is proposed", Body: body,
+		}); err != nil {
 			s.logger.Error("co-buying email failed", "err", err, "contribution", c.ID)
 		}
 	}

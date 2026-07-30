@@ -232,9 +232,15 @@ type ContributionRepo interface {
 	CreateWithinCapacity(ctx context.Context, c Contribution, priceMinor int64) (Contribution, error)
 	Get(ctx context.Context, id string) (Contribution, error)
 	ByTokenHash(ctx context.Context, tokenHash string) (Contribution, error)
+	// ByMatchActionTokenHash looks a contribution up by the hash of its scoped,
+	// expiring match-action token (#96). Empty hashes never match.
+	ByMatchActionTokenHash(ctx context.Context, tokenHash string) (Contribution, error)
 	ListByItem(ctx context.Context, itemID string) ([]Contribution, error)
 	// Update persists status and match linkage.
 	Update(ctx context.Context, c Contribution) (Contribution, error)
+	// SetMatchActionToken installs or clears (empty hash + nil expiry) the scoped
+	// match-action token, touching only those two columns.
+	SetMatchActionToken(ctx context.Context, id, tokenHash string, expiresAt *time.Time) error
 	Delete(ctx context.Context, id string) error
 }
 
