@@ -84,6 +84,11 @@ func (s *Server) CreateContribution(ctx context.Context, req gen.CreateContribut
 		TokenHash:    hash,
 	}, item.Price.AmountMinor)
 	if err != nil {
+		if errors.Is(err, storage.ErrCrossTrackConflict) {
+			return gen.CreateContribution409ApplicationProblemPlusJSONResponse(
+				problemDetail(409, "this item is reserved and can't be co-bought"),
+			), nil
+		}
 		if errors.Is(err, storage.ErrCapacityExceeded) {
 			return gen.CreateContribution409ApplicationProblemPlusJSONResponse(
 				problemDetail(409, "this pledge would overfund the item"),

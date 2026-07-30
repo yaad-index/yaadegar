@@ -115,6 +115,20 @@ func (r reservationRepo) Create(ctx context.Context, res storage.Reservation) (s
 func (r reservationRepo) CreateWithinCapacity(ctx context.Context, res storage.Reservation, wantedQty int) (storage.Reservation, error) {
 	res = r.prep(res)
 	err := r.withItemLock(ctx, res.ItemID, func(tx *sql.Tx) error {
+		// Reserve and co-buy are mutually exclusive per item (#93): a live co-buy
+		// (any non-terminal contribution) takes the whole item, so no reservation.
+		// Inside the shared item lock, so a concurrent contribute can't slip in
+		// between this check and the insert.
+		var cobuy int
+		if err := tx.QueryRowContext(ctx, r.rb(
+			`SELECT COUNT(*) FROM contributions
+			  WHERE tenant_id = ? AND item_id = ? AND status IN ('pending', 'matched', 'confirmed')`),
+			r.tenantID, res.ItemID).Scan(&cobuy); err != nil {
+			return err
+		}
+		if cobuy > 0 {
+			return storage.ErrCrossTrackConflict
+		}
 		var total int
 		if err := tx.QueryRowContext(ctx, r.rb(
 			`SELECT COALESCE(SUM(quantity), 0) FROM reservations

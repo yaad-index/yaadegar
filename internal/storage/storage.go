@@ -20,6 +20,12 @@ var (
 	// insert would push a total past its cap — a reservation beyond quantity_wanted
 	// or a contribution beyond the item price. The check and insert are atomic.
 	ErrCapacityExceeded = errors.New("storage: capacity exceeded")
+	// ErrCrossTrackConflict is returned by the capacity-guarded creates when the
+	// other giving track already holds the item: a reserve on an item with a live
+	// co-buy, or a contribution on an item with an active reservation. Reserve and
+	// co-buy are mutually exclusive per item (#93); the check runs inside the shared
+	// item lock so concurrent attempts can't both start.
+	ErrCrossTrackConflict = errors.New("storage: cross-track conflict")
 	// ErrInvalidSubdomain is returned by CreateTenant for an empty subdomain. The
 	// full format + reserved-name policy is enforced at the provisioning boundary
 	// (see internal/tenant); this is the storage floor.

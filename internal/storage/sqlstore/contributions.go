@@ -90,6 +90,19 @@ func (r contributionRepo) Create(ctx context.Context, c storage.Contribution) (s
 func (r contributionRepo) CreateWithinCapacity(ctx context.Context, c storage.Contribution, priceMinor int64) (storage.Contribution, error) {
 	c = r.prep(c)
 	err := r.withItemLock(ctx, c.ItemID, func(tx *sql.Tx) error {
+		// Reserve and co-buy are mutually exclusive per item (#93): an active
+		// reservation (state != expired) takes the whole item, so no co-buy. Inside
+		// the shared item lock, so a concurrent reserve can't slip in first.
+		var reserved int
+		if err := tx.QueryRowContext(ctx, r.rb(
+			`SELECT COUNT(*) FROM reservations
+			  WHERE tenant_id = ? AND item_id = ? AND state != 'expired'`),
+			r.tenantID, c.ItemID).Scan(&reserved); err != nil {
+			return err
+		}
+		if reserved > 0 {
+			return storage.ErrCrossTrackConflict
+		}
 		var total int64
 		if err := tx.QueryRowContext(ctx, r.rb(
 			`SELECT COALESCE(SUM(pledged_amount_minor), 0) FROM contributions

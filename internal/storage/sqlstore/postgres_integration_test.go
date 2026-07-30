@@ -294,3 +294,74 @@ func TestPostgres_ConfirmVsExpireSingleWinner(t *testing.T) {
 		require.NoError(t, s.Reservations().Delete(ctx, id))
 	}
 }
+
+// TestPostgres_ReserveCoBuyMutualExclusionRace is the #93 guard on real Postgres:
+// a reserve and a contribute race on the SAME item. The shared item lock serializes
+// them, so exactly one commits its track and the other gets ErrCrossTrackConflict —
+// never both, no interleaving that lets both start.
+func TestPostgres_ReserveCoBuyMutualExclusionRace(t *testing.T) {
+	ctx := context.Background()
+	st := newPostgresStore(t)
+	suffix := t.Name()
+
+	ten, err := st.CreateTenant(ctx, storage.Tenant{Subdomain: "mx-" + suffix})
+	require.NoError(t, err)
+	s := st.ForTenant(ten)
+	owner, err := s.Users().Create(ctx, storage.User{Name: "Owner"})
+	require.NoError(t, err)
+	list, err := s.Lists().Create(ctx, storage.List{Title: "Mutual"}, owner.ID)
+	require.NoError(t, err)
+
+	for round := 0; round < 40; round++ {
+		// A fresh priced item each round so both tracks start from a clean slate.
+		item, err := s.Items().Create(ctx, storage.Item{
+			ListID: list.ID, Name: "Gift", QuantityWanted: 1,
+			Price: &storage.Money{AmountMinor: 10000, Currency: "EUR"},
+		})
+		require.NoError(t, err)
+
+		var (
+			wg              sync.WaitGroup
+			mu              sync.Mutex
+			reserved, cobuy int
+			start           = make(chan struct{})
+		)
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := s.Reservations().CreateWithinCapacity(ctx, storage.Reservation{
+				ItemID: item.ID, Quantity: 1, TokenHash: fmt.Sprintf("res-%d", round),
+				State: storage.StateActive,
+			}, item.QuantityWanted)
+			if err == nil {
+				mu.Lock()
+				reserved++
+				mu.Unlock()
+			} else {
+				assert.ErrorIs(t, err, storage.ErrCrossTrackConflict)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := s.Contributions().CreateWithinCapacity(ctx, storage.Contribution{
+				ItemID: item.ID, Pledged: storage.Money{AmountMinor: 10000, Currency: "EUR"},
+				ContactEmail: "a@example.com", TokenHash: fmt.Sprintf("con-%d", round),
+			}, item.Price.AmountMinor)
+			if err == nil {
+				mu.Lock()
+				cobuy++
+				mu.Unlock()
+			} else {
+				assert.ErrorIs(t, err, storage.ErrCrossTrackConflict)
+			}
+		}()
+		close(start)
+		wg.Wait()
+
+		require.Equalf(t, 1, reserved+cobuy,
+			"exactly one track wins the item under real concurrency (round %d: reserved=%d cobuy=%d)",
+			round, reserved, cobuy)
+	}
+}
