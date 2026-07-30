@@ -82,6 +82,27 @@ The domain has three distinct actors, which shapes the surface:
     integer **minor-unit amount + ISO-4217 currency code** (never a float), so
     co-buying arithmetic is exact.
 
+11. **Reserving and co-buying are mutually exclusive per item.** An item can be
+    reserved *or* co-bought, never both at once — the two paths would otherwise
+    double-gift the same item. Exclusion is **per item, regardless of quantity**:
+    a single partial reservation (one of several units) takes the whole item, and
+    any live co-buy blocks a reservation. Enforcement lives at the capacity layer,
+    inside the same per-item lock both paths already share, so a concurrent reserve
+    and contribute cannot both win:
+    - Reserving is refused while any non-terminal contribution exists on the item
+      (a pledge that is pending, matched, or confirmed).
+    - Contributing is refused while any active reservation exists on the item (a
+      reservation in any state other than expired, which includes the
+      pending-confirmation window).
+    - Both refusals surface as **409** on the public surface with track-specific
+      detail copy.
+
+    A track frees the other only when it truly ends: releasing a reservation or
+    its decay to expired reopens the item for co-buy; withdrawing every pledge
+    (all contributions terminal) reopens it for reserve. A dissolved match that
+    resets a participant back to pending keeps the item held for co-buy until
+    those pledges are withdrawn.
+
 ## Consequences
 
 - Handlers split cleanly into an authenticated owner mux and a public giver mux;
@@ -93,3 +114,6 @@ The domain has three distinct actors, which shapes the surface:
   fixes owner authentication before the owner surface is implemented.
 - The OpenAPI file is the source of truth for the contract; server and client code
   are generated from / validated against it in later issues.
+- Reserve/co-buy mutual exclusion (decision 11) is enforced structurally at the
+  capacity layer rather than in handlers, so it holds uniformly under concurrency;
+  a single cross-track sentinel error maps to the 409 on both public paths.
