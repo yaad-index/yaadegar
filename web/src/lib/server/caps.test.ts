@@ -10,7 +10,8 @@ import {
 	COBUY_COOKIE,
 	addContribCap,
 	contribCapsForList,
-	removeContribCap
+	removeContribCap,
+	findContribCap
 } from './caps';
 
 // A minimal in-memory Cookies stand-in — enough for the get/set/delete the caps
@@ -135,5 +136,22 @@ describe('co-buy contribution caps', () => {
 		const { cookies, sets } = recordingCookies();
 		addContribCap(cookies, 'slug', 'item-1', { contribution_id: 'c1', token: 't1' }, true);
 		expect(sets[COBUY_COOKIE]).toMatchObject({ httpOnly: true, sameSite: 'lax', secure: true });
+	});
+
+	// findContribCap powers the /cobuy handshake, which is reached by contribution id
+	// with no share slug in scope: it locates the cap across lists and returns the
+	// token server-side (never to the URL), or undefined on a different browser.
+	it('finds a contribution cap by id across lists, and returns undefined otherwise', () => {
+		const cookies = fakeCookies();
+		addContribCap(cookies, 'slug-a', 'item-1', { contribution_id: 'c1', token: 't1' }, false);
+		addContribCap(cookies, 'slug-b', 'item-9', { contribution_id: 'c2', token: 't2' }, false);
+
+		expect(findContribCap(cookies, 'c2')).toEqual({
+			shareSlug: 'slug-b',
+			itemId: 'item-9',
+			token: 't2'
+		});
+		expect(findContribCap(cookies, 'nope')).toBeUndefined();
+		expect(findContribCap(fakeCookies(), 'c1')).toBeUndefined();
 	});
 });
