@@ -63,6 +63,42 @@ func TestImport_JSONCreatesItems(t *testing.T) {
 	assert.ElementsMatch(t, []string{"Book", "Mug"}, h.listItemNames(t, *list.Id))
 }
 
+// itemByName returns the target list's item with the given name.
+func (h *harness) itemByName(t *testing.T, listID, name string) gen.Item {
+	t.Helper()
+	resp, body := h.req(http.MethodGet, "/api/v1/lists/"+listID+"/items", h.ownerHost(), h.ownerToken(), nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	for _, it := range *decode[gen.ItemPage](t, body).Items {
+		if it.Name != nil && *it.Name == name {
+			return it
+		}
+	}
+	t.Fatalf("item %q not found", name)
+	return gen.Item{}
+}
+
+// An omitted (JSON) or empty (CSV) quantity defaults to 1 — the import path applies
+// the same default as item creation (via the shared storage prep), so an imported
+// item is reservable rather than silently stuck at 0 capacity.
+func TestImport_DefaultsQuantityToOne(t *testing.T) {
+	h := newHarness(t)
+	list := h.createList("L")
+
+	// JSON: quantity_wanted omitted entirely.
+	env := map[string]any{"schema_version": 1, "items": []map[string]any{{"name": "JsonNoQty"}}}
+	resp, body := h.req(http.MethodPost, importPath(*list.Id), h.ownerHost(), h.ownerToken(), env)
+	require.Equal(t, http.StatusCreated, resp.StatusCode, "body: %s", body)
+
+	// CSV: empty quantity cell (all columns after name empty).
+	csv := "name,url,image_url,price_amount_minor,price_currency,note,priority,quantity_wanted,allow_cobuy,thank_you_template\n" +
+		"CsvNoQty,,,,,,,,,\n"
+	resp, body = h.importRaw(*list.Id, "text/csv", csv, h.ownerToken())
+	require.Equal(t, http.StatusCreated, resp.StatusCode, "body: %s", body)
+
+	assert.Equal(t, 1, *h.itemByName(t, *list.Id, "JsonNoQty").QuantityWanted)
+	assert.Equal(t, 1, *h.itemByName(t, *list.Id, "CsvNoQty").QuantityWanted)
+}
+
 // A CSV upload creates items.
 func TestImport_CSVCreatesItems(t *testing.T) {
 	h := newHarness(t)
