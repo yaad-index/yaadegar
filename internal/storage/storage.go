@@ -73,6 +73,10 @@ type Store interface {
 	// its tenant. Host-string parsing (which of the two lookups to use) is the
 	// caller's concern; storage stays free of base-domain policy.
 	TenantByCustomDomain(ctx context.Context, hostname string) (Tenant, error)
+	// ListTenants returns a page of all tenants with the unpaged total (the
+	// instance-admin user-management browse, ADR-0009). An unscoped instance-level
+	// read, the same class as CreateTenant.
+	ListTenants(ctx context.Context, p Page) ([]Tenant, int, error)
 	// SetTenantOAuthGoogle flips a tenant's Google-login toggle (ADR-0008 §6). It
 	// is an instance-level tenant-config write (the same unscoped class as
 	// CreateTenant), not a per-tenant data operation. ErrNotFound if the tenant is
@@ -140,6 +144,14 @@ type UserRepo interface {
 	// (the empty email never matches). If more than one user shares the email the
 	// earliest-created is returned deterministically.
 	ByEmail(ctx context.Context, email string) (User, error)
+	// List returns a page of the tenant's users (admin user-management, ADR-0009),
+	// with the unpaged total, ordered oldest-first.
+	List(ctx context.Context, p Page) ([]User, int, error)
+	// SetRole updates a user's per-tenant role (ADR-0009). Callers enforce the
+	// demotion-vs-list_owners precondition before calling. ErrNotFound if absent.
+	SetRole(ctx context.Context, userID string, role UserRole) error
+	// SetBanned sets/clears a user's ban flag (ADR-0009). ErrNotFound if absent.
+	SetBanned(ctx context.Context, userID string, banned bool) error
 }
 
 // ListRepo persists lists within the bound tenant. Ownership lives in a join table

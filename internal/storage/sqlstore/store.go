@@ -131,16 +131,46 @@ func (s *sqlStore) SetTenantOAuthGoogle(ctx context.Context, tenantID string, en
 	return expectOne(res)
 }
 
+// ListTenants returns a page of all tenants (instance-admin browse, ADR-0009),
+// oldest-first, with the unpaged total. Unscoped, the same class as CreateTenant.
+func (s *sqlStore) ListTenants(ctx context.Context, p storage.Page) ([]storage.Tenant, int, error) {
+	var total int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM tenants`).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := s.db.QueryContext(ctx, s.d.rebind(
+		`SELECT id, subdomain, created_at, oauth_google_enabled FROM tenants
+		  ORDER BY created_at, id LIMIT ? OFFSET ?`), p.Limit, p.Offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	var tenants []storage.Tenant
+	for rows.Next() {
+		t, err := scanTenantRow(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		tenants = append(tenants, t)
+	}
+	return tenants, total, rows.Err()
+}
+
 func scanTenant(row *sql.Row) (storage.Tenant, error) {
+	t, err := scanTenantRow(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return storage.Tenant{}, storage.ErrNotFound
+	}
+	return t, err
+}
+
+func scanTenantRow(row rowScanner) (storage.Tenant, error) {
 	var (
 		t            storage.Tenant
 		createdAt    string
 		oauthEnabled int
 	)
 	if err := row.Scan(&t.ID, &t.Subdomain, &createdAt, &oauthEnabled); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return storage.Tenant{}, storage.ErrNotFound
-		}
 		return storage.Tenant{}, err
 	}
 	ts, err := parseTime(createdAt)

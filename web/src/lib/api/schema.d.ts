@@ -105,7 +105,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List all tenants (superadmin) */
+        get: operations["adminListTenants"];
         put?: never;
         /** Create a tenant (superadmin) */
         post: operations["adminCreateTenant"];
@@ -130,6 +131,52 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/admin/tenants/{tenantId}/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenantId: string;
+            };
+            cookie?: never;
+        };
+        /** List a tenant's users (superadmin) */
+        get: operations["adminListUsers"];
+        put?: never;
+        /**
+         * Create a user by email in a tenant (superadmin)
+         * @description Provisions an owner or giver account for an email with no password; the user later sets credentials via an enabled login method (ADR-0009 Cut 1).
+         */
+        post: operations["adminCreateUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/tenants/{tenantId}/users/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenantId: string;
+                userId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change a user's role or ban state (superadmin)
+         * @description Updates a user's role (owner ↔ giver) and/or ban flag (ADR-0009 Cut 1). Demotion to giver is REJECTED with 409 while the account still owns lists — owner access flows through list ownership, so the admin must reassign or delete those lists first; the error names the blocking count.
+         */
+        patch: operations["adminUpdateUser"];
         trace?: never;
     };
     "/api/v1/me": {
@@ -608,6 +655,45 @@ export interface components {
             email: string;
             /** @description Plaintext; hashed server-side (argon2id). The email doubles as the login username. */
             password: string;
+        };
+        AdminTenant: {
+            id: string;
+            subdomain: string;
+        };
+        AdminTenantPage: {
+            items: components["schemas"]["AdminTenant"][];
+            /** @description Total tenants, ignoring pagination. */
+            total: number;
+        };
+        /**
+         * @description Per-tenant role (ADR-0009). The instance-admin capability is separate.
+         * @enum {string}
+         */
+        AdminUserRole: "owner" | "giver";
+        AdminUser: {
+            id: string;
+            tenant_id: string;
+            email: string;
+            name?: string;
+            role: components["schemas"]["AdminUserRole"];
+            banned: boolean;
+        };
+        AdminUserPage: {
+            items: components["schemas"]["AdminUser"][];
+            /** @description Total users in the tenant, ignoring pagination. */
+            total: number;
+        };
+        AdminUserCreate: {
+            /** @description The email doubles as the login username. */
+            email: string;
+            role: components["schemas"]["AdminUserRole"];
+            /** @description Display name; defaults to the email. */
+            name?: string;
+        };
+        /** @description At least one field; omitted fields are left unchanged. */
+        AdminUserUpdate: {
+            role?: components["schemas"]["AdminUserRole"];
+            banned?: boolean;
         };
         LoginRequest: {
             username: string;
@@ -1093,6 +1179,31 @@ export interface operations {
             };
         };
     };
+    adminListTenants: {
+        parameters: {
+            query?: {
+                limit?: components["parameters"]["Limit"];
+                offset?: components["parameters"]["Offset"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of tenants. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTenantPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
     adminCreateTenant: {
         parameters: {
             query?: never;
@@ -1149,6 +1260,105 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    adminListUsers: {
+        parameters: {
+            query?: {
+                limit?: components["parameters"]["Limit"];
+                offset?: components["parameters"]["Offset"];
+            };
+            header?: never;
+            path: {
+                tenantId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of the tenant's users. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminCreateUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenantId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserCreate"];
+            };
+        };
+        responses: {
+            /** @description The created user (never includes any credential). */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUser"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    adminUpdateUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenantId: string;
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserUpdate"];
+            };
+        };
+        responses: {
+            /** @description The updated user. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUser"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Demotion blocked: the account still owns lists. The detail names how many; reassign or delete them before demoting. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     getCurrentUser: {

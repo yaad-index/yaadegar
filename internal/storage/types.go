@@ -91,10 +91,21 @@ type Tenant struct {
 	OAuthGoogleEnabled bool
 }
 
-// User is an owner within a tenant. Email is used server-side (e.g. decay notices)
-// and may be empty. Username/PasswordHash back the password login method (ADR-0005):
-// Username is the per-tenant login handle (nil = none), PasswordHash is the
-// argon2id PHC-encoded hash (empty = no password credential, e.g. an
+// UserRole is a user's per-tenant role (ADR-0009): an owner authors and owns
+// lists; a giver is a first-class reserver account (which is what makes the
+// `registered` reserver tier real). The instance-admin capability is orthogonal to
+// this axis (ADR-0009 §3) and is not a value here.
+type UserRole string
+
+const (
+	RoleOwner UserRole = "owner"
+	RoleGiver UserRole = "giver"
+)
+
+// User is an account within a tenant. Email is used server-side (e.g. decay
+// notices) and may be empty. Username/PasswordHash back the password login method
+// (ADR-0005): Username is the per-tenant login handle (nil = none), PasswordHash is
+// the argon2id PHC-encoded hash (empty = no password credential, e.g. an
 // OAuth/magic-link-only account). The plaintext password is never stored.
 type User struct {
 	ID           string
@@ -103,7 +114,13 @@ type User struct {
 	Email        string
 	Username     *string
 	PasswordHash string
-	CreatedAt    time.Time
+	// Role is the per-tenant role (ADR-0009); defaults to owner for every account
+	// that existed before the roles model (the migration default).
+	Role UserRole
+	// Banned marks an instance-admin ban: a banned account cannot log in or hold a
+	// session (enforced at issue and at the owner middleware's per-request load).
+	Banned    bool
+	CreatedAt time.Time
 }
 
 // Admin is the instance-level superadmin (ADR-0005 §6): not tied to any tenant,
