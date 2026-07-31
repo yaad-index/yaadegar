@@ -44,3 +44,8 @@ supersedes the old one (and mark the old one `Superseded by ADR-XXXX`).
   cross-host session handoff, link-only-by-verified-email account model, per-tenant
   toggle over one instance-level client (refines ADR-0005 §3), env config (#21).
   **Status: Proposed.**
+- [ADR-0009: Unified identity, roles, and registration](0009-identity-roles-and-registration.md)
+  — two orthogonal axes (per-tenant creator/giver role + an instance-admin capability),
+  first-class giver accounts that make the `registered` reserve tier real (alongside the
+  untouched anonymous tiers), an instance self-registration policy, and an admin
+  user-management surface; refines ADR-0005 §6 and ADR-0008 §5. **Status: Proposed.**
