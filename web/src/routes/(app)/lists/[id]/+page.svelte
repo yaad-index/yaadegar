@@ -118,6 +118,30 @@
 	</form>
 </section>
 
+<!-- Export: download the item catalog for backup / portability (#26). It never
+     includes who reserved — items only. -->
+<section class="mt-3 rounded border p-3">
+	<p class="text-sm font-medium">Export</p>
+	<p class="mt-0.5 text-xs text-gray-600">
+		Download your items for backup or to move them elsewhere. Never includes who reserved.
+	</p>
+	<div class="mt-2 flex gap-2">
+		<!-- eslint-disable svelte/no-navigation-without-resolve -- resolved path + a
+		     ?format query the rule can't see through; both are internal download routes. -->
+		<a
+			class="rounded border px-3 py-1.5 text-sm hover:bg-gray-50"
+			href={`${resolve('/(app)/lists/[id]/export', { id: data.list.id ?? '' })}?format=json`}
+			download>Export JSON</a
+		>
+		<a
+			class="rounded border px-3 py-1.5 text-sm hover:bg-gray-50"
+			href={`${resolve('/(app)/lists/[id]/export', { id: data.list.id ?? '' })}?format=csv`}
+			download>Export CSV</a
+		>
+		<!-- eslint-enable svelte/no-navigation-without-resolve -->
+	</div>
+</section>
+
 <!-- Add item -->
 <form method="post" action="?/add" use:enhance class="mt-4 space-y-2 rounded border p-3">
 	<div class="flex gap-2">

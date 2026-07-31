@@ -24,3 +24,17 @@ export function backendClient(opts: { host: string; token?: string }): Client<pa
 	});
 	return client;
 }
+
+// backendGetRaw is a raw (untyped) GET against the backend, for file-oriented
+// endpoints outside the generated OpenAPI schema — e.g. the list export download
+// (#26). Same tenant-host + bearer forwarding as backendClient; the caller streams
+// the returned Response back to the browser.
+export function backendGetRaw(opts: {
+	host: string;
+	token?: string;
+	path: string;
+}): Promise<Response> {
+	const headers: Record<string, string> = { 'x-forwarded-host': opts.host };
+	if (opts.token) headers.authorization = `Bearer ${opts.token}`;
+	return fetch(BACKEND_ORIGIN + opts.path, { headers });
+}

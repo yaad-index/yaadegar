@@ -8,6 +8,12 @@ info:
     authenticated owner surface under /api/v1, and a mostly-anonymous giver
     surface under /public reached via a list's opaque share_slug. The tenant is
     resolved from the request Host header and is implicit in every path.
+
+    A few owner-only file endpoints are served outside this generated contract
+    because they are file downloads/uploads rather than JSON resources — notably
+    GET /api/v1/lists/{listId}/export?format=json|csv (item-catalog export, #26).
+    They run behind the same owner authentication; their identity-free file format
+    (schema_version + columns) is documented in the README as a stability contract.
   license:
     name: MIT
 
