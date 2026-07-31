@@ -136,6 +136,14 @@ func (s *Server) requireOwner(next http.Handler) http.Handler {
 			writeProblem(w, http.StatusUnauthorized, "invalid credentials")
 			return
 		}
+		// Ban is enforced here, at the existing per-request user load (ADR-0009): a
+		// banned account is rejected immediately on the owner surface — no revocation
+		// store needed, and it catches an already-issued token regardless of how it
+		// was minted (password or OAuth).
+		if owner.Banned {
+			writeProblem(w, http.StatusUnauthorized, "this account is suspended")
+			return
+		}
 		next.ServeHTTP(w, r.WithContext(withOwner(r.Context(), owner)))
 	})
 }

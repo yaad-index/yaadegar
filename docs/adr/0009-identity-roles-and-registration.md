@@ -1,6 +1,6 @@
 # ADR-0009: Unified identity, roles, and registration
 
-**Status:** Proposed
+**Status:** Accepted
 
 ## Context
 

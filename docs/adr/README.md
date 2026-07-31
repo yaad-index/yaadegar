@@ -48,4 +48,4 @@ supersedes the old one (and mark the old one `Superseded by ADR-XXXX`).
   — two orthogonal axes (per-tenant owner/giver role + an instance-admin capability),
   first-class giver accounts that make the `registered` reserve tier real (alongside the
   untouched anonymous tiers), an instance self-registration policy, and an admin
-  user-management surface; refines ADR-0005 §6 and ADR-0008 §5. **Status: Proposed.**
+  user-management surface; refines ADR-0005 §6 and ADR-0008 §5. **Status: Accepted.**

@@ -155,6 +155,21 @@ paths:
               schema: { $ref: "#/components/schemas/Problem" }
 
   /admin/tenants:
+    get:
+      operationId: adminListTenants
+      tags: [admin]
+      summary: List all tenants (superadmin)
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: A page of tenants.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminTenantPage" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
     post:
       operationId: adminCreateTenant
       tags: [admin]
@@ -197,6 +212,94 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+
+  /admin/tenants/{tenantId}/users:
+    parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: adminListUsers
+      tags: [admin]
+      summary: List a tenant's users (superadmin)
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: A page of the tenant's users.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminUserPage" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      operationId: adminCreateUser
+      tags: [admin]
+      summary: Create a user by email in a tenant (superadmin)
+      description: >
+        Provisions an owner or giver account for an email with no password; the
+        user later sets credentials via an enabled login method (ADR-0009 Cut 1).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminUserCreate" }
+      responses:
+        "201":
+          description: The created user (never includes any credential).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminUser" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /admin/tenants/{tenantId}/users/{userId}:
+    parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema: { type: string }
+      - name: userId
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      operationId: adminUpdateUser
+      tags: [admin]
+      summary: Change a user's role or ban state (superadmin)
+      description: >
+        Updates a user's role (owner ↔ giver) and/or ban flag (ADR-0009 Cut 1).
+        Demotion to giver is REJECTED with 409 while the account still owns lists —
+        owner access flows through list ownership, so the admin must reassign or
+        delete those lists first; the error names the blocking count.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminUserUpdate" }
+      responses:
+        "200":
+          description: The updated user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminUser" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: >
+            Demotion blocked: the account still owns lists. The detail names how
+            many; reassign or delete them before demoting.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
 
   /api/v1/me:
     get:
@@ -991,6 +1094,62 @@ components:
         tenant_id: { type: string, minLength: 1 }
         email: { type: string, minLength: 1 }
         password: { type: string, minLength: 1, description: "Plaintext; hashed server-side (argon2id). The email doubles as the login username." }
+
+    AdminTenant:
+      type: object
+      required: [id, subdomain]
+      properties:
+        id: { type: string }
+        subdomain: { type: string }
+
+    AdminTenantPage:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AdminTenant" }
+        total: { type: integer, description: "Total tenants, ignoring pagination." }
+
+    AdminUserRole:
+      type: string
+      enum: [owner, giver]
+      description: "Per-tenant role (ADR-0009). The instance-admin capability is separate."
+
+    AdminUser:
+      type: object
+      required: [id, tenant_id, email, role, banned]
+      properties:
+        id: { type: string }
+        tenant_id: { type: string }
+        email: { type: string }
+        name: { type: string }
+        role: { $ref: "#/components/schemas/AdminUserRole" }
+        banned: { type: boolean }
+
+    AdminUserPage:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AdminUser" }
+        total: { type: integer, description: "Total users in the tenant, ignoring pagination." }
+
+    AdminUserCreate:
+      type: object
+      required: [email, role]
+      properties:
+        email: { type: string, minLength: 1, description: "The email doubles as the login username." }
+        role: { $ref: "#/components/schemas/AdminUserRole" }
+        name: { type: string, description: "Display name; defaults to the email." }
+
+    AdminUserUpdate:
+      type: object
+      description: "At least one field; omitted fields are left unchanged."
+      properties:
+        role: { $ref: "#/components/schemas/AdminUserRole" }
+        banned: { type: boolean }
 
     LoginRequest:
       type: object

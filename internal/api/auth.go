@@ -62,6 +62,11 @@ func (s *Server) Login(ctx context.Context, req gen.LoginRequestObject) (gen.Log
 		s.loginFailed(ipKey, idKey)
 		return unauthorizedLogin(), nil
 	}
+	// Ban enforced at token issue (ADR-0009): a banned account gets no session. Not
+	// counted as a credential failure — the password was correct.
+	if user.Banned {
+		return unauthorizedLogin(), nil
+	}
 
 	token, err := s.auth.Issuer().Issue(auth.Principal{
 		UserID:   user.ID,
