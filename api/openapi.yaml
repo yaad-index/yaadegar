@@ -211,6 +211,44 @@ paths:
               schema: { $ref: "#/components/schemas/User" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /api/v1/settings:
+    get:
+      operationId: getTenantSettings
+      tags: [lists]
+      summary: Get the owner's tenant settings
+      description: >
+        The tenant-level settings the owner controls (ADR-0008). Includes the
+        Google-login toggle and, read-only, whether the instance has a Google
+        client configured — the toggle is inert without one.
+      responses:
+        "200":
+          description: The tenant settings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TenantSettings" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      operationId: updateTenantSettings
+      tags: [lists]
+      summary: Update the owner's tenant settings
+      description: >
+        Updates the tenant-level settings. The change applies only to the
+        authenticated owner's own tenant (resolved from the session), never a
+        tenant named in the request.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TenantSettingsUpdate" }
+      responses:
+        "200":
+          description: The updated tenant settings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TenantSettings" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /api/v1/lists:
     get:
       operationId: listLists
@@ -972,6 +1010,28 @@ components:
         expires_in:
           type: integer
           description: Access-token lifetime in seconds.
+
+    TenantSettings:
+      type: object
+      required: [oauth_google_enabled, google_client_configured]
+      properties:
+        oauth_google_enabled:
+          type: boolean
+          description: Whether Google login is turned on for this tenant.
+        google_client_configured:
+          type: boolean
+          description: >
+            Read-only. Whether the instance has a Google OAuth client configured.
+            When false, the tenant toggle has no effect (the method is
+            unavailable) — the UI can use this to explain why.
+
+    TenantSettingsUpdate:
+      type: object
+      required: [oauth_google_enabled]
+      properties:
+        oauth_google_enabled:
+          type: boolean
+          description: Turn Google login on or off for this tenant.
 
     LoginMethods:
       type: object

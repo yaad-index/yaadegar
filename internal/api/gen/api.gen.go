@@ -582,6 +582,21 @@ type Tenant struct {
 	Subdomain *string `json:"subdomain,omitempty"`
 }
 
+// TenantSettings defines model for TenantSettings.
+type TenantSettings struct {
+	// GoogleClientConfigured Read-only. Whether the instance has a Google OAuth client configured. When false, the tenant toggle has no effect (the method is unavailable) — the UI can use this to explain why.
+	GoogleClientConfigured bool `json:"google_client_configured"`
+
+	// OauthGoogleEnabled Whether Google login is turned on for this tenant.
+	OauthGoogleEnabled bool `json:"oauth_google_enabled"`
+}
+
+// TenantSettingsUpdate defines model for TenantSettingsUpdate.
+type TenantSettingsUpdate struct {
+	// OauthGoogleEnabled Turn Google login on or off for this tenant.
+	OauthGoogleEnabled bool `json:"oauth_google_enabled"`
+}
+
 // User defines model for User.
 type User struct {
 	Id     *string `json:"id,omitempty"`
@@ -700,6 +715,9 @@ type UpdateListJSONRequestBody = ListUpdate
 // CreateItemJSONRequestBody defines body for CreateItem for application/json ContentType.
 type CreateItemJSONRequestBody = ItemCreate
 
+// UpdateTenantSettingsJSONRequestBody defines body for UpdateTenantSettings for application/json ContentType.
+type UpdateTenantSettingsJSONRequestBody = TenantSettingsUpdate
+
 // KeepByDecayTokenJSONRequestBody defines body for KeepByDecayToken for application/json ContentType.
 type KeepByDecayTokenJSONRequestBody KeepByDecayTokenJSONBody
 
@@ -783,6 +801,12 @@ type ServerInterface interface {
 	// GetCurrentUser Get the current owner/tenant
 	// (GET /api/v1/me)
 	GetCurrentUser(w http.ResponseWriter, r *http.Request)
+	// GetTenantSettings Get the owner's tenant settings
+	// (GET /api/v1/settings)
+	GetTenantSettings(w http.ResponseWriter, r *http.Request)
+	// UpdateTenantSettings Update the owner's tenant settings
+	// (PATCH /api/v1/settings)
+	UpdateTenantSettings(w http.ResponseWriter, r *http.Request)
 	// GetHealthz Liveness probe
 	// (GET /healthz)
 	GetHealthz(w http.ResponseWriter, r *http.Request)
@@ -1293,6 +1317,34 @@ func (siw *ServerInterfaceWrapper) GetCurrentUser(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// GetTenantSettings operation middleware
+func (siw *ServerInterfaceWrapper) GetTenantSettings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTenantSettings(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateTenantSettings operation middleware
+func (siw *ServerInterfaceWrapper) UpdateTenantSettings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateTenantSettings(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetHealthz operation middleware
 func (siw *ServerInterfaceWrapper) GetHealthz(w http.ResponseWriter, r *http.Request) {
 
@@ -1703,6 +1755,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/admin/tenants", wrapper.AdminCreateTenant)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/admin/owners", wrapper.AdminCreateOwner)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/me", wrapper.GetCurrentUser)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/settings", wrapper.GetTenantSettings)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/settings", wrapper.UpdateTenantSettings)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/lists", wrapper.ListLists)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/lists", wrapper.CreateList)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/lists/{listId}", wrapper.DeleteList)
@@ -3108,6 +3162,97 @@ func (response GetCurrentUser401ApplicationProblemPlusJSONResponse) VisitGetCurr
 	return err
 }
 
+type GetTenantSettingsRequestObject struct {
+}
+
+type GetTenantSettingsResponseObject interface {
+	VisitGetTenantSettingsResponse(w http.ResponseWriter) error
+}
+
+type GetTenantSettings200JSONResponse TenantSettings
+
+func (response GetTenantSettings200JSONResponse) VisitGetTenantSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTenantSettings401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetTenantSettings401ApplicationProblemPlusJSONResponse) VisitGetTenantSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTenantSettingsRequestObject struct {
+	Body *UpdateTenantSettingsJSONRequestBody
+}
+
+type UpdateTenantSettingsResponseObject interface {
+	VisitUpdateTenantSettingsResponse(w http.ResponseWriter) error
+}
+
+type UpdateTenantSettings200JSONResponse TenantSettings
+
+func (response UpdateTenantSettings200JSONResponse) VisitUpdateTenantSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTenantSettings400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateTenantSettings400ApplicationProblemPlusJSONResponse) VisitUpdateTenantSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTenantSettings401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateTenantSettings401ApplicationProblemPlusJSONResponse) VisitUpdateTenantSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetHealthzRequestObject struct {
 }
 
@@ -3900,6 +4045,12 @@ type StrictServerInterface interface {
 	// GetCurrentUser Get the current owner/tenant
 	// (GET /api/v1/me)
 	GetCurrentUser(ctx context.Context, request GetCurrentUserRequestObject) (GetCurrentUserResponseObject, error)
+	// GetTenantSettings Get the owner's tenant settings
+	// (GET /api/v1/settings)
+	GetTenantSettings(ctx context.Context, request GetTenantSettingsRequestObject) (GetTenantSettingsResponseObject, error)
+	// UpdateTenantSettings Update the owner's tenant settings
+	// (PATCH /api/v1/settings)
+	UpdateTenantSettings(ctx context.Context, request UpdateTenantSettingsRequestObject) (UpdateTenantSettingsResponseObject, error)
 	// GetHealthz Liveness probe
 	// (GET /healthz)
 	GetHealthz(ctx context.Context, request GetHealthzRequestObject) (GetHealthzResponseObject, error)
@@ -4565,6 +4716,61 @@ func (sh *strictHandler) GetCurrentUser(w http.ResponseWriter, r *http.Request) 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetCurrentUserResponseObject); ok {
 		if err := validResponse.VisitGetCurrentUserResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetTenantSettings operation middleware
+func (sh *strictHandler) GetTenantSettings(w http.ResponseWriter, r *http.Request) {
+	var request GetTenantSettingsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetTenantSettings(ctx, request.(GetTenantSettingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetTenantSettings")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetTenantSettingsResponseObject); ok {
+		if err := validResponse.VisitGetTenantSettingsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateTenantSettings operation middleware
+func (sh *strictHandler) UpdateTenantSettings(w http.ResponseWriter, r *http.Request) {
+	var request UpdateTenantSettingsRequestObject
+
+	var body UpdateTenantSettingsJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateTenantSettings(ctx, request.(UpdateTenantSettingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateTenantSettings")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateTenantSettingsResponseObject); ok {
+		if err := validResponse.VisitUpdateTenantSettingsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
