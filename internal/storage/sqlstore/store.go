@@ -107,7 +107,7 @@ func (s *sqlStore) TenantBySubdomain(ctx context.Context, subdomain string) (sto
 // TenantByCustomDomain resolves a verified custom hostname to its tenant.
 func (s *sqlStore) TenantByCustomDomain(ctx context.Context, hostname string) (storage.Tenant, error) {
 	row := s.db.QueryRowContext(ctx, s.d.rebind(
-		`SELECT t.id, t.subdomain, t.created_at
+		`SELECT t.id, t.subdomain, t.created_at, t.oauth_google_enabled
 		   FROM tenants t
 		   JOIN domains d ON d.tenant_id = t.id
 		  WHERE d.hostname = ? AND d.verified = 1`), hostname)
@@ -116,16 +116,28 @@ func (s *sqlStore) TenantByCustomDomain(ctx context.Context, hostname string) (s
 
 func (s *sqlStore) tenantWhere(ctx context.Context, cond string, arg any) (storage.Tenant, error) {
 	row := s.db.QueryRowContext(ctx, s.d.rebind(
-		`SELECT id, subdomain, created_at FROM tenants WHERE `+cond), arg)
+		`SELECT id, subdomain, created_at, oauth_google_enabled FROM tenants WHERE `+cond), arg)
 	return scanTenant(row)
+}
+
+// SetTenantOAuthGoogle flips a tenant's Google-login toggle (ADR-0008 §6).
+func (s *sqlStore) SetTenantOAuthGoogle(ctx context.Context, tenantID string, enabled bool) error {
+	res, err := s.db.ExecContext(ctx, s.d.rebind(
+		`UPDATE tenants SET oauth_google_enabled = ? WHERE id = ?`),
+		boolToInt(enabled), tenantID)
+	if err != nil {
+		return err
+	}
+	return expectOne(res)
 }
 
 func scanTenant(row *sql.Row) (storage.Tenant, error) {
 	var (
-		t         storage.Tenant
-		createdAt string
+		t            storage.Tenant
+		createdAt    string
+		oauthEnabled int
 	)
-	if err := row.Scan(&t.ID, &t.Subdomain, &createdAt); err != nil {
+	if err := row.Scan(&t.ID, &t.Subdomain, &createdAt, &oauthEnabled); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.Tenant{}, storage.ErrNotFound
 		}
@@ -136,5 +148,6 @@ func scanTenant(row *sql.Row) (storage.Tenant, error) {
 		return storage.Tenant{}, err
 	}
 	t.CreatedAt = ts
+	t.OAuthGoogleEnabled = oauthEnabled != 0
 	return t, nil
 }

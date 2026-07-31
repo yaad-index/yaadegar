@@ -73,6 +73,11 @@ type Store interface {
 	// its tenant. Host-string parsing (which of the two lookups to use) is the
 	// caller's concern; storage stays free of base-domain policy.
 	TenantByCustomDomain(ctx context.Context, hostname string) (Tenant, error)
+	// SetTenantOAuthGoogle flips a tenant's Google-login toggle (ADR-0008 §6). It
+	// is an instance-level tenant-config write (the same unscoped class as
+	// CreateTenant), not a per-tenant data operation. ErrNotFound if the tenant is
+	// absent.
+	SetTenantOAuthGoogle(ctx context.Context, tenantID string, enabled bool) error
 
 	// EnsureAdmin idempotently provisions the instance-level superadmin from
 	// configuration: it inserts the admin, or updates the stored password hash when
@@ -119,6 +124,7 @@ type TenantStore interface {
 	Contributions() ContributionRepo
 	Matches() MatchRepo
 	Domains() DomainRepo
+	OAuthIdentities() OAuthIdentityRepo
 }
 
 // UserRepo persists owners within the bound tenant.
@@ -128,6 +134,12 @@ type UserRepo interface {
 	// ByUsername looks a user up by their per-tenant login handle, for password
 	// authentication. Returns ErrNotFound when no user has that username.
 	ByUsername(ctx context.Context, username string) (User, error)
+	// ByEmail looks a user up by email within the tenant, backing OAuth link-only
+	// account resolution (ADR-0008 §5): a verified Google email attaches to the
+	// existing owner carrying it. Returns ErrNotFound when no user has that email
+	// (the empty email never matches). If more than one user shares the email the
+	// earliest-created is returned deterministically.
+	ByEmail(ctx context.Context, email string) (User, error)
 }
 
 // ListRepo persists lists within the bound tenant. Ownership lives in a join table
@@ -304,4 +316,24 @@ type DomainRepo interface {
 	List(ctx context.Context) ([]Domain, error)
 	Update(ctx context.Context, d Domain) (Domain, error)
 	Delete(ctx context.Context, id string) error
+}
+
+// OAuthIdentityRepo persists external-identity links within the bound tenant
+// (ADR-0008). Every method is tenant-scoped by construction, so a Google subject
+// linked in one tenant is invisible to another — the tenant-scoped uniqueness
+// invariant is enforced structurally, not by a global constraint.
+type OAuthIdentityRepo interface {
+	// Create records a new identity link. ErrConflict if (provider, subject) is
+	// already linked within the tenant (the UNIQUE(tenant_id, provider, subject)
+	// constraint).
+	Create(ctx context.Context, oi OAuthIdentity) (OAuthIdentity, error)
+	// ByProviderSubject resolves an already-linked identity by its stable provider
+	// subject — the returning-login fast path. ErrNotFound if this subject is not
+	// yet linked in the tenant.
+	ByProviderSubject(ctx context.Context, provider OAuthProvider, subject string) (OAuthIdentity, error)
+	// ByUserProvider returns the owner's existing link for a provider, if any. The
+	// callback uses it to reject a second Google account attaching to an owner who
+	// is already linked to a different subject (ADR-0008 §5). ErrNotFound if the
+	// owner has no link for the provider.
+	ByUserProvider(ctx context.Context, userID string, provider OAuthProvider) (OAuthIdentity, error)
 }

@@ -140,3 +140,41 @@ func (c *CreateOwnerCmd) Run() error {
 		user.ID, username, tenant.Subdomain, tenant.Subdomain)
 	return nil
 }
+
+// EnableTenantOAuthCmd flips a tenant's Google-login toggle (ADR-0008 §6). Google
+// login stays inert until BOTH this per-tenant toggle is on AND the instance has a
+// configured Google client (the --oauth-google-* env config). The owner-settings
+// UI for this toggle lands with the frontend cut; this is the operator/demo path.
+type EnableTenantOAuthCmd struct {
+	storageFlags
+	Tenant  string `name:"tenant" required:"" help:"Subdomain of the tenant to toggle."`
+	Disable bool   `name:"disable" help:"Turn Google login OFF for the tenant instead of on."`
+}
+
+// Run resolves the tenant by subdomain and sets its Google-login toggle.
+func (c *EnableTenantOAuthCmd) Run() error {
+	ctx := context.Background()
+	store, err := c.open(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = store.Close() }()
+
+	tenant, err := store.TenantBySubdomain(ctx, c.Tenant)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return fmt.Errorf("no tenant with subdomain %q — create it first with create-tenant", c.Tenant)
+		}
+		return fmt.Errorf("resolve tenant: %w", err)
+	}
+	enabled := !c.Disable
+	if err := store.SetTenantOAuthGoogle(ctx, tenant.ID, enabled); err != nil {
+		return fmt.Errorf("set google login toggle: %w", err)
+	}
+	state := "enabled"
+	if !enabled {
+		state = "disabled"
+	}
+	fmt.Printf("google login %s for tenant %q (%s)\n", state, tenant.Subdomain, tenant.ID)
+	return nil
+}

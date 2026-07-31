@@ -43,6 +43,20 @@ func (r userRepo) ByUsername(ctx context.Context, username string) (storage.User
 		   FROM users WHERE tenant_id = ? AND username = ?`), r.tenantID, username))
 }
 
+// ByEmail resolves an owner by email within the tenant (OAuth link-only lookup,
+// ADR-0008). An empty email never matches — it would otherwise link any
+// credential-less/email-less account. If several users share the email the
+// earliest-created wins, so the result is deterministic.
+func (r userRepo) ByEmail(ctx context.Context, email string) (storage.User, error) {
+	if email == "" {
+		return storage.User{}, storage.ErrNotFound
+	}
+	return r.scanUser(r.db.QueryRowContext(ctx, r.rb(
+		`SELECT id, tenant_id, name, email, username, password_hash, created_at
+		   FROM users WHERE tenant_id = ? AND email = ?
+		  ORDER BY created_at, id LIMIT 1`), r.tenantID, email))
+}
+
 func (r userRepo) scanUser(row *sql.Row) (storage.User, error) {
 	var (
 		u         storage.User
