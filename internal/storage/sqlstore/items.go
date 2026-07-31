@@ -11,7 +11,8 @@ import (
 type itemRepo struct{ baseRepo }
 
 const itemCols = `id, tenant_id, list_id, name, url, image_url,
-	price_amount_minor, price_currency, note, priority, quantity_wanted, allow_cobuy, created_at`
+	price_amount_minor, price_currency, note, priority, quantity_wanted, allow_cobuy,
+	thank_you_template, created_at`
 
 func scanItem(s scanner) (storage.Item, error) {
 	var (
@@ -22,10 +23,12 @@ func scanItem(s scanner) (storage.Item, error) {
 		currency   sql.NullString
 		note       sql.NullString
 		allowCobuy sql.NullInt64
+		thankYou   sql.NullString
 		createdAt  string
 	)
 	if err := s.Scan(&it.ID, &it.TenantID, &it.ListID, &it.Name, &url, &imageURL,
-		&amount, &currency, &note, &it.Priority, &it.QuantityWanted, &allowCobuy, &createdAt); err != nil {
+		&amount, &currency, &note, &it.Priority, &it.QuantityWanted, &allowCobuy,
+		&thankYou, &createdAt); err != nil {
 		return storage.Item{}, err
 	}
 	ts, err := parseTime(createdAt)
@@ -37,6 +40,7 @@ func scanItem(s scanner) (storage.Item, error) {
 	it.Price = pricePtr(amount, currency)
 	it.Note = strPtr(note)
 	it.AllowCobuy = allowCobuyFromStorage(allowCobuy)
+	it.ThankYouTemplate = strPtr(thankYou)
 	it.CreatedAt = ts
 	return it, nil
 }
@@ -55,10 +59,10 @@ func (r itemRepo) Create(ctx context.Context, it storage.Item) (storage.Item, er
 	amount, currency := priceCols(it.Price)
 
 	_, err := r.db.ExecContext(ctx, r.rb(
-		`INSERT INTO items (`+itemCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+		`INSERT INTO items (`+itemCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		it.ID, it.TenantID, it.ListID, it.Name, nullStr(it.URL), nullStr(it.ImageURL),
 		amount, currency, nullStr(it.Note), it.Priority, it.QuantityWanted,
-		allowCobuyToStorage(it.AllowCobuy), fmtTime(it.CreatedAt))
+		allowCobuyToStorage(it.AllowCobuy), nullStr(it.ThankYouTemplate), fmtTime(it.CreatedAt))
 	if err != nil {
 		return storage.Item{}, err
 	}
@@ -118,11 +122,12 @@ func (r itemRepo) Update(ctx context.Context, it storage.Item) (storage.Item, er
 	amount, currency := priceCols(it.Price)
 	res, err := r.db.ExecContext(ctx, r.rb(
 		`UPDATE items SET name = ?, url = ?, image_url = ?, price_amount_minor = ?,
-		        price_currency = ?, note = ?, priority = ?, quantity_wanted = ?, allow_cobuy = ?
+		        price_currency = ?, note = ?, priority = ?, quantity_wanted = ?, allow_cobuy = ?,
+		        thank_you_template = ?
 		  WHERE tenant_id = ? AND id = ?`),
 		it.Name, nullStr(it.URL), nullStr(it.ImageURL), amount, currency,
 		nullStr(it.Note), it.Priority, it.QuantityWanted, allowCobuyToStorage(it.AllowCobuy),
-		r.tenantID, it.ID)
+		nullStr(it.ThankYouTemplate), r.tenantID, it.ID)
 	if err != nil {
 		return storage.Item{}, err
 	}

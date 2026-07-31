@@ -52,15 +52,16 @@ func (s *Server) CreateItem(ctx context.Context, req gen.CreateItemRequestObject
 	}
 
 	created, err := ts.Items().Create(ctx, storage.Item{
-		ListID:         req.ListId,
-		Name:           req.Body.Name,
-		URL:            req.Body.Url,
-		ImageURL:       req.Body.ImageUrl,
-		Price:          fromGenMoney(req.Body.Price),
-		Note:           req.Body.Note,
-		Priority:       derefOr(req.Body.Priority, 0),
-		QuantityWanted: derefOr(req.Body.QuantityWanted, 1),
-		AllowCobuy:     req.Body.AllowCobuy, // *bool: nil (absent) = inherit the list default (#100)
+		ListID:           req.ListId,
+		Name:             req.Body.Name,
+		URL:              req.Body.Url,
+		ImageURL:         req.Body.ImageUrl,
+		Price:            fromGenMoney(req.Body.Price),
+		Note:             req.Body.Note,
+		Priority:         derefOr(req.Body.Priority, 0),
+		QuantityWanted:   derefOr(req.Body.QuantityWanted, 1),
+		AllowCobuy:       req.Body.AllowCobuy,       // *bool: nil (absent) = inherit the list default (#100)
+		ThankYouTemplate: req.Body.ThankYouTemplate, // *string: nil (absent) = inherit the list default (#22)
 	})
 	if err != nil {
 		return nil, err
@@ -174,6 +175,15 @@ func (s *Server) UpdateItem(ctx context.Context, req gen.UpdateItemRequestObject
 			it.AllowCobuy = nil
 		} else {
 			it.AllowCobuy = ptr(req.Body.AllowCobuy.MustGet())
+		}
+	}
+	// Three-state thank-you override (#22/#111): absent leaves it, null clears back
+	// to inheriting the list default, a value (incl. "") sets it ("" = per-item opt-out).
+	if req.Body.ThankYouTemplate.IsSpecified() {
+		if req.Body.ThankYouTemplate.IsNull() {
+			it.ThankYouTemplate = nil
+		} else {
+			it.ThankYouTemplate = ptr(req.Body.ThankYouTemplate.MustGet())
 		}
 	}
 

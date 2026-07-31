@@ -310,7 +310,10 @@ type Item struct {
 	QuantityWanted *int   `json:"quantity_wanted,omitempty"`
 
 	// ReservedQuantity How many units are reserved (owner view). This is a count only and never identifies who reserved them (ADR-0002 §5).
-	ReservedQuantity *int    `json:"reserved_quantity,omitempty"`
+	ReservedQuantity *int `json:"reserved_quantity,omitempty"`
+
+	// ThankYouTemplate The per-item thank-you override (#22), owner view: null inherits the list default, "" is a per-item opt-out, any other value overrides the body.
+	ThankYouTemplate *string `json:"thank_you_template,omitempty"`
 	Url              *string `json:"url,omitempty"`
 }
 
@@ -326,10 +329,13 @@ type ItemCreate struct {
 	Note       *string `json:"note,omitempty"`
 
 	// Price An exact monetary amount as minor units plus ISO-4217 currency.
-	Price          *Money  `json:"price,omitempty"`
-	Priority       *int    `json:"priority,omitempty"`
-	QuantityWanted *int    `json:"quantity_wanted,omitempty"`
-	Url            *string `json:"url,omitempty"`
+	Price          *Money `json:"price,omitempty"`
+	Priority       *int   `json:"priority,omitempty"`
+	QuantityWanted *int   `json:"quantity_wanted,omitempty"`
+
+	// ThankYouTemplate Per-item thank-you override (#22): omit (or null) to inherit the list default, "" to suppress the note for this item, any other value to override the body.
+	ThankYouTemplate *string `json:"thank_you_template,omitempty"`
+	Url              *string `json:"url,omitempty"`
 }
 
 // ItemDraft Scraped/proposed item fields (any may be null).
@@ -358,10 +364,11 @@ type ItemUpdate struct {
 	Note       *string      `json:"note,omitempty"`
 
 	// Price An exact monetary amount as minor units plus ISO-4217 currency.
-	Price          *Money  `json:"price,omitempty"`
-	Priority       *int    `json:"priority,omitempty"`
-	QuantityWanted *int    `json:"quantity_wanted,omitempty"`
-	Url            *string `json:"url,omitempty"`
+	Price            *Money         `json:"price,omitempty"`
+	Priority         *int           `json:"priority,omitempty"`
+	QuantityWanted   *int           `json:"quantity_wanted,omitempty"`
+	ThankYouTemplate NullableString `json:"thank_you_template,omitempty"`
+	Url              *string        `json:"url,omitempty"`
 }
 
 // List defines model for List.
@@ -382,10 +389,13 @@ type List struct {
 	ReserverConfirmWindow *int `json:"reserver_confirm_window,omitempty"`
 
 	// ReserverTier The reserver-identity tier override; null inherits the instance default.
-	ReserverTier *string         `json:"reserver_tier,omitempty"`
-	ShareSlug    *string         `json:"share_slug,omitempty"`
-	Title        *string         `json:"title,omitempty"`
-	Visibility   *ListVisibility `json:"visibility,omitempty"`
+	ReserverTier *string `json:"reserver_tier,omitempty"`
+	ShareSlug    *string `json:"share_slug,omitempty"`
+
+	// ThankYouTemplate The list-level default thank-you note body (#22); "" = no note.
+	ThankYouTemplate *string         `json:"thank_you_template,omitempty"`
+	Title            *string         `json:"title,omitempty"`
+	Visibility       *ListVisibility `json:"visibility,omitempty"`
 }
 
 // ListCreate defines model for ListCreate.
@@ -418,13 +428,16 @@ type ListUpdate struct {
 	Active *bool `json:"active,omitempty"`
 
 	// AllowCobuy List-level default for whether items may be co-bought (#100). Items inherit this unless they set their own override. Defaults to true; a new list is always created co-buy-enabled and is toggled here.
-	AllowCobuy            *bool           `json:"allow_cobuy,omitempty"`
-	DecayDays             NullableInt     `json:"decay_days,omitempty"`
-	EventDate             NullableDate    `json:"event_date,omitempty"`
-	ReserverConfirmWindow NullableInt     `json:"reserver_confirm_window,omitempty"`
-	ReserverTier          NullableString  `json:"reserver_tier,omitempty"`
-	Title                 *string         `json:"title,omitempty"`
-	Visibility            *ListVisibility `json:"visibility,omitempty"`
+	AllowCobuy            *bool          `json:"allow_cobuy,omitempty"`
+	DecayDays             NullableInt    `json:"decay_days,omitempty"`
+	EventDate             NullableDate   `json:"event_date,omitempty"`
+	ReserverConfirmWindow NullableInt    `json:"reserver_confirm_window,omitempty"`
+	ReserverTier          NullableString `json:"reserver_tier,omitempty"`
+
+	// ThankYouTemplate List-level default owner→giver thank-you note body (#22), emailed to a reserver when their reservation goes active. "" disables it. A `{item}` token is replaced with the item name; the note carries no giver identity.
+	ThankYouTemplate *string         `json:"thank_you_template,omitempty"`
+	Title            *string         `json:"title,omitempty"`
+	Visibility       *ListVisibility `json:"visibility,omitempty"`
 }
 
 // ListVisibility defines model for ListVisibility.

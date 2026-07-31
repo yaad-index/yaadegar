@@ -1034,6 +1034,12 @@ components:
             List-level default for whether items may be co-bought (#100). Items
             inherit this unless they set their own override. Defaults to true; a new
             list is always created co-buy-enabled and is toggled here.
+        thank_you_template:
+          type: string
+          description: >
+            List-level default owner→giver thank-you note body (#22), emailed to a
+            reserver when their reservation goes active. "" disables it. A `{item}`
+            token is replaced with the item name; the note carries no giver identity.
 
     List:
       type: object
@@ -1055,6 +1061,9 @@ components:
         allow_cobuy:
           type: boolean
           description: The list-level default for whether items may be co-bought (#100).
+        thank_you_template:
+          type: string
+          description: The list-level default thank-you note body (#22); "" = no note.
         active: { type: boolean }
         item_count: { type: integer }
         created_at: { type: string, format: date-time }
@@ -1099,6 +1108,12 @@ components:
           description: >
             Per-item co-buy override (#100): omit (or null) to inherit the list
             default, true/false to force co-buying on/off for this item.
+        thank_you_template:
+          type: [string, "null"]
+          description: >
+            Per-item thank-you override (#22): omit (or null) to inherit the list
+            default, "" to suppress the note for this item, any other value to
+            override the body.
 
     ItemUpdate:
       type: object
@@ -1113,6 +1128,9 @@ components:
         # Per-item co-buy override (#100): true/false sets it, null clears back to
         # inheriting the list default, absent leaves it unchanged (#111).
         allow_cobuy: { $ref: "#/components/schemas/NullableBool" }
+        # Per-item thank-you override (#22): a value (incl. "") sets it, null clears
+        # back to inheriting the list default, absent leaves it unchanged (#111).
+        thank_you_template: { $ref: "#/components/schemas/NullableString" }
 
     Item:
       type: object
@@ -1137,6 +1155,11 @@ components:
           description: >
             The per-item co-buy override (#100), owner view: null means inheriting
             the list default, true/false an explicit override.
+        thank_you_template:
+          type: [string, "null"]
+          description: >
+            The per-item thank-you override (#22), owner view: null inherits the list
+            default, "" is a per-item opt-out, any other value overrides the body.
 
     ItemPage:
       type: object

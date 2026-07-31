@@ -612,6 +612,8 @@ export interface components {
             reserver_confirm_window?: components["schemas"]["NullableInt"];
             /** @description List-level default for whether items may be co-bought (#100). Items inherit this unless they set their own override. Defaults to true; a new list is always created co-buy-enabled and is toggled here. */
             allow_cobuy?: boolean;
+            /** @description List-level default owner→giver thank-you note body (#22), emailed to a reserver when their reservation goes active. "" disables it. A `{item}` token is replaced with the item name; the note carries no giver identity. */
+            thank_you_template?: string;
         };
         List: {
             id?: string;
@@ -628,6 +630,8 @@ export interface components {
             reserver_confirm_window?: number | null;
             /** @description The list-level default for whether items may be co-bought (#100). */
             allow_cobuy?: boolean;
+            /** @description The list-level default thank-you note body (#22); "" = no note. */
+            thank_you_template?: string;
             active?: boolean;
             item_count?: number;
             /** Format: date-time */
@@ -667,6 +671,8 @@ export interface components {
             quantity_wanted: number;
             /** @description Per-item co-buy override (#100): omit (or null) to inherit the list default, true/false to force co-buying on/off for this item. */
             allow_cobuy?: boolean | null;
+            /** @description Per-item thank-you override (#22): omit (or null) to inherit the list default, "" to suppress the note for this item, any other value to override the body. */
+            thank_you_template?: string | null;
         };
         ItemUpdate: {
             name?: string;
@@ -679,6 +685,7 @@ export interface components {
             priority?: number;
             quantity_wanted?: number;
             allow_cobuy?: components["schemas"]["NullableBool"];
+            thank_you_template?: components["schemas"]["NullableString"];
         };
         Item: {
             id?: string;
@@ -697,6 +704,8 @@ export interface components {
             reserved_quantity?: number;
             /** @description The per-item co-buy override (#100), owner view: null means inheriting the list default, true/false an explicit override. */
             allow_cobuy?: boolean | null;
+            /** @description The per-item thank-you override (#22), owner view: null inherits the list default, "" is a per-item opt-out, any other value overrides the body. */
+            thank_you_template?: string | null;
         };
         ItemPage: {
             items?: components["schemas"]["Item"][];

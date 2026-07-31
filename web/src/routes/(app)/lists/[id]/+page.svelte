@@ -86,16 +86,35 @@
 	{/if}
 </section>
 
-<!-- List settings: the co-buy default items inherit unless they override it (#100). -->
+<!-- List settings: co-buy default (#100) + thank-you note default (#22), both
+     inherited per-item unless the item overrides them. -->
 <section class="mt-3 rounded border p-3">
 	<p class="text-sm font-medium">List settings</p>
-	<form method="post" action="?/settings" use:formEnhance class="mt-2 flex items-center gap-2">
-		<label class="text-sm text-gray-700" for="list-allow-cobuy">Group-buying default</label>
-		<select id="list-allow-cobuy" name="allow_cobuy" class="rounded border p-1.5 text-sm">
-			<option value="true" selected={data.list.allow_cobuy !== false}>Allowed</option>
-			<option value="false" selected={data.list.allow_cobuy === false}>Not allowed</option>
-		</select>
-		<button class="rounded bg-black px-3 py-1.5 text-sm text-white">Save</button>
+	<form method="post" action="?/settings" use:formEnhance class="mt-2 space-y-3">
+		<div class="flex items-center gap-2">
+			<label class="text-sm text-gray-700" for="list-allow-cobuy">Group-buying default</label>
+			<select id="list-allow-cobuy" name="allow_cobuy" class="rounded border p-1.5 text-sm">
+				<option value="true" selected={data.list.allow_cobuy !== false}>Allowed</option>
+				<option value="false" selected={data.list.allow_cobuy === false}>Not allowed</option>
+			</select>
+		</div>
+		<div>
+			<label class="block text-sm text-gray-700" for="list-thank-you"
+				>Thank-you note (default)</label
+			>
+			<textarea
+				id="list-thank-you"
+				name="thank_you_template"
+				rows="2"
+				class="mt-1 w-full rounded border p-2 text-sm"
+				placeholder="Emailed to a giver after they reserve. Use {'{item}'} for the item name. Leave blank for no note."
+				>{data.list.thank_you_template ?? ''}</textarea
+			>
+			<p class="mt-0.5 text-xs text-gray-500">
+				One-way: the giver never sees your list, and you never learn who reserved.
+			</p>
+		</div>
+		<button class="rounded bg-black px-3 py-1.5 text-sm text-white">Save settings</button>
 	</form>
 </section>
 
@@ -262,6 +281,25 @@
 							<option value="false" selected={item.allow_cobuy === false}>Not allowed</option>
 						</select>
 					</label>
+					<div class="text-sm text-gray-600">
+						<!-- Per-item thank-you override (#22). Checked = inherit the list default
+						     (sends null); unchecked = use the textarea (blank = no note for this item). -->
+						<label class="flex items-center gap-2">
+							<input
+								type="checkbox"
+								name="thank_you_inherit"
+								checked={item.thank_you_template == null}
+							/>
+							Use list default thank-you note
+						</label>
+						<textarea
+							name="thank_you_template"
+							rows="2"
+							class="mt-1 w-full rounded border p-2 text-sm"
+							placeholder="Override the thank-you note for this item ({'{item}'} = item name; blank = no note)"
+							>{item.thank_you_template ?? ''}</textarea
+						>
+					</div>
 					<div class="flex gap-2">
 						<button class="rounded bg-black px-3 py-1.5 text-sm text-white">Save</button>
 						<button

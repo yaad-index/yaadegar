@@ -1,6 +1,7 @@
 package api
 
 import (
+	"strings"
 	"time"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -18,6 +19,19 @@ func ptr[T any](v T) *T { return &v }
 // point for the policy — the giver surface and the contribute gate both use it.
 func resolveAllowCobuy(item storage.Item, list storage.List) bool {
 	return settings.Resolve(item.AllowCobuy, list.AllowCobuy)
+}
+
+// resolveThankYou resolves the owner→giver thank-you note for an item (#22): the
+// item's own override if set (an explicit "" is a per-item opt-out), else the list
+// default. An empty result means no note is sent.
+func resolveThankYou(item storage.Item, list storage.List) string {
+	return settings.Resolve(item.ThankYouTemplate, list.ThankYouTemplate)
+}
+
+// renderThankYou substitutes the single supported {item} token with the item name.
+// It is the only token — the note never carries giver identity (#22 anonymity).
+func renderThankYou(tmpl, itemName string) string {
+	return strings.ReplaceAll(tmpl, "{item}", itemName)
 }
 
 func toGenDate(t *time.Time) *openapi_types.Date {
@@ -72,6 +86,7 @@ func toGenList(l storage.List) gen.List {
 		ReserverTier:          tier,                           // nil = inheriting the instance default
 		ReserverConfirmWindow: l.ReserverConfirmWindowMinutes, // *int minutes: nil = inherit
 		AllowCobuy:            ptr(l.AllowCobuy),              // the list-level co-buy default (#100)
+		ThankYouTemplate:      ptr(l.ThankYouTemplate),        // list-level thank-you default (#22)
 		Active:                ptr(l.Active),
 		ItemCount:             ptr(l.ItemCount),
 		CreatedAt:             ptr(l.CreatedAt),
@@ -110,7 +125,8 @@ func toGenItem(it storage.Item, avail storage.Availability, reservedQty int) gen
 		QuantityWanted:   ptr(it.QuantityWanted),
 		Availability:     ptr(gen.ItemAvailability(avail)),
 		ReservedQuantity: ptr(reservedQty),
-		AllowCobuy:       it.AllowCobuy, // *bool: nil = inheriting the list default (#100)
+		AllowCobuy:       it.AllowCobuy,       // *bool: nil = inheriting the list default (#100)
+		ThankYouTemplate: it.ThankYouTemplate, // *string: nil = inheriting the list default (#22)
 	}
 }
 
