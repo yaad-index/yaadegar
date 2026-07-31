@@ -103,11 +103,51 @@ func (s *Server) CreateReservation(ctx context.Context, req gen.CreateReservatio
 		}
 		return nil, err
 	}
+	s.sendThankYou(ctx, ts, res)
 	return gen.CreateReservation201JSONResponse(gen.ReservationCreated{
 		ReservationId:   res.ID,
 		Status:          gen.ReservationCreatedStatusActive,
 		CapabilityToken: ptr(raw),
 	}), nil
+}
+
+// sendThankYou emails the owner's thank-you note to a reserver whose reservation
+// just became active (#22). One-way owner→giver: the note carries item + thanks
+// only — a `{item}` token in the fixed subject and the owner-authored body is
+// replaced with the item name, and no giver identity is ever included, so the
+// owner stays blind to who reserved (ADR-0002 §5). Best-effort: a load or send
+// failure is logged and swallowed — the reservation stands regardless (contrast
+// the load-bearing confirm email, #86). No-op when there is no reserver address or
+// the resolved template is empty (an explicit "" item override opts the item out).
+func (s *Server) sendThankYou(ctx context.Context, ts storage.TenantStore, res storage.Reservation) {
+	if res.GiverEmail == nil || *res.GiverEmail == "" {
+		return
+	}
+	item, err := ts.Items().Get(ctx, res.ItemID)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "thank-you: item load failed (ignored)", "reservation_id", res.ID, "error", err)
+		return
+	}
+	list, err := ts.Lists().Get(ctx, item.ListID)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "thank-you: list load failed (ignored)", "reservation_id", res.ID, "error", err)
+		return
+	}
+	tmpl := resolveThankYou(item, list)
+	if tmpl == "" {
+		return // no note configured for this item
+	}
+	subject := "Thank you for your reservation"
+	if item.Name != "" {
+		subject = renderThankYou("Thank you for reserving {item}", item.Name)
+	}
+	if err := s.email.Send(ctx, email.Message{
+		To:      *res.GiverEmail,
+		Subject: subject,
+		Body:    renderThankYou(tmpl, item.Name),
+	}); err != nil {
+		s.logger.ErrorContext(ctx, "thank-you email send failed (ignored)", "reservation_id", res.ID, "error", err)
+	}
 }
 
 // reserveEmailConfirmed handles a reserve on an email_confirmed list: it holds the
@@ -247,6 +287,8 @@ func (s *Server) ConfirmReservation(ctx context.Context, req gen.ConfirmReservat
 			return nil, err
 		}
 		if moved {
+			// The email_confirmed reserver just confirmed → active; thank them now (#22).
+			s.sendThankYou(ctx, ts, res)
 			return gen.ConfirmReservation200JSONResponse(gen.ReservationConfirmed{
 				ReservationId:   res.ID,
 				Status:          gen.ReservationConfirmedStatusActive,

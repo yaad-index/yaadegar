@@ -185,6 +185,9 @@ func (s *Server) UpdateList(ctx context.Context, req gen.UpdateListRequestObject
 	if req.Body.AllowCobuy != nil {
 		l.AllowCobuy = *req.Body.AllowCobuy // list-level co-buy default (#100)
 	}
+	if req.Body.ThankYouTemplate != nil {
+		l.ThankYouTemplate = *req.Body.ThankYouTemplate // list-level thank-you default (#22); "" = off
+	}
 
 	updated, err := ts.Lists().Update(ctx, l)
 	if err != nil {

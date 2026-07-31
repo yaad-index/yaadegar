@@ -106,6 +106,10 @@ export const actions: Actions = {
 		// the list default (three-state PATCH).
 		const allowCobuyRaw = String(fd.get('allow_cobuy') ?? '');
 		const allow_cobuy = allowCobuyRaw === 'true' ? true : allowCobuyRaw === 'false' ? false : null;
+		// Per-item thank-you override (#22/#111): "use list default" checkbox → null
+		// (inherit); otherwise the textarea value ('' is an explicit per-item opt-out).
+		const thankYouInherit = fd.get('thank_you_inherit') === 'on';
+		const thank_you_template = thankYouInherit ? null : String(fd.get('thank_you_template') ?? '');
 		if (!itemId || !name) return fail(400, { editError: 'Name is required.' });
 		const client = backendClient({ host: locals.host, token: locals.token });
 		// The item PATCH is set-if-present; send only the fields with values (clearing a
@@ -117,21 +121,23 @@ export const actions: Actions = {
 				quantity_wanted: Number.isFinite(quantity) ? quantity : 1,
 				url: url || undefined,
 				note: note || undefined,
-				allow_cobuy
+				allow_cobuy,
+				thank_you_template
 			}
 		});
 		if (err) return fail(400, { editError: 'Could not update the item.' });
 		return { edited: true };
 	},
 
-	// List-level co-buy default (#100): items with no override inherit it.
+	// List-level settings: co-buy default (#100) + thank-you note default (#22).
 	settings: async ({ request, locals, params }) => {
 		const fd = await request.formData();
 		const allow_cobuy = String(fd.get('allow_cobuy') ?? 'true') === 'true';
+		const thank_you_template = String(fd.get('thank_you_template') ?? '');
 		const client = backendClient({ host: locals.host, token: locals.token });
 		const { error: err } = await client.PATCH('/api/v1/lists/{listId}', {
 			params: { path: { listId: params.id } },
-			body: { allow_cobuy }
+			body: { allow_cobuy, thank_you_template }
 		});
 		if (err) return fail(400, { settingsError: 'Could not update list settings.' });
 		return { settingsSaved: true };

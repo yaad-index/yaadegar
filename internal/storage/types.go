@@ -138,8 +138,14 @@ type List struct {
 	// sets its own override. A new list is always created enabled — the owner opts
 	// out later via update.
 	AllowCobuy bool
-	Active     bool
-	CreatedAt  time.Time
+	// ThankYouTemplate is the list-level default owner→giver thank-you note (#22):
+	// a plain-text body emailed to a reserver's contact when their reservation goes
+	// active. "" = no note (feature off). Items inherit it unless they override it.
+	// A `{item}` token in the body is replaced with the item name; it carries no
+	// giver identity (the owner stays blind to who reserved).
+	ThankYouTemplate string
+	Active           bool
+	CreatedAt        time.Time
 	// ItemCount is a derived read field: the number of items on the list. It is
 	// populated by reads (Get/GetBySlug/List) and left zero by Create.
 	ItemCount int
@@ -172,7 +178,11 @@ type Item struct {
 	// AllowCobuy overrides the list's co-buy default for this item (#100): nil
 	// inherits the list, non-nil forces on/off. Resolved against List.AllowCobuy.
 	AllowCobuy *bool
-	CreatedAt  time.Time
+	// ThankYouTemplate overrides the list's thank-you note for this item (#22): nil
+	// inherits the list default, "" is an explicit per-item opt-out (no note), any
+	// other value overrides the body. Resolved against List.ThankYouTemplate.
+	ThankYouTemplate *string
+	CreatedAt        time.Time
 }
 
 // ReservationState tracks a reservation through its lifecycle. The email_confirmed

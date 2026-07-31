@@ -18,7 +18,7 @@ const listCols = `id, tenant_id, title, visibility, share_slug,
 // listSelectCols is listCols plus allow_cobuy (the list co-buy default, #100 — read
 // only; Create relies on its NOT NULL DEFAULT 1) and two correlated subqueries used
 // for reads: the derived item_count, and the (v1 sole) owner id from list_owners.
-const listSelectCols = listCols + `, allow_cobuy,
+const listSelectCols = listCols + `, allow_cobuy, thank_you_template,
 	(SELECT COUNT(*) FROM items
 	  WHERE items.tenant_id = lists.tenant_id AND items.list_id = lists.id) AS item_count,
 	(SELECT user_id FROM list_owners
@@ -112,11 +112,12 @@ func scanList(s scanner) (storage.List, error) {
 		reserverTier  sql.NullString
 		confirmWindow int
 		allowCobuy    int
+		thankYou      string
 		ownerID       sql.NullString
 	)
 	if err := s.Scan(&l.ID, &l.TenantID, &l.Title, &l.Visibility,
 		&l.ShareSlug, &eventDate, &decayDays, &active, &createdAt, &reserverTier,
-		&confirmWindow, &allowCobuy, &l.ItemCount, &ownerID); err != nil {
+		&confirmWindow, &allowCobuy, &thankYou, &l.ItemCount, &ownerID); err != nil {
 		return storage.List{}, err
 	}
 	l.OwnerID = ownerID.String // derived: the v1 sole owner (empty only if orphaned)
@@ -124,6 +125,7 @@ func scanList(s scanner) (storage.List, error) {
 	l.ReserverTier = reserverTierFromStorage(reserverTier)
 	l.ReserverConfirmWindowMinutes = confirmWindowFromStorage(confirmWindow)
 	l.AllowCobuy = allowCobuy != 0
+	l.ThankYouTemplate = thankYou
 	ed, err := datePtr(eventDate)
 	if err != nil {
 		return storage.List{}, err
@@ -250,12 +252,12 @@ func (r listRepo) Update(ctx context.Context, l storage.List) (storage.List, err
 	res, err := r.db.ExecContext(ctx, r.rb(
 		`UPDATE lists SET title = ?, visibility = ?, event_date = ?,
 		        decay_days = ?, active = ?, reserver_tier = ?, reserver_confirm_window = ?,
-		        allow_cobuy = ?
+		        allow_cobuy = ?, thank_you_template = ?
 		  WHERE tenant_id = ? AND id = ?`),
 		l.Title, l.Visibility, nullDate(l.EventDate), decayDaysToStorage(l.DecayDays),
 		boolToInt(l.Active), reserverTierToStorage(l.ReserverTier),
 		confirmWindowToStorage(l.ReserverConfirmWindowMinutes), boolToInt(l.AllowCobuy),
-		r.tenantID, l.ID)
+		l.ThankYouTemplate, r.tenantID, l.ID)
 	if err != nil {
 		return storage.List{}, err
 	}
