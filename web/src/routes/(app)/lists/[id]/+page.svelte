@@ -99,8 +99,9 @@
 	{/if}
 </section>
 
-<!-- List settings: co-buy default (#100) + thank-you note default (#22), both
-     inherited per-item unless the item overrides them. -->
+<!-- List settings: reserver tier (#126) + co-buy default (#100) + thank-you note
+     default (#22). allow_cobuy and thank_you are overridable per item; the
+     reserver tier is a list-level setting only. -->
 <section class="mt-3 rounded border p-3">
 	<p class="text-sm font-medium">List settings</p>
 	<form method="post" action="?/settings" use:formEnhance class="mt-2 space-y-3">
@@ -109,6 +110,19 @@
 			<select id="list-allow-cobuy" name="allow_cobuy" class="rounded border p-1.5 text-sm">
 				<option value="true" selected={data.list.allow_cobuy !== false}>Allowed</option>
 				<option value="false" selected={data.list.allow_cobuy === false}>Not allowed</option>
+			</select>
+		</div>
+		<div class="flex items-center gap-2">
+			<label class="text-sm text-gray-700" for="list-reserver-tier">Who can reserve</label>
+			<select id="list-reserver-tier" name="reserver_tier" class="rounded border p-1.5 text-sm">
+				<!-- Empty value = inherit the instance default (null override, three-state). -->
+				<option value="" selected={data.list.reserver_tier == null}>Inherit default</option>
+				<option value="full_guest" selected={data.list.reserver_tier === 'full_guest'}
+					>Anyone</option
+				>
+				<option value="email_confirmed" selected={data.list.reserver_tier === 'email_confirmed'}
+					>Require email confirmation</option
+				>
 			</select>
 		</div>
 		<div>
