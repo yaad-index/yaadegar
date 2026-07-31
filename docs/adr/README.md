@@ -36,3 +36,11 @@ supersedes the old one (and mark the old one `Superseded by ADR-XXXX`).
   TypeScript API client generated from the spec with a CI drift-guard, use-mature-libraries
   principle (component lib / superforms+zod / TanStack Query / httpOnly-cookie sessions),
   node-adapter container. **Status: Proposed.**
+- [ADR-0007: Reserver-identity policy](0007-reserver-identity-policy.md) — the three
+  reserver tiers (full_guest / email_confirmed / registered), per-list override, and
+  the email-confirmation flow (#19). **Status: Proposed.**
+- [ADR-0008: Owner login via Google OAuth / OIDC](0008-owner-oauth.md) — OIDC
+  auth-code + PKCE, one fixed redirect_uri with tenant-in-state and a one-time-ticket
+  cross-host session handoff, link-only-by-verified-email account model, per-tenant
+  toggle over one instance-level client (refines ADR-0005 §3), env config (#21).
+  **Status: Proposed.**
