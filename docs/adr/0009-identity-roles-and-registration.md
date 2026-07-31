@@ -25,12 +25,12 @@ This ADR unifies those into one identity model and adds **self-registration** an
 **admin user-management** surface. The operator's target shape:
 
 - **admin** — a per-instance capability (a flag), not a tenant-scoped role.
-- **creator** — a list owner, who may **also** act as a giver.
+- **owner** — a list owner, who may **also** act as a giver.
 - **giver** — promoted from an anonymous reserver to a **first-class account**, which
   is what finally makes the deferred `registered` reserve tier real.
 - an instance **self-registration policy**: `disabled` / `givers_only` /
-  `creators_allowed`.
-- an **admin page**: change a user's role (giver ↔ creator), ban a user, and create a
+  `owners_allowed`.
+- an **admin page**: change a user's role (giver ↔ owner), ban a user, and create a
   user by email.
 
 Because an ADR is immutable, the points below that touch ADR-0005 §6 and ADR-0008 §5
@@ -43,15 +43,15 @@ are stated here as **refinements**, not edits to those files.
 Identity is modeled on **two independent axes**, which keeps the operator's "three
 groups" from collapsing into a single confused hierarchy:
 
-- **Per-tenant role** on a user account: **`creator`** or **`giver`**. This lives on
+- **Per-tenant role** on a user account: **`owner`** or **`giver`**. This lives on
   the tenant-scoped `users` row (a new `role` column) and governs what the account may
-  do *within its tenant*: a creator owns lists (via `list_owners`) and reaches the full
+  do *within its tenant*: an owner owns lists (via `list_owners`) and reaches the full
   owner surface; a giver may authenticate and reserve/contribute but owns no lists.
 - **Instance-admin capability** — an orthogonal, instance-level flag (Decision 3),
   never a tenant role. It grants the non-tenant-scoped `/admin` surface and nothing on
   `/api/v1` by itself.
 
-A **creator can also give** for free: a creator is an authenticated account, so it can
+An **owner can also give** for free: an owner is an authenticated account, so it can
 use the authenticated reserve path (Decision 5) — no separate "giver" account needed.
 The account's tenant role is the *floor* of its abilities, not a mutually-exclusive
 bucket.
@@ -62,13 +62,13 @@ A new instance config selects the registration policy, defaulting to the **curre
 safest** behaviour:
 
 - **`disabled`** (default) — no public signup; accounts are provisioned by an admin or
-  an existing creator (today's model + ADR-0008 link-only). A fresh instance behaves
+  an existing owner (today's model + ADR-0008 link-only). A fresh instance behaves
   exactly as it does now.
 - **`givers_only`** — anyone may self-register, but a self-registered account is a
   **giver** (no list creation). This is what turns on `registered`-tier reserving for
   the public without opening list-authoring.
-- **`creators_allowed`** — a self-registered account may create lists (becomes a
-  **creator**). Full open registration.
+- **`owners_allowed`** — a self-registered account may create lists (becomes a
+  **owner**). Full open registration.
 
 The policy is a per-instance setting (env / config, like the other instance knobs), not
 per-tenant, and is enforced server-side at the signup endpoint. Signup reuses the
@@ -86,14 +86,14 @@ operator wants "a per-instance flag." These are the **same principal**; this ADR
   as today (ADR-0005 §6 — a configured identity with a hashed credential, no open
   bootstrap endpoint).
 - Re-describe it internally as a **capability/flag** rather than a parallel role ladder,
-  so there is no `admin` value competing with `creator`/`giver` on the tenant role axis.
+  so there is no `admin` value competing with `owner`/`giver` on the tenant role axis.
   The instance admin is orthogonal to every tenant role (Decision 1).
 
 **Recommendation:** treat instance-admin as the single existing superadmin capability;
 do **not** grant instance-admin implicitly to any tenant role, and do not create a
 tenant-level `admin` role. Whether to *rename* the internal `superadmin`/`RoleSuperadmin`
 symbols to `instance-admin` is a churn-vs-clarity call — **recommend keeping the
-internal names** (as with `owner`, Decision 6) and only presenting "instance admin" in
+internal names** (as with `owner`, Decision 2) and only presenting "instance admin" in
 docs/UI, to avoid a mechanical rename touching auth-critical code. Optionally, a later
 cut may let an admin *grant* the instance-admin capability to a normal user account;
 v1 keeps the configured bootstrap admin as the sole holder.
@@ -102,17 +102,25 @@ v1 keeps the configured bootstrap admin as the sole holder.
 
 The `/admin` surface (instance-admin only) gains user management:
 
-- **Create a user by email** — provision a `creator` or `giver` account for an email,
+- **Create a user by email** — provision an `owner` or `giver` account for an email,
   without a password (the user sets one via the enabled login method — password reset /
   magic-link / OAuth link, composing with ADR-0005 / ADR-0008). Supersedes, but does not
   remove, the `create-owner` CLI (which stays for headless ops).
-- **Change role** — flip a user's tenant role `giver ↔ creator`. Demotion to `giver`
-  does not delete the user's lists; it removes list-creation ability (existing
-  ownerships are a separate question surfaced as an open item below).
+- **Change role** — flip a user's tenant role `giver ↔ owner`. Because owner access
+  flows entirely through `list_owners`, demotion to `giver` **must also settle the
+  account's ownership rows** — a demoted giver whose `list_owners` rows linger would keep
+  owner-level access. This is therefore a **hard precondition for the Cut 1 change-role
+  spec** (see Rollout), not a downstream open item: the spec must resolve it (e.g. reject
+  demotion while the account owns lists, or revoke/reassign the rows in the same
+  operation).
 - **Ban** — a `banned` flag on the user: a banned account cannot log in or hold a
-  session (checked at issue and, because access tokens are stateless until Cut A′,
-  re-checked where a DB round-trip already happens — the middleware's user load). Ban is
-  reversible; it is not deletion.
+  session. It is enforced at two points — at token **issue** (a banned account gets no
+  new session) and at the owner middleware's **existing per-request user load**
+  (`requireOwner` already reads the user row, so the flag takes effect immediately on
+  the owner surface, with no revocation store needed). The only residual window is a
+  purely-stateless token check that does *not* reload the user: there the access token
+  stays valid until its short JWT TTL (ADR-0005 §5) expires. Ban is reversible; it is not
+  deletion.
 
 ### 5. A registered giver satisfies the `registered` reserve tier
 
@@ -120,7 +128,7 @@ This is the payoff that was deferred in ADR-0005 §6 and ADR-0007. When a list's
 **effective** reserver tier is `registered`:
 
 - The reservation must be created by an **authenticated account** (a JWT principal —
-  `creator` or `giver` — resolved for the tenant), instead of an anonymous capability
+  `owner` or `giver` — resolved for the tenant), instead of an anonymous capability
   token. The account is the proof of the `registered` tier; ADR-0005 §6 anticipated
   exactly this ("a future `registered` reserver that carries an account would issue a
   JWT through the same issuer").
@@ -146,19 +154,19 @@ for the operator to confirm.
    one. (This also settles Decision 5's shape: the authenticated path serves the new
    tier without disturbing the anonymous ones.)
 
-2. **Naming.** Keep **`owner`** internally (`RoleOwner`, `list_owners`, `ownsList`,
-   the `/api/v1` shape) to avoid churn in auth-critical code, and choose a **display
-   term** for humans. **Recommend "Creator"** (matches the feature's own vocabulary and
-   common product usage); *Curator* is the alternative. The role column value is
-   `creator`; the internal owner symbols stay.
+2. **Naming — SETTLED (operator-confirmed): keep `owner` as both the internal and the
+   display term.** The tenant role axis is **`owner` | `giver`**; there is no separate
+   display word (Owner / Curator are dropped) and no new `owner` role value. This
+   reuses the existing `RoleOwner`, `list_owners`, `ownsList`, and the `/api/v1` shape
+   unchanged — even less churn than a rename, and one word for the concept everywhere.
 
 3. **Admin vs superadmin.** **Recommend one concept** — the instance admin is exactly
    ADR-0005's superadmin, re-described as a capability, kept orthogonal to tenant roles,
    with internal symbol names unchanged (Decision 3 above).
 
 4. **Migration from superadmin-creates-owner.** **Recommend additive, zero-loss:** add a
-   `role` column to `users` defaulting **`creator`** (every existing user is an owner
-   today, so they all become creators); add a `banned` flag defaulting false; leave
+   `role` column to `users` defaulting **`owner`** (every existing user is an owner
+   today, so they all become owners); add a `banned` flag defaulting false; leave
    `list_owners`, the `admins`/superadmin bootstrap, and the CLI provisioning untouched.
    Self-registration and giver accounts are purely additive; no existing account changes
    behaviour.
@@ -189,7 +197,7 @@ for the operator to confirm.
   user-management endpoints (create-by-email, change-role, ban) on `/admin`; an
   authenticated reserve path for the `registered` tier; and the admin + signup + giver
   frontend surfaces. Spec-first for every new endpoint (ADR-0002).
-- Refines ADR-0005 §6 (the role model gains an explicit `creator`/`giver` tenant axis
+- Refines ADR-0005 §6 (the role model gains an explicit `owner`/`giver` tenant axis
   and re-frames superadmin as the instance-admin capability) and ADR-0008 §5 (link-only
   is no longer the only account-creation path once self-registration is enabled;
   link-only remains the behaviour when the policy is `disabled`).
@@ -197,8 +205,6 @@ for the operator to confirm.
   (ADR-0005 §2), the tenant-match invariant (ADR-0005 §5), reserver anonymity (ADR-0002
   §5), and the co-buy reveal (ADR-0002 §6).
 - Deferred / open items to settle at cut-scope time (called out, not baked):
-  - whether demoting a creator with existing lists is blocked, reassigns, or archives
-    those lists;
   - abuse controls on open signup (captcha #45, rate-limit, email verification before a
     self-registered account is usable) — lean on the existing anti-bot boundary
     (ADR-0005 §8);
@@ -211,9 +217,13 @@ for the operator to confirm.
    defaults preserving today's behaviour), the `/admin` create-by-email / change-role /
    ban endpoints, the instance-admin capability reconciliation, and the admin
    user-management UI. No self-registration yet. Unblocks the operator managing users.
+   **Precondition:** the change-role spec must resolve demotion vs `list_owners` access
+   (above) before the endpoint is written — since owner access flows through
+   `list_owners`, demotion must revoke or reassign ownership (or be rejected while lists
+   exist), so a demoted account cannot retain owner access.
 2. **Cut 2 — self-registration.** The instance policy config (`disabled` /
-   `givers_only` / `creators_allowed`), the policy-gated public signup endpoint
-   provisioning a `giver` or `creator`, and the signup UI. Composes with the ADR-0005
+   `givers_only` / `owners_allowed`), the policy-gated public signup endpoint
+   provisioning a `giver` or `owner`, and the signup UI. Composes with the ADR-0005
    methods and ADR-0008 link.
 3. **Cut 3 — registered-giver reserve.** The authenticated reserve path that satisfies
    the `registered` tier (bound to `user_id`, anonymity preserved), and the
