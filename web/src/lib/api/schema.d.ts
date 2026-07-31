@@ -41,6 +41,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/methods": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Owner login methods available on this host
+         * @description Reports which owner-login affordances the frontend should render for the tenant resolved from the Host. Unauthenticated. Owner login lives only on the main instance domain (a tenant's subdomain under the base domain); on a custom/CNAME domain — which is public-giver-only — both methods are false and login_url points at the tenant's canonical subdomain login page so the frontend can send an owner there.
+         */
+        get: operations["getAuthMethods"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/auth/login": {
         parameters: {
             query?: never;
@@ -580,6 +600,14 @@ export interface components {
             /** @description Access-token lifetime in seconds. */
             expires_in: number;
         };
+        LoginMethods: {
+            /** @description Whether to render the username+password form on this host (the instance has password login enabled AND this is not a custom domain). */
+            password: boolean;
+            /** @description Whether to render the "Sign in with Google" button on this host (a Google client is configured, the tenant toggle is on, AND this is not a custom domain). */
+            google: boolean;
+            /** @description The tenant's canonical owner-login URL (its subdomain under the base domain). On a custom domain — where both methods are false — the frontend redirects owners here. Empty when the base domain is unset. */
+            login_url: string;
+        };
         NullableBool: boolean | null;
         NullableInt: number | null;
         NullableString: string | null;
@@ -942,6 +970,26 @@ export interface operations {
                 };
             };
             429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getAuthMethods: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The available login methods for this host. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginMethods"];
+                };
+            };
         };
     };
     adminLogin: {

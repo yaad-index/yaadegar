@@ -79,6 +79,28 @@ func (s *Server) Login(ctx context.Context, req gen.LoginRequestObject) (gen.Log
 	}, nil
 }
 
+// GetAuthMethods reports which owner-login affordances the frontend should render
+// for the tenant resolved from the Host (ADR-0008 Cut 2). It is unauthenticated.
+// Owner login lives only on the main instance domain: on a custom/CNAME domain
+// (public-giver-only) both methods are false and login_url carries the tenant's
+// canonical subdomain login page so the frontend can redirect an owner there.
+func (s *Server) GetAuthMethods(ctx context.Context, _ gen.GetAuthMethodsRequestObject) (gen.GetAuthMethodsResponseObject, error) {
+	tenant, ok := tenantFromContext(ctx)
+	if !ok {
+		return nil, errMissingContext
+	}
+	custom := s.isCustomDomainHost(routingHostFromContext(ctx))
+	loginURL := ""
+	if s.baseDomain != "" {
+		loginURL = "https://" + tenant.Subdomain + "." + s.baseDomain + "/login"
+	}
+	return gen.GetAuthMethods200JSONResponse{
+		Password: s.auth.Enabled(auth.MethodPassword) && !custom,
+		Google:   s.oauth != nil && tenant.OAuthGoogleEnabled && !custom,
+		LoginUrl: loginURL,
+	}, nil
+}
+
 // loginKeys returns the (ip, identity) rate-limit keys for a login attempt. The IP
 // key is global across surfaces — one attacker, one bucket; the identity key is
 // namespaced by surface/scope so distinct principals never share a bucket.

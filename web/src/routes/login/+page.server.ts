@@ -11,10 +11,42 @@ const loginSchema = z.object({
 	password: z.string().min(1, 'Password is required')
 });
 
-export const load: PageServerLoad = async ({ locals }) => {
+// oauthErrorMessages maps known provider/callback error codes to friendly copy;
+// anything else falls back to a generic line. The raw code is never rendered as
+// HTML (the page interpolates text, which Svelte escapes) — but mapping keeps the
+// UI clean and avoids reflecting arbitrary provider strings verbatim.
+const oauthErrorMessages: Record<string, string> = {
+	access_denied: 'Sign-in was cancelled.',
+	server_error: 'The sign-in provider had a problem. Please try again.',
+	temporarily_unavailable: 'Sign-in is temporarily unavailable. Please try again.'
+};
+
+export const load: PageServerLoad = async ({ locals, url }) => {
 	// Already signed in → straight to the dashboard.
 	if (locals.token) redirect(303, '/');
-	return { form: await superValidate(zod4(loginSchema)) };
+
+	// Which login affordances to render for this host (ADR-0008 Cut 2). Defaults to
+	// password-only if the backend can't be reached, so login still works.
+	const client = backendClient({ host: locals.host });
+	const { data: methods } = await client.GET('/api/v1/auth/methods');
+
+	// Owner login is main-domain-only: on a custom domain both methods are false and
+	// login_url points at the tenant's canonical login page — send the owner there.
+	if (methods && !methods.password && !methods.google && methods.login_url) {
+		redirect(303, methods.login_url);
+	}
+
+	const rawError = url.searchParams.get('oauth_error');
+	const oauthError = rawError
+		? (oauthErrorMessages[rawError] ?? 'Sign-in did not complete. Please try again.')
+		: null;
+
+	return {
+		form: await superValidate(zod4(loginSchema)),
+		methods: methods ?? { password: true, google: false, login_url: '' },
+		host: locals.host,
+		oauthError
+	};
 };
 
 export const actions: Actions = {

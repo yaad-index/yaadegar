@@ -210,8 +210,14 @@ func newOAuthHarness(t *testing.T, ownerEmail string, googleEnabled bool) *oauth
 // get issues a GET through the handler, carrying the given cookies, and returns
 // the recorder (status, headers, Set-Cookie, body).
 func (o *oauthHarness) get(path string, cookies []*http.Cookie) *httptest.ResponseRecorder {
+	return o.getOn("fixed.example.test", path, cookies)
+}
+
+// getOn issues a GET with an explicit Host (tenant routing), carrying cookies.
+func (o *oauthHarness) getOn(host, path string, cookies []*http.Cookie) *httptest.ResponseRecorder {
 	o.t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "https://fixed.example.test"+path, nil)
+	req := httptest.NewRequest(http.MethodGet, "https://"+host+path, nil)
+	req.Host = host
 	for _, c := range cookies {
 		req.AddCookie(c)
 	}

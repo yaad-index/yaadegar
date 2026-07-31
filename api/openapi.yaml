@@ -85,6 +85,26 @@ paths:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
 
+  /api/v1/auth/methods:
+    get:
+      operationId: getAuthMethods
+      tags: [auth]
+      summary: Owner login methods available on this host
+      description: >
+        Reports which owner-login affordances the frontend should render for the
+        tenant resolved from the Host. Unauthenticated. Owner login lives only on
+        the main instance domain (a tenant's subdomain under the base domain); on a
+        custom/CNAME domain — which is public-giver-only — both methods are false
+        and login_url points at the tenant's canonical subdomain login page so the
+        frontend can send an owner there.
+      security: []
+      responses:
+        "200":
+          description: The available login methods for this host.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginMethods" }
+
   /admin/auth/login:
     post:
       operationId: adminLogin
@@ -952,6 +972,28 @@ components:
         expires_in:
           type: integer
           description: Access-token lifetime in seconds.
+
+    LoginMethods:
+      type: object
+      required: [password, google, login_url]
+      properties:
+        password:
+          type: boolean
+          description: >
+            Whether to render the username+password form on this host (the
+            instance has password login enabled AND this is not a custom domain).
+        google:
+          type: boolean
+          description: >
+            Whether to render the "Sign in with Google" button on this host (a
+            Google client is configured, the tenant toggle is on, AND this is not a
+            custom domain).
+        login_url:
+          type: string
+          description: >
+            The tenant's canonical owner-login URL (its subdomain under the base
+            domain). On a custom domain — where both methods are false — the
+            frontend redirects owners here. Empty when the base domain is unset.
 
     # Three-state nullable wrappers for PATCH override fields (#111): they map to
     # oapi-codegen/nullable.Nullable[T], which distinguishes an absent field (leave

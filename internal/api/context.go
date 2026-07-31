@@ -20,6 +20,7 @@ const (
 	capTokenCtxKey
 	adminCtxKey
 	clientIPCtxKey
+	routingHostCtxKey
 )
 
 // withTenant returns ctx carrying the resolved tenant for the request.
@@ -78,4 +79,17 @@ func withClientIP(ctx context.Context, ip string) context.Context {
 func clientIPFromContext(ctx context.Context) string {
 	ip, _ := ctx.Value(clientIPCtxKey).(string)
 	return ip
+}
+
+// withRoutingHost carries the host the tenant was resolved from (lowercased, no
+// port). The strict handlers have no *http.Request, so an endpoint that must
+// distinguish a subdomain host from a custom domain reads it from here.
+func withRoutingHost(ctx context.Context, host string) context.Context {
+	return context.WithValue(ctx, routingHostCtxKey, host)
+}
+
+// routingHostFromContext returns the tenant-resolution host, or "" if unknown.
+func routingHostFromContext(ctx context.Context) string {
+	h, _ := ctx.Value(routingHostCtxKey).(string)
+	return h
 }

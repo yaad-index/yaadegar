@@ -55,3 +55,33 @@ export function backendPostRaw(opts: {
 	if (opts.token) headers.authorization = `Bearer ${opts.token}`;
 	return fetch(BACKEND_ORIGIN + opts.path, { method: 'POST', headers, body: opts.body });
 }
+
+// backendOAuthPassthrough is a thin, transparent proxy for the browser-facing OAuth
+// redirect endpoints (ADR-0008 Cut 2). The backend has no published port — this
+// SvelteKit service is the sole proxy — so the browser reaches /start, /callback,
+// and /complete through here. It forwards the RAW inbound browser Cookie header
+// (never a server-side token: the OAuth /start→/callback state cookie must reach
+// the backend), does NOT follow redirects, and passes the backend's status,
+// Location, and every Set-Cookie back verbatim — so the redirects and the
+// host-scoped `yaadegar_session` cookie the backend sets flow to the browser
+// untouched.
+export async function backendOAuthPassthrough(opts: {
+	path: string;
+	cookie: string | null;
+	host: string;
+}): Promise<Response> {
+	const headers: Record<string, string> = { 'x-forwarded-host': opts.host };
+	if (opts.cookie) headers.cookie = opts.cookie;
+	const res = await fetch(BACKEND_ORIGIN + opts.path, {
+		method: 'GET',
+		headers,
+		redirect: 'manual'
+	});
+	const out = new Headers();
+	const location = res.headers.get('location');
+	if (location) out.set('location', location);
+	const contentType = res.headers.get('content-type');
+	if (contentType) out.set('content-type', contentType);
+	for (const c of res.headers.getSetCookie()) out.append('set-cookie', c);
+	return new Response(res.body, { status: res.status, headers: out });
+}
