@@ -85,6 +85,10 @@ type Tenant struct {
 	ID        string
 	Subdomain string
 	CreatedAt time.Time
+	// OAuthGoogleEnabled is the per-tenant Google-login toggle (ADR-0008 §6),
+	// default off. It only takes effect when the instance also has a Google client
+	// configured (env, fail-closed); on an instance with no client it is inert.
+	OAuthGoogleEnabled bool
 }
 
 // User is an owner within a tenant. Email is used server-side (e.g. decay notices)
@@ -305,6 +309,30 @@ type MatchExpiryCandidate struct {
 	TenantID  string
 	MatchID   string
 	ItemID    string
+	CreatedAt time.Time
+}
+
+// OAuthProvider identifies an external identity provider. Only Google ships in v1
+// (ADR-0008); the column and this type leave room for others without a schema
+// change.
+type OAuthProvider string
+
+const (
+	OAuthProviderGoogle OAuthProvider = "google"
+)
+
+// OAuthIdentity links a verified external identity to an owner within one tenant
+// (ADR-0008 §5–6). Subject is the provider's stable, opaque user id (Google `sub`),
+// the durable link key; Email is the address at link time (informational — the
+// link never re-resolves by email). One owner may hold at most one identity per
+// provider per tenant; (tenant_id, provider, subject) is unique, tenant-scoped.
+type OAuthIdentity struct {
+	ID        string
+	TenantID  string
+	UserID    string
+	Provider  OAuthProvider
+	Subject   string
+	Email     string
 	CreatedAt time.Time
 }
 

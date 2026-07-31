@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -28,6 +29,7 @@ import (
 	"github.com/yaad-index/yaadegar/internal/cobuy"
 	"github.com/yaad-index/yaadegar/internal/decay"
 	"github.com/yaad-index/yaadegar/internal/email"
+	"github.com/yaad-index/yaadegar/internal/oauthlogin"
 	"github.com/yaad-index/yaadegar/internal/server"
 	"github.com/yaad-index/yaadegar/internal/storage"
 	"github.com/yaad-index/yaadegar/internal/storage/sqlstore"
@@ -46,9 +48,10 @@ type CLI struct {
 	Health  HealthCmd  `cmd:"" help:"Probe the server's health endpoint and exit non-zero if unhealthy (container healthcheck)."`
 
 	// Seed / operator commands.
-	CreateTenant CreateTenantCmd `cmd:"" name:"create-tenant" help:"Create a tenant."`
-	CreateOwner  CreateOwnerCmd  `cmd:"" name:"create-owner" help:"Create an owner with a password credential in a tenant."`
-	HashPassword HashPasswordCmd `cmd:"" name:"hash-password" help:"Print the argon2id hash of a password (read from $YAADEGAR_PASSWORD or stdin) for the superadmin config."`
+	CreateTenant      CreateTenantCmd      `cmd:"" name:"create-tenant" help:"Create a tenant."`
+	CreateOwner       CreateOwnerCmd       `cmd:"" name:"create-owner" help:"Create an owner with a password credential in a tenant."`
+	EnableTenantOAuth EnableTenantOAuthCmd `cmd:"" name:"enable-tenant-oauth" help:"Turn Google login on (or --disable off) for a tenant (ADR-0008)."`
+	HashPassword      HashPasswordCmd      `cmd:"" name:"hash-password" help:"Print the argon2id hash of a password (read from $YAADEGAR_PASSWORD or stdin) for the superadmin config."`
 }
 
 // ServeCmd runs the HTTP server until interrupted.
@@ -89,6 +92,15 @@ type ServeCmd struct {
 	AuthJWTSecret       string        `name:"auth-jwt-secret" env:"YAADEGAR_AUTH_JWT_SECRET" help:"JWT signing secret (HS256), >=32 bytes. Required; from the environment. The instance refuses to start if missing or too short."`
 	AuthPasswordEnabled bool          `name:"auth-password-enabled" default:"true" env:"YAADEGAR_AUTH_PASSWORD_ENABLED" help:"Enable username+password login (the first login method; magic-link and OAuth land later)."`
 	AuthAccessTTL       time.Duration `name:"auth-access-ttl" default:"12h" env:"YAADEGAR_AUTH_ACCESS_TTL" help:"Access-token lifetime; re-login on expiry (refresh tokens are a later cut)."`
+
+	// Google OAuth owner login (ADR-0008, #21). All three are required to enable
+	// Google login; the client secret is a secret and comes from the environment.
+	// Any subset present but not all → the instance refuses to start (fail-closed);
+	// none present → Google login is simply off. It is an add-on to password login,
+	// gated per-tenant (see 'enable-tenant-oauth').
+	OAuthGoogleClientID     string `name:"oauth-google-client-id" env:"YAADEGAR_OAUTH_GOOGLE_CLIENT_ID" help:"Google OAuth client id for owner login (#21). Set with the client secret and redirect base to enable Google login."`
+	OAuthGoogleClientSecret string `name:"oauth-google-client-secret" env:"YAADEGAR_OAUTH_GOOGLE_CLIENT_SECRET" help:"Google OAuth client secret (provide via the environment)."`
+	OAuthRedirectBase       string `name:"oauth-redirect-base" env:"YAADEGAR_OAUTH_REDIRECT_BASE" help:"Public https base URL of the fixed OAuth redirect host (e.g. https://yaadegar.example). The single registered redirect_uri is this base + /api/v1/auth/oauth/google/callback."`
 
 	// Superadmin config (ADR-0005 §6). Both set → the /admin surface is enabled and
 	// the identity is ensured at startup; neither set → the admin surface is
@@ -161,6 +173,14 @@ func (c *ServeCmd) Run(cli *CLI) error {
 		return err
 	}
 
+	// Google OAuth owner login (ADR-0008). Built after the auth service so the JWT
+	// secret (reused to sign the state cookie + handoff ticket) is already validated.
+	// A partial client config fails closed here; none configured leaves it nil (off).
+	oauthAuth, err := buildOAuthAuthenticator(ctx, c, logger)
+	if err != nil {
+		return err
+	}
+
 	// The public link base (giver-facing site) feeds every emailed link; the old
 	// --decay-link-base is honoured as a back-compat alias when it is unset.
 	linkBase := c.PublicLinkBase
@@ -189,6 +209,7 @@ func (c *ServeCmd) Run(cli *CLI) error {
 		DefaultReserverTier: defaultTier,
 		PublicLinkBase:      linkBase,
 		CobuyConfirmWindow:  c.CobuyConfirmWindow,
+		OAuth:               oauthAuth,
 	})
 
 	// Run the reservation-decay sweeper on a ticker alongside the server.
@@ -225,6 +246,45 @@ func ensureSuperadmin(ctx context.Context, store storage.Store, c *ServeCmd, log
 	default:
 		return false, nil // no superadmin configured; admin surface disabled
 	}
+}
+
+// oauthCallbackPath is the single callback path registered as the redirect_uri;
+// it must match the route the API layer serves (ADR-0008 §2).
+const oauthCallbackPath = "/api/v1/auth/oauth/google/callback"
+
+// buildOAuthAuthenticator wires Google OAuth login when a full client config is
+// present, nil when none is, and fails closed on a partial config (ADR-0008 §7).
+// The state cookie and handoff ticket are signed with the validated JWT secret.
+func buildOAuthAuthenticator(ctx context.Context, c *ServeCmd, logger *slog.Logger) (*oauthlogin.Authenticator, error) {
+	id, secret, base := c.OAuthGoogleClientID, c.OAuthGoogleClientSecret, c.OAuthRedirectBase
+	present := 0
+	for _, v := range []string{id, secret, base} {
+		if v != "" {
+			present++
+		}
+	}
+	switch present {
+	case 0:
+		return nil, nil // Google login is off
+	case 3:
+		// all present — build below
+	default:
+		return nil, errors.New(
+			"google OAuth requires all of --oauth-google-client-id, --oauth-google-client-secret, and " +
+				"--oauth-redirect-base (set none to disable); refusing to start")
+	}
+	redirectURL := strings.TrimRight(base, "/") + oauthCallbackPath
+	a, err := oauthlogin.New(ctx, oauthlogin.Config{
+		ClientID:     id,
+		ClientSecret: secret,
+		RedirectURL:  redirectURL,
+		HMACKey:      []byte(c.AuthJWTSecret),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("configure google OAuth: %w", err)
+	}
+	logger.Info("google OAuth login enabled", "redirect_uri", redirectURL)
+	return a, nil
 }
 
 // buildSender returns the real SMTP sender when an SMTP host is configured, and

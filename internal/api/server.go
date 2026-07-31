@@ -11,6 +11,7 @@ import (
 	"github.com/yaad-index/yaadegar/internal/auth"
 	"github.com/yaad-index/yaadegar/internal/clock"
 	"github.com/yaad-index/yaadegar/internal/email"
+	"github.com/yaad-index/yaadegar/internal/oauthlogin"
 	"github.com/yaad-index/yaadegar/internal/preview"
 	"github.com/yaad-index/yaadegar/internal/storage"
 )
@@ -39,7 +40,13 @@ type Server struct {
 	// cobuyConfirmWindow is how long a scoped match-action token stays valid after a
 	// match is proposed (#96). Non-positive means the token never expires.
 	cobuyConfirmWindow time.Duration
-	logger             *slog.Logger
+	// oauth is the OIDC login client (ADR-0008). nil when no Google client is
+	// configured, in which case every OAuth endpoint reports 404 (the method is
+	// absent, not a failure).
+	oauth *oauthlogin.Authenticator
+	// ticketGuard enforces one-time use of the cross-host handoff ticket.
+	ticketGuard oauthlogin.TicketGuard
+	logger      *slog.Logger
 }
 
 var _ gen.StrictServerInterface = (*Server)(nil)
@@ -99,6 +106,13 @@ type Options struct {
 	// CobuyConfirmWindow is how long a scoped match-action token stays valid after
 	// a match is proposed (#96). Non-positive means it never expires.
 	CobuyConfirmWindow time.Duration
+	// OAuth is the OIDC owner-login client (ADR-0008). nil disables Google login
+	// (the endpoints report 404). Built at startup from the env config once the
+	// three client fields are present; a partial config fails startup, not here.
+	OAuth *oauthlogin.Authenticator
+	// TicketGuard enforces one-time use of the OAuth cross-host ticket. Defaults to
+	// an in-memory guard when nil.
+	TicketGuard oauthlogin.TicketGuard
 }
 
 // NewHandler builds the full HTTP handler: the generated strict router wrapped in
@@ -124,6 +138,8 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 		defaultReserverTier: opts.DefaultReserverTier,
 		publicLinkBase:      opts.PublicLinkBase,
 		cobuyConfirmWindow:  opts.CobuyConfirmWindow,
+		oauth:               opts.OAuth,
+		ticketGuard:         opts.TicketGuard,
 		logger:              opts.Logger,
 	}
 	if s.logger == nil {
@@ -137,6 +153,10 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 	}
 	if s.clock == nil {
 		s.clock = clock.Real{}
+	}
+	if s.ticketGuard == nil {
+		// Share the server clock so ticket expiry/eviction is testable with a fake.
+		s.ticketGuard = oauthlogin.NewInMemoryTicketGuard(s.clock)
 	}
 	if s.previewer == nil {
 		s.previewer = preview.NewDefault()
@@ -167,6 +187,14 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 	// middleware chain below, so tenant + owner auth are identical to the typed routes.
 	mux.HandleFunc("GET /api/v1/lists/{listId}/export", s.handleListExport)
 	mux.HandleFunc("POST /api/v1/lists/{listId}/import", s.handleListImport)
+	// Owner login via Google OAuth/OIDC (#21, ADR-0008): browser-facing redirect
+	// endpoints, a poor fit for the JSON strict server. They are always registered;
+	// when no Google client is configured each reports 404 (the method is absent).
+	// The tenant-resolution and owner-auth middleware skip /api/v1/auth/oauth/* —
+	// each endpoint carries its own tenant in the signed state, then the ticket.
+	mux.HandleFunc("GET "+oauthStartPath, s.handleOAuthStart)
+	mux.HandleFunc("GET "+oauthCallbackPath, s.handleOAuthCallback)
+	mux.HandleFunc("GET "+oauthCompletePath, s.handleOAuthComplete)
 
 	// Middleware order (outermost first): resolve tenant (skips /admin + /healthz),
 	// enforce owner auth on /api/v1, enforce superadmin auth on /admin, then lift

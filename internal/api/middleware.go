@@ -17,8 +17,13 @@ import (
 func (s *Server) resolveTenant(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// /healthz is host-agnostic ops; /admin is the instance-level superadmin
-		// surface and is deliberately NOT tenant-scoped (ADR-0005 §6).
-		if r.URL.Path == "/healthz" || strings.HasPrefix(r.URL.Path, "/admin/") {
+		// surface and is deliberately NOT tenant-scoped (ADR-0005 §6). The OAuth
+		// endpoints (ADR-0008) are host-agnostic too: start/callback run on the fixed
+		// redirect host (no tenant) and carry their tenant in the signed state, then
+		// the ticket — so they resolve the tenant themselves, not from the Host.
+		if r.URL.Path == "/healthz" ||
+			strings.HasPrefix(r.URL.Path, "/admin/") ||
+			strings.HasPrefix(r.URL.Path, "/api/v1/auth/oauth/") {
 			next.ServeHTTP(w, r)
 			return
 		}

@@ -113,6 +113,21 @@
 # (env YAADEGAR_SUPERADMIN_USERNAME, flag --superadmin-username)
 # superadmin-username: ""
 
+# --- Google OAuth owner login (ADR-0008, #21) -----------------------------------
+#
+# Add-on login method alongside password. All three below (client id, secret, and
+# redirect base) must be set to enable it; set none to leave it off. A partial
+# config refuses to start. It is ALSO gated per tenant — turn it on for a tenant
+# with `yaadegar enable-tenant-oauth --tenant <subdomain>`.
+
+# Google OAuth client id. (env YAADEGAR_OAUTH_GOOGLE_CLIENT_ID, flag --oauth-google-client-id)
+# oauth-google-client-id: ""
+
+# Public https base URL of the fixed redirect host. The single redirect_uri you
+# register with Google is this base + /api/v1/auth/oauth/google/callback.
+# (env YAADEGAR_OAUTH_REDIRECT_BASE, flag --oauth-redirect-base)
+# oauth-redirect-base: "https://yaadegar.example"
+
 # --- Login rate limit -----------------------------------------------------------
 
 # Failed login attempts per IP and per username before rate-limiting kicks in
@@ -156,3 +171,5 @@
 #   YAADEGAR_SUPERADMIN_PASSWORD_HASH Superadmin argon2id hash from
 #                                     `yaadegar hash-password` (never a plaintext
 #                                     password). Pairs with superadmin-username.
+#   YAADEGAR_OAUTH_GOOGLE_CLIENT_SECRET  Google OAuth client secret (ADR-0008).
+#                                     Pairs with oauth-google-client-id.
