@@ -294,14 +294,24 @@ func TestOAuth_HappyPath_FirstLinkThenReturningLogin(t *testing.T) {
 	assert.Equal(t, o.owner.ID, p2.UserID)
 }
 
+// assertLoginErrorRedirect asserts a callback bounced to the tenant login page
+// carrying the expected oauth_error code (#124) — a friendly redirect, not raw
+// problem+json — and set no session.
+func (o *oauthHarness) assertLoginErrorRedirect(t *testing.T, rec *httptest.ResponseRecorder, code string) {
+	t.Helper()
+	require.Equal(t, http.StatusFound, rec.Code, "user-facing failure should redirect, not return JSON")
+	loc := rec.Header().Get("Location")
+	assert.Equal(t, "https://"+o.tenantHost()+"/login?oauth_error="+code, loc)
+	assert.Nil(t, findCookie(rec.Result().Cookies(), "yaadegar_session"))
+}
+
 func TestOAuth_RejectsUnverifiedEmail(t *testing.T) {
 	o := newOAuthHarness(t, "alice@example.com", true)
 	o.mock.next = mockIdentity{sub: "google-sub-1", email: "alice@example.com", emailVerified: false}
 
 	callbackPath, stateCookie := o.runToCallback(t, "")
 	rec := o.get(callbackPath, []*http.Cookie{stateCookie})
-	assert.Equal(t, http.StatusForbidden, rec.Code)
-	assert.Nil(t, findCookie(rec.Result().Cookies(), "yaadegar_session"))
+	o.assertLoginErrorRedirect(t, rec, "email_unverified")
 }
 
 func TestOAuth_RejectsNoMatchingOwner(t *testing.T) {
@@ -310,7 +320,9 @@ func TestOAuth_RejectsNoMatchingOwner(t *testing.T) {
 
 	callbackPath, stateCookie := o.runToCallback(t, "")
 	rec := o.get(callbackPath, []*http.Cookie{stateCookie})
-	assert.Equal(t, http.StatusForbidden, rec.Code)
+	// The reported case (#124): a Google account matching no owner lands on the
+	// login page with a readable message, not a raw 403 JSON body.
+	o.assertLoginErrorRedirect(t, rec, "no_owner")
 }
 
 func TestOAuth_RejectsOwnerAlreadyLinkedToDifferentSubject(t *testing.T) {
@@ -323,7 +335,7 @@ func TestOAuth_RejectsOwnerAlreadyLinkedToDifferentSubject(t *testing.T) {
 	o.mock.next = mockIdentity{sub: "google-sub-B", email: "alice@example.com", emailVerified: true}
 	callbackPath, stateCookie := o.runToCallback(t, "")
 	rec := o.get(callbackPath, []*http.Cookie{stateCookie})
-	assert.Equal(t, http.StatusConflict, rec.Code)
+	o.assertLoginErrorRedirect(t, rec, "already_linked")
 }
 
 func TestOAuth_CallbackRejectsStateMismatch(t *testing.T) {

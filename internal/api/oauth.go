@@ -39,6 +39,16 @@ const (
 	oauthTicketTTL = 1 * time.Minute
 )
 
+// oauth_error codes carried to the login page for user-facing callback failures
+// (#124). They are stable, non-secret slugs the frontend maps to friendly copy;
+// the provider may also supply its own (e.g. access_denied), which passes through.
+const (
+	oauthErrEmailUnverified = "email_unverified"
+	oauthErrNoOwner         = "no_owner"
+	oauthErrAlreadyLinked   = "already_linked"
+	oauthErrSigninFailed    = "signin_failed"
+)
+
 // errNoOwnerForEmail / errOwnerAlreadyLinked are the two link-only rejections
 // (ADR-0008 §5). They are distinct so the callback can return a clear, actionable
 // status without leaking which owners exist beyond the caller's own verified email.
@@ -143,9 +153,9 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	if provErr := q.Get("error"); provErr != "" {
 		// A normal outcome (e.g. the user cancelled at Google) — return them to the
-		// app rather than showing an API error.
+		// login page with a readable message rather than an API error.
 		s.logger.Info("oauth callback: provider returned error", "error", provErr)
-		s.redirectTenant(w, r, st.TenantHost, "/?oauth_error="+url.QueryEscape(provErr))
+		s.redirectLoginError(w, r, st.TenantHost, provErr)
 		return
 	}
 	if subtle.ConstantTimeCompare([]byte(q.Get("state")), []byte(st.State)) != 1 {
@@ -160,20 +170,22 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 
 	rawID, err := s.oauth.Exchange(r.Context(), code, st.PKCEVerifier)
 	if err != nil {
+		// Transport/provider failure — logged server-side; the giver just sees a
+		// "try again" on the login page, not a raw 502.
 		s.logger.Error("oauth callback: code exchange failed", "err", err)
-		writeProblem(w, http.StatusBadGateway, "identity provider exchange failed")
+		s.redirectLoginError(w, r, st.TenantHost, oauthErrSigninFailed)
 		return
 	}
 	id, err := s.oauth.VerifyIDToken(r.Context(), rawID, st.Nonce)
 	if err != nil {
 		s.logger.Warn("oauth callback: id_token verification failed", "err", err)
-		writeProblem(w, http.StatusUnauthorized, "identity verification failed")
+		s.redirectLoginError(w, r, st.TenantHost, oauthErrSigninFailed)
 		return
 	}
 	// Guard 1: the provider must assert the email is verified (ADR-0008 §5). This
 	// is the check that closes the email-collision path.
 	if !id.EmailVerified || id.Email == "" {
-		writeProblem(w, http.StatusForbidden, "your Google account's email is not verified")
+		s.redirectLoginError(w, r, st.TenantHost, oauthErrEmailUnverified)
 		return
 	}
 
@@ -191,14 +203,13 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case err == nil:
 	case errors.Is(err, errNoOwnerForEmail):
-		writeProblem(w, http.StatusForbidden,
-			"no owner on this list has this Google email; ask the operator to provision your account first")
+		s.redirectLoginError(w, r, st.TenantHost, oauthErrNoOwner)
 		return
 	case errors.Is(err, errOwnerAlreadyLinked):
-		writeProblem(w, http.StatusConflict,
-			"this owner is already linked to a different Google account")
+		s.redirectLoginError(w, r, st.TenantHost, oauthErrAlreadyLinked)
 		return
 	default:
+		// Genuine server fault — no meaningful user-facing page, so problem+json.
 		s.logger.Error("oauth callback: owner resolution failed", "err", err)
 		writeProblem(w, http.StatusInternalServerError, "internal error")
 		return
@@ -320,6 +331,15 @@ func (s *Server) resolveOAuthOwner(ctx context.Context, ts storage.TenantStore, 
 // path, optionally with a query.
 func (s *Server) redirectTenant(w http.ResponseWriter, r *http.Request, tenantHost, path string) {
 	http.Redirect(w, r, "https://"+tenantHost+path, http.StatusFound)
+}
+
+// redirectLoginError bounces a user-facing callback failure back to the tenant
+// login page carrying an oauth_error code (#124), instead of a raw problem+json
+// body. It targets /login directly — not "/", which the app layout would redirect
+// to /login on its own and drop the query — so the message survives to the page,
+// where it is rendered as escaped text.
+func (s *Server) redirectLoginError(w http.ResponseWriter, r *http.Request, tenantHost, code string) {
+	s.redirectTenant(w, r, tenantHost, "/login?oauth_error="+url.QueryEscape(code))
 }
 
 // clearCookie expires a cookie by name/path.
