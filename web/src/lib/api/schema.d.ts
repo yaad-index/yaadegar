@@ -149,6 +149,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the owner's tenant settings
+         * @description The tenant-level settings the owner controls (ADR-0008). Includes the Google-login toggle and, read-only, whether the instance has a Google client configured — the toggle is inert without one.
+         */
+        get: operations["getTenantSettings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update the owner's tenant settings
+         * @description Updates the tenant-level settings. The change applies only to the authenticated owner's own tenant (resolved from the session), never a tenant named in the request.
+         */
+        patch: operations["updateTenantSettings"];
+        trace?: never;
+    };
     "/api/v1/lists": {
         parameters: {
             query?: never;
@@ -599,6 +623,16 @@ export interface components {
             token_type: "Bearer";
             /** @description Access-token lifetime in seconds. */
             expires_in: number;
+        };
+        TenantSettings: {
+            /** @description Whether Google login is turned on for this tenant. */
+            oauth_google_enabled: boolean;
+            /** @description Read-only. Whether the instance has a Google OAuth client configured. When false, the tenant toggle has no effect (the method is unavailable) — the UI can use this to explain why. */
+            google_client_configured: boolean;
+        };
+        TenantSettingsUpdate: {
+            /** @description Turn Google login on or off for this tenant. */
+            oauth_google_enabled: boolean;
         };
         LoginMethods: {
             /** @description Whether to render the username+password form on this host (the instance has password login enabled AND this is not a custom domain). */
@@ -1135,6 +1169,53 @@ export interface operations {
                     "application/json": components["schemas"]["User"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getTenantSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The tenant settings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantSettings"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    updateTenantSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TenantSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description The updated tenant settings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantSettings"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };
