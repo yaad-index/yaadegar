@@ -129,15 +129,20 @@ export const actions: Actions = {
 		return { edited: true };
 	},
 
-	// List-level settings: co-buy default (#100) + thank-you note default (#22).
+	// List-level settings: co-buy default (#100) + thank-you note default (#22) +
+	// reserver tier (#126).
 	settings: async ({ request, locals, params }) => {
 		const fd = await request.formData();
 		const allow_cobuy = String(fd.get('allow_cobuy') ?? 'true') === 'true';
 		const thank_you_template = String(fd.get('thank_you_template') ?? '');
+		// Reserver tier (#126): an empty selection clears the override back to the
+		// instance default (null, three-state per #111); otherwise it sets the tier.
+		const reserverTierRaw = String(fd.get('reserver_tier') ?? '');
+		const reserver_tier = reserverTierRaw === '' ? null : reserverTierRaw;
 		const client = backendClient({ host: locals.host, token: locals.token });
 		const { error: err } = await client.PATCH('/api/v1/lists/{listId}', {
 			params: { path: { listId: params.id } },
-			body: { allow_cobuy, thank_you_template }
+			body: { allow_cobuy, thank_you_template, reserver_tier }
 		});
 		if (err) return fail(400, { settingsError: 'Could not update list settings.' });
 		return { settingsSaved: true };
