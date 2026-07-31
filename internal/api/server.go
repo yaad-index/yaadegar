@@ -166,6 +166,7 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 	// Content-Disposition is a poor fit for the JSON strict server. It sits inside the
 	// middleware chain below, so tenant + owner auth are identical to the typed routes.
 	mux.HandleFunc("GET /api/v1/lists/{listId}/export", s.handleListExport)
+	mux.HandleFunc("POST /api/v1/lists/{listId}/import", s.handleListImport)
 
 	// Middleware order (outermost first): resolve tenant (skips /admin + /healthz),
 	// enforce owner auth on /api/v1, enforce superadmin auth on /admin, then lift

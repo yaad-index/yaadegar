@@ -38,3 +38,20 @@ export function backendGetRaw(opts: {
 	if (opts.token) headers.authorization = `Bearer ${opts.token}`;
 	return fetch(BACKEND_ORIGIN + opts.path, { headers });
 }
+
+// backendPostRaw POSTs a raw body with an explicit Content-Type to a non-schema
+// backend endpoint — e.g. the list import upload (#26). Same host + bearer forwarding.
+export function backendPostRaw(opts: {
+	host: string;
+	token?: string;
+	path: string;
+	contentType: string;
+	body: string;
+}): Promise<Response> {
+	const headers: Record<string, string> = {
+		'x-forwarded-host': opts.host,
+		'content-type': opts.contentType
+	};
+	if (opts.token) headers.authorization = `Bearer ${opts.token}`;
+	return fetch(BACKEND_ORIGIN + opts.path, { method: 'POST', headers, body: opts.body });
+}

@@ -45,7 +45,8 @@ func scanItem(s scanner) (storage.Item, error) {
 	return it, nil
 }
 
-func (r itemRepo) Create(ctx context.Context, it storage.Item) (storage.Item, error) {
+// prep fills server-set defaults and binds the tenant.
+func (r itemRepo) prep(it storage.Item) storage.Item {
 	if it.ID == "" {
 		it.ID = newID()
 	}
@@ -56,17 +57,53 @@ func (r itemRepo) Create(ctx context.Context, it storage.Item) (storage.Item, er
 		it.CreatedAt = nowTime()
 	}
 	it.TenantID = r.tenantID
-	amount, currency := priceCols(it.Price)
+	return it
+}
 
-	_, err := r.db.ExecContext(ctx, r.rb(
+// insert writes a prepared item via x (a *sql.DB or *sql.Tx).
+func (r itemRepo) insert(ctx context.Context, x execer, it storage.Item) error {
+	amount, currency := priceCols(it.Price)
+	_, err := x.ExecContext(ctx, r.rb(
 		`INSERT INTO items (`+itemCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		it.ID, it.TenantID, it.ListID, it.Name, nullStr(it.URL), nullStr(it.ImageURL),
 		amount, currency, nullStr(it.Note), it.Priority, it.QuantityWanted,
 		allowCobuyToStorage(it.AllowCobuy), nullStr(it.ThankYouTemplate), fmtTime(it.CreatedAt))
-	if err != nil {
+	return err
+}
+
+func (r itemRepo) Create(ctx context.Context, it storage.Item) (storage.Item, error) {
+	it = r.prep(it)
+	if err := r.insert(ctx, r.db, it); err != nil {
 		return storage.Item{}, err
 	}
 	return it, nil
+}
+
+// CreateMany inserts all items in a single transaction (#26 import): either every
+// item is created or none is, so a mid-batch DB failure never leaves a
+// half-imported list. Each item is tenant-bound and defaulted like Create.
+func (r itemRepo) CreateMany(ctx context.Context, items []storage.Item) ([]storage.Item, error) {
+	if len(items) == 0 {
+		return nil, nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	out := make([]storage.Item, 0, len(items))
+	for _, it := range items {
+		it = r.prep(it)
+		if err := r.insert(ctx, tx, it); err != nil {
+			return nil, err
+		}
+		out = append(out, it)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (r itemRepo) Get(ctx context.Context, id string) (storage.Item, error) {
