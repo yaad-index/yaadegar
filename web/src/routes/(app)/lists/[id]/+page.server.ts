@@ -2,7 +2,7 @@ import { error, fail } from '@sveltejs/kit';
 import { superValidate, message } from 'sveltekit-superforms';
 import { zod4 } from 'sveltekit-superforms/adapters';
 import { z } from 'zod';
-import { backendClient } from '$lib/server/api';
+import { backendClient, backendPostRaw } from '$lib/server/api';
 import { renderNote } from '$lib/server/markdown';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -141,6 +141,38 @@ export const actions: Actions = {
 		});
 		if (err) return fail(400, { settingsError: 'Could not update list settings.' });
 		return { settingsSaved: true };
+	},
+
+	// Import items from an uploaded JSON/CSV file (#26). The file is read and
+	// forwarded to the backend raw with the right Content-Type; the owner token
+	// stays server-side. On a validation failure the backend returns per-row errors.
+	import: async ({ request, locals, params }) => {
+		const fd = await request.formData();
+		const file = fd.get('file');
+		if (!(file instanceof File) || file.size === 0) {
+			return fail(400, { importError: 'Choose a JSON or CSV file to import.' });
+		}
+		const contentType = file.name.toLowerCase().endsWith('.csv') ? 'text/csv' : 'application/json';
+		const res = await backendPostRaw({
+			host: locals.host,
+			token: locals.token,
+			path: `/api/v1/lists/${params.id}/import`,
+			contentType,
+			body: await file.text()
+		});
+		if (res.status === 201) {
+			const { created } = (await res.json()) as { created: number };
+			return { imported: created };
+		}
+		// Surface the backend's per-row validation errors (if any), else a generic message.
+		const problem = (await res.json().catch(() => null)) as {
+			detail?: string;
+			errors?: { row: number; message: string }[];
+		} | null;
+		return fail(res.status === 413 ? 413 : 400, {
+			importError: problem?.detail ?? 'Could not import that file.',
+			importRowErrors: problem?.errors ?? []
+		});
 	},
 
 	delete: async ({ request, locals }) => {

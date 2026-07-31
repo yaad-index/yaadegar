@@ -3,9 +3,22 @@
 	import { enhance as formEnhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import type { PageData } from './$types';
+	import type { PageData, ActionData } from './$types';
 
-	let { data }: { data: PageData } = $props();
+	let { data, form: actionForm }: { data: PageData; form: ActionData } = $props();
+	// Import result surfaced from the ?/import action (aliased so it doesn't collide
+	// with the superForm `form` store below).
+	const imported = $derived(
+		actionForm && 'imported' in actionForm ? actionForm.imported : undefined
+	);
+	const importError = $derived(
+		actionForm && 'importError' in actionForm ? actionForm.importError : undefined
+	);
+	const importRowErrors = $derived<{ row: number; message: string }[]>(
+		actionForm && 'importRowErrors' in actionForm
+			? ((actionForm.importRowErrors as { row: number; message: string }[]) ?? [])
+			: []
+	);
 	// superForm captures the initial form once and owns its reactivity thereafter.
 	// svelte-ignore state_referenced_locally
 	const { form, errors, message, enhance, submitting } = superForm(data.addForm);
@@ -118,13 +131,38 @@
 	</form>
 </section>
 
-<!-- Export: download the item catalog for backup / portability (#26). It never
-     includes who reserved — items only. -->
+<!-- Import / export: back up or move the item catalog (#26). It never includes
+     who reserved — items only. -->
 <section class="mt-3 rounded border p-3">
-	<p class="text-sm font-medium">Export</p>
+	<p class="text-sm font-medium">Import / export</p>
 	<p class="mt-0.5 text-xs text-gray-600">
-		Download your items for backup or to move them elsewhere. Never includes who reserved.
+		Back up your items or move them elsewhere. Never includes who reserved.
 	</p>
+
+	<form
+		method="post"
+		action="?/import"
+		enctype="multipart/form-data"
+		use:formEnhance
+		class="mt-2 flex flex-wrap items-center gap-2"
+	>
+		<input type="file" name="file" accept=".json,.csv,application/json,text/csv" class="text-sm" />
+		<button class="rounded border px-3 py-1.5 text-sm hover:bg-gray-50">Import</button>
+	</form>
+	{#if imported !== undefined}
+		<p class="mt-1 text-xs text-green-700" role="status">Imported {imported} item(s).</p>
+	{/if}
+	{#if importError}
+		<p class="mt-1 text-xs text-red-600" role="alert">{importError}</p>
+		{#if importRowErrors.length > 0}
+			<ul class="mt-1 list-inside list-disc text-xs text-red-600">
+				{#each importRowErrors as e (e.row)}
+					<li>Row {e.row}: {e.message}</li>
+				{/each}
+			</ul>
+		{/if}
+	{/if}
+
 	<div class="mt-2 flex gap-2">
 		<!-- eslint-disable svelte/no-navigation-without-resolve -- resolved path + a
 		     ?format query the rule can't see through; both are internal download routes. -->

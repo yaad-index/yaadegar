@@ -163,6 +163,9 @@ type ListRepo interface {
 // ItemRepo persists items within the bound tenant.
 type ItemRepo interface {
 	Create(ctx context.Context, it Item) (Item, error)
+	// CreateMany inserts all items atomically in one transaction — either all are
+	// created or none (the #26 import guarantee: no half-imported list on a DB error).
+	CreateMany(ctx context.Context, items []Item) ([]Item, error)
 	Get(ctx context.Context, id string) (Item, error)
 	ListByList(ctx context.Context, listID string, p Page) ([]Item, int, error)
 	Update(ctx context.Context, it Item) (Item, error)
