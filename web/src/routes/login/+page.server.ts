@@ -16,9 +16,16 @@ const loginSchema = z.object({
 // HTML (the page interpolates text, which Svelte escapes) — but mapping keeps the
 // UI clean and avoids reflecting arbitrary provider strings verbatim.
 const oauthErrorMessages: Record<string, string> = {
+	// Provider-supplied codes.
 	access_denied: 'Sign-in was cancelled.',
 	server_error: 'The sign-in provider had a problem. Please try again.',
-	temporarily_unavailable: 'Sign-in is temporarily unavailable. Please try again.'
+	temporarily_unavailable: 'Sign-in is temporarily unavailable. Please try again.',
+	// Callback outcomes (#124).
+	email_unverified: 'Your Google email is not verified, so it cannot be used to sign in.',
+	no_owner:
+		'No owner on this list matches your Google email. Ask the list operator to add you first.',
+	already_linked: 'This owner is already linked to a different Google account.',
+	signin_failed: 'Sign-in could not be completed. Please try again.'
 };
 
 export const load: PageServerLoad = async ({ locals, url }) => {
