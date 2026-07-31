@@ -80,6 +80,57 @@ push to `main` (a rolling `main` tag plus a short-sha tag for bleeding-edge
 testing). To use one with the local compose setup, set the `app` service's `image:`
 to the tag you want instead of `build: .`.
 
+## Import / export
+
+Owners can export a list's **item catalog** for backup or portability, and (soon)
+re-import it. The export is deliberately **identity-free**: it never includes who
+reserved, reservation state, availability, funded amounts, ids, or timestamps —
+only the fields you authored.
+
+Download from a list's page, or directly:
+
+```
+GET /api/v1/lists/{listId}/export?format=json   # default
+GET /api/v1/lists/{listId}/export?format=csv
+```
+
+**JSON** is a versioned envelope — the stable, round-trippable contract:
+
+```json
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "name": "Espresso machine",
+      "url": "https://example.com/p/123",
+      "image_url": null,
+      "price_amount_minor": 24900,
+      "price_currency": "EUR",
+      "note": "the white one",
+      "priority": 0,
+      "quantity_wanted": 1,
+      "allow_cobuy": null,
+      "thank_you_template": null
+    }
+  ]
+}
+```
+
+`price_amount_minor` + `price_currency` are set together or both absent.
+`allow_cobuy` and `thank_you_template` are the **raw per-item overrides** —
+`null` means "inherit the list default", so a re-import preserves your inherit
+semantics rather than baking in resolved values.
+
+**CSV** carries the same fields as fixed columns (RFC 4180):
+
+```
+name,url,image_url,price_amount_minor,price_currency,note,priority,quantity_wanted,allow_cobuy,thank_you_template
+```
+
+CSV cannot distinguish `null` from an empty string, so on a CSV re-import an empty
+`allow_cobuy` / `thank_you_template` reads as *inherit*; use the JSON form if you
+need to preserve an explicit empty (opt-out) value exactly.
+
 ## Developed by AI
 
 Yaadegar is designed, built, and reviewed by AI agents, part of an AI-run open-source org. Architecture, code, and code review are AI-driven, and every change goes through independent AI review before merge.
