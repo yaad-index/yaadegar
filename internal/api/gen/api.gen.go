@@ -443,6 +443,18 @@ type ListUpdate struct {
 // ListVisibility defines model for ListVisibility.
 type ListVisibility string
 
+// LoginMethods defines model for LoginMethods.
+type LoginMethods struct {
+	// Google Whether to render the "Sign in with Google" button on this host (a Google client is configured, the tenant toggle is on, AND this is not a custom domain).
+	Google bool `json:"google"`
+
+	// LoginUrl The tenant's canonical owner-login URL (its subdomain under the base domain). On a custom domain — where both methods are false — the frontend redirects owners here. Empty when the base domain is unset.
+	LoginUrl string `json:"login_url"`
+
+	// Password Whether to render the username+password form on this host (the instance has password login enabled AND this is not a custom domain).
+	Password bool `json:"password"`
+}
+
 // LoginRequest defines model for LoginRequest.
 type LoginRequest struct {
 	Password string `json:"password"`
@@ -723,6 +735,9 @@ type ServerInterface interface {
 	// Login Log in with a username and password
 	// (POST /api/v1/auth/login)
 	Login(w http.ResponseWriter, r *http.Request)
+	// GetAuthMethods Owner login methods available on this host
+	// (GET /api/v1/auth/methods)
+	GetAuthMethods(w http.ResponseWriter, r *http.Request)
 	// ListDomains List the tenant's custom domains
 	// (GET /api/v1/domains)
 	ListDomains(w http.ResponseWriter, r *http.Request)
@@ -876,6 +891,20 @@ func (siw *ServerInterfaceWrapper) Login(w http.ResponseWriter, r *http.Request)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.Login(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAuthMethods operation middleware
+func (siw *ServerInterfaceWrapper) GetAuthMethods(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAuthMethods(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1668,6 +1697,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/healthz", wrapper.GetHealthz)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/login", wrapper.Login)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/auth/methods", wrapper.GetAuthMethods)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/admin/auth/login", wrapper.AdminLogin)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/admin/me", wrapper.AdminGetMe)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/admin/tenants", wrapper.AdminCreateTenant)
@@ -2149,6 +2179,27 @@ func (response Login429ApplicationProblemPlusJSONResponse) VisitLoginResponse(w 
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAuthMethodsRequestObject struct {
+}
+
+type GetAuthMethodsResponseObject interface {
+	VisitGetAuthMethodsResponse(w http.ResponseWriter) error
+}
+
+type GetAuthMethods200JSONResponse LoginMethods
+
+func (response GetAuthMethods200JSONResponse) VisitGetAuthMethodsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3801,6 +3852,9 @@ type StrictServerInterface interface {
 	// Login Log in with a username and password
 	// (POST /api/v1/auth/login)
 	Login(ctx context.Context, request LoginRequestObject) (LoginResponseObject, error)
+	// GetAuthMethods Owner login methods available on this host
+	// (GET /api/v1/auth/methods)
+	GetAuthMethods(ctx context.Context, request GetAuthMethodsRequestObject) (GetAuthMethodsResponseObject, error)
 	// ListDomains List the tenant's custom domains
 	// (GET /api/v1/domains)
 	ListDomains(ctx context.Context, request ListDomainsRequestObject) (ListDomainsResponseObject, error)
@@ -4064,6 +4118,30 @@ func (sh *strictHandler) Login(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(LoginResponseObject); ok {
 		if err := validResponse.VisitLoginResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetAuthMethods operation middleware
+func (sh *strictHandler) GetAuthMethods(w http.ResponseWriter, r *http.Request) {
+	var request GetAuthMethodsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetAuthMethods(ctx, request.(GetAuthMethodsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAuthMethods")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetAuthMethodsResponseObject); ok {
+		if err := validResponse.VisitGetAuthMethodsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

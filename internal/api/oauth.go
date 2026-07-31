@@ -80,6 +80,13 @@ func (s *Server) handleOAuthStart(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	// Owner login is main-domain-only: a custom/CNAME domain is public-giver-only,
+	// so it never starts an owner login (ADR-0008 Cut 2). Defense in depth behind
+	// the frontend's methods-gated affordance.
+	if s.isCustomDomainHost(tenantHost) {
+		writeProblem(w, http.StatusNotFound, "owner login is not available on this domain")
+		return
+	}
 	if !tenant.OAuthGoogleEnabled {
 		writeProblem(w, http.StatusNotFound, "google login is not enabled for this tenant")
 		return

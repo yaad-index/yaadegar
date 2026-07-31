@@ -38,8 +38,23 @@ func (s *Server) resolveTenant(next http.Handler) http.Handler {
 			writeProblem(w, http.StatusInternalServerError, "internal error")
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(withTenant(r.Context(), tenant)))
+		ctx := withTenant(r.Context(), tenant)
+		ctx = withRoutingHost(ctx, hostname(routingHost))
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// isCustomDomainHost reports whether host is a bring-your-own custom domain rather
+// than a tenant subdomain under the base domain — the mirror of tenantForHost's
+// routing split. Owner login is confined to the main instance domain (subdomains),
+// so custom domains, which are public-giver-only, gate every login affordance off
+// (ADR-0008; #12). With no base domain configured (single-domain deployment) there
+// is no "main domain" distinction, so nothing is treated as custom.
+func (s *Server) isCustomDomainHost(host string) bool {
+	if s.baseDomain == "" || host == s.baseDomain {
+		return false
+	}
+	return !strings.HasSuffix(host, "."+s.baseDomain)
 }
 
 // hostForRouting returns the host used to resolve the tenant. By default it is the
