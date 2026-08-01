@@ -27,9 +27,18 @@
 	// true) would wipe $form back to empty on every success — discarding the prefill
 	// and the pasted URL. With it off, a preview keeps the fetched values; a real add
 	// clears the form because the ?/add success returns a fresh empty form (server).
+	// The add form's price is entered in major units and drives the hidden price_minor
+	// the ?/add action reads (see the 100-subunit note on the server). null = no price.
+	let priceAmount = $state<number | null>(null);
 	// svelte-ignore state_referenced_locally
 	const { form, errors, message, enhance, submitting } = superForm(data.addForm, {
-		resetForm: false
+		resetForm: false,
+		// After any successful update, reflect the (possibly scraped or cleared) price
+		// into the amount input: a ?/preview brings a scraped price; a successful ?/add
+		// returns a fresh empty form.
+		onUpdated({ form }) {
+			priceAmount = form.data.price_minor != null ? form.data.price_minor / 100 : null;
+		}
 	});
 
 	// Which tab is active. Local reactive state, bound into <Tabs>, so a click
@@ -282,20 +291,41 @@
 				Fetch details
 			</button>
 		</div>
-		<!-- Scraped image + price ride along into the create; the owner reviews first. -->
+		<!-- Editable price (major units) + currency: prefilled from a scrape but editable
+		     or clearable. The amount drives the hidden price_minor the ?/add action reads.
+		     The scraped image rides along read-only as a thumbnail. -->
 		<input type="hidden" name="image_url" bind:value={$form.image_url} />
-		<input type="hidden" name="price_minor" bind:value={$form.price_minor} />
-		<input type="hidden" name="price_currency" bind:value={$form.price_currency} />
-		{#if $form.image_url || $form.price_minor}
-			<div class="flex items-center gap-2 text-sm text-gray-600">
-				{#if $form.image_url}
-					<img src={$form.image_url} alt="" class="h-10 w-10 rounded border object-cover" />
-				{/if}
-				{#if $form.price_minor && $form.price_currency}
-					<span>{($form.price_minor / 100).toFixed(2)} {$form.price_currency}</span>
-				{/if}
-			</div>
-		{/if}
+		<input
+			type="hidden"
+			name="price_minor"
+			value={priceAmount == null ? '' : Math.round(priceAmount * 100)}
+		/>
+		<div class="flex flex-wrap items-center gap-2">
+			<input
+				class="w-28 rounded border p-2 text-sm"
+				type="number"
+				step="0.01"
+				min="0"
+				inputmode="decimal"
+				placeholder="Price"
+				aria-label="Price"
+				bind:value={priceAmount}
+			/>
+			<input
+				class="w-20 rounded border p-2 text-sm uppercase"
+				name="price_currency"
+				maxlength="3"
+				placeholder="USD"
+				aria-label="Currency"
+				bind:value={$form.price_currency}
+			/>
+			{#if priceAmount != null && !$form.price_currency}
+				<span class="text-xs text-red-600">Add a 3-letter currency for the price.</span>
+			{/if}
+			{#if $form.image_url}
+				<img src={$form.image_url} alt="" class="h-10 w-10 rounded border object-cover" />
+			{/if}
+		</div>
 		<textarea
 			class="w-full rounded border p-2"
 			name="note"
@@ -395,6 +425,31 @@
 							placeholder="Link (optional)"
 							value={item.url ?? ''}
 						/>
+						<!-- Editable price (major units) + currency, prefilled from the item.
+						     Set-if-present: ?/edit includes price only when an amount is entered;
+						     clearing it back to none isn't supported by the current backend PATCH,
+						     the same limitation as the other edit fields. -->
+						<div class="flex gap-2">
+							<input
+								class="w-28 rounded border p-2 text-sm"
+								name="price_amount"
+								type="number"
+								step="0.01"
+								min="0"
+								inputmode="decimal"
+								placeholder="Price"
+								aria-label="Price"
+								value={item.price?.amount_minor != null ? item.price.amount_minor / 100 : ''}
+							/>
+							<input
+								class="w-20 rounded border p-2 text-sm uppercase"
+								name="price_currency"
+								maxlength="3"
+								placeholder="USD"
+								aria-label="Currency"
+								value={item.price?.currency ?? ''}
+							/>
+						</div>
 						<textarea
 							class="w-full rounded border p-2 text-sm"
 							name="note"
