@@ -63,7 +63,10 @@ export const actions: Actions = {
 			}
 		});
 		if (err) return message(form, 'Could not add the item.', { status: 400 });
-		return { addForm: form };
+		// The client keeps its form on success (resetForm:false, so a ?/preview draft
+		// survives), so a real add must clear it explicitly: return a fresh empty form
+		// for the next item. invalidateAll (default) still refreshes the items list.
+		return { addForm: await superValidate(zod4(addItemSchema)) };
 	},
 
 	// Auto-fill from a pasted product URL by reusing the SSRF-safe preview endpoint

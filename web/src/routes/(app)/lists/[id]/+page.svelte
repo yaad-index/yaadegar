@@ -22,8 +22,15 @@
 			: []
 	);
 	// superForm captures the initial form once and owns its reactivity thereafter.
+	// resetForm:false is load-bearing: the ?/preview action returns the scraped draft
+	// (name/url/image/price) as a success result, and the library default (resetForm:
+	// true) would wipe $form back to empty on every success — discarding the prefill
+	// and the pasted URL. With it off, a preview keeps the fetched values; a real add
+	// clears the form because the ?/add success returns a fresh empty form (server).
 	// svelte-ignore state_referenced_locally
-	const { form, errors, message, enhance, submitting } = superForm(data.addForm);
+	const { form, errors, message, enhance, submitting } = superForm(data.addForm, {
+		resetForm: false
+	});
 
 	// Which tab is active. Local reactive state, bound into <Tabs>, so a click
 	// switches the panel immediately — the visible panel keys off this state and does
