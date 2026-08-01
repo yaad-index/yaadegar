@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.6.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.5.0...yaadegar-v0.6.0) (2026-08-01)
+
+
+### Features
+
+* **admin:** admin as a per-user capability (ADR-0010) ([#134](https://github.com/yaad-index/yaadegar/issues/134)) ([82d995f](https://github.com/yaad-index/yaadegar/commit/82d995f2824a847ad3cdad0b3080cf6f165c849e))
+* **admin:** greenfield admin frontend — login + user management (ADR-0009 Cut 1b) ([#131](https://github.com/yaad-index/yaadegar/issues/131)) ([62b1b25](https://github.com/yaad-index/yaadegar/commit/62b1b2519528b3aa099c92e7e61bdf64b18a6568))
+* **admin:** show name and an admin badge in the users list ([#135](https://github.com/yaad-index/yaadegar/issues/135)) ([7351bf7](https://github.com/yaad-index/yaadegar/commit/7351bf7669f505033f21202734d6ae971b5cdb46))
+* **admin:** user-management backend — roles, ban, /admin endpoints (ADR-0009 Cut 1a) ([#130](https://github.com/yaad-index/yaadegar/issues/130)) ([77bfd6f](https://github.com/yaad-index/yaadegar/commit/77bfd6fbb65e846b4e534f5a95765b27fb954f86))
+* **api:** list catalog export — JSON + CSV ([#26](https://github.com/yaad-index/yaadegar/issues/26) Cut 1) ([#116](https://github.com/yaad-index/yaadegar/issues/116)) ([2ffe32f](https://github.com/yaad-index/yaadegar/commit/2ffe32f1384e368e4679d764d665a652b36d6ae1))
+* **api:** list catalog import — JSON + CSV ([#26](https://github.com/yaad-index/yaadegar/issues/26) Cut 2) ([#117](https://github.com/yaad-index/yaadegar/issues/117)) ([82ef6d0](https://github.com/yaad-index/yaadegar/commit/82ef6d017fbb87ac7522256934eda7fe0dd668f5))
+* **auth:** OAuth login frontend — passthrough + methods + Google button ([#21](https://github.com/yaad-index/yaadegar/issues/21)) ([#120](https://github.com/yaad-index/yaadegar/issues/120)) ([4cbcd5c](https://github.com/yaad-index/yaadegar/commit/4cbcd5c49d095ef756ec66d27e5d15368e43a725))
+* **auth:** owner login via Google OAuth/OIDC — backend ([#21](https://github.com/yaad-index/yaadegar/issues/21)) ([#119](https://github.com/yaad-index/yaadegar/issues/119)) ([61051e7](https://github.com/yaad-index/yaadegar/commit/61051e76f76de0e00a319c6f38c2efabd8010206))
+* **auth:** owner-settings Google-login toggle — OAuth Cut 2 ([#21](https://github.com/yaad-index/yaadegar/issues/21)) ([#121](https://github.com/yaad-index/yaadegar/issues/121)) ([9849050](https://github.com/yaad-index/yaadegar/commit/9849050e5f667d2d9e17c928c2f7390f163e53b6))
+* **reservations:** owner thank-you notes for reservers ([#22](https://github.com/yaad-index/yaadegar/issues/22)) ([#114](https://github.com/yaad-index/yaadegar/issues/114)) ([4187a38](https://github.com/yaad-index/yaadegar/commit/4187a38c26c3a3915a3c1192a2845d2b971662dc))
+* **web:** owner Settings UI for custom domains ([#122](https://github.com/yaad-index/yaadegar/issues/122)) ([#123](https://github.com/yaad-index/yaadegar/issues/123)) ([51046ff](https://github.com/yaad-index/yaadegar/commit/51046ff34ffee469df9a4b81634ae1a805da2a8d))
+* **web:** per-list reserver-tier control ([#126](https://github.com/yaad-index/yaadegar/issues/126)) ([#127](https://github.com/yaad-index/yaadegar/issues/127)) ([f503015](https://github.com/yaad-index/yaadegar/commit/f503015ea5432249b85c51f7f4f388b5c0a136ca))
+
+
+### Bug Fixes
+
+* **auth:** render OAuth callback failures as a login-page message, not raw JSON ([#124](https://github.com/yaad-index/yaadegar/issues/124)) ([#125](https://github.com/yaad-index/yaadegar/issues/125)) ([d19f566](https://github.com/yaad-index/yaadegar/commit/d19f5666eee974b5a1774124ce83f72149739d3d))
+
 ## [0.5.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.4.0...yaadegar-v0.5.0) (2026-07-30)
 
 
