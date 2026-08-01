@@ -4,6 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { replaceState } from '$app/navigation';
 	import { page } from '$app/state';
+	import Tabs from '$lib/components/Tabs.svelte';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form: actionForm }: { data: PageData; form: ActionData } = $props();
@@ -24,27 +25,34 @@
 	// svelte-ignore state_referenced_locally
 	const { form, errors, message, enhance, submitting } = superForm(data.addForm);
 
-	// Which tab is active — read from the URL (?tab=settings) so a reload or a shared
-	// link lands on the same tab; defaults to the List (items) view (#128).
-	const activeTab = $derived(page.url.searchParams.get('tab') === 'settings' ? 'settings' : 'list');
-	// The tab links carry a real href, so a no-JS click is a full navigation that
-	// still lands on the right tab (the panel is chosen from the URL). With JS we
-	// intercept and switch via shallow routing — no reload, so in-progress form state
-	// is kept — while still updating the URL so reload/share stays stable.
-	function selectTab(event: MouseEvent, tab: 'list' | 'settings') {
-		event.preventDefault();
+	// Which tab is active. Local reactive state, bound into <Tabs>, so a click
+	// switches the panel immediately — the visible panel keys off this state and does
+	// NOT depend on the URL re-deriving (the earlier version relied on a shallow-routing
+	// URL update to re-fire a derived value, which it does not, so clicks were inert).
+	// Initialized from the URL (?tab=settings) so a reload or a shared link lands on
+	// the same tab; default is the List (items) view (#128).
+	let activeTab = $state(page.url.searchParams.get('tab') === 'settings' ? 'settings' : 'list');
+	// Mirror the active tab into the URL for deep-link / reload persistence, without a
+	// navigation (so in-progress form state survives a tab switch). <Tabs> owns the
+	// immediate visual switch; this only keeps the URL in step.
+	function mirrorTabToUrl(tab: string) {
 		const url = new URL(page.url);
 		if (tab === 'settings') url.searchParams.set('tab', 'settings');
 		else url.searchParams.delete('tab');
-		// Shallow-route to the same page with only the ?tab query toggled — resolve()
-		// can't see through the runtime query, and this never leaves the current route.
+		// resolve() can't see through the runtime query, and this never leaves the route.
 		// eslint-disable-next-line svelte/no-navigation-without-resolve
 		replaceState(url, {});
 	}
+	// Each tab carries a real href so a no-JS click is a normal navigation that still
+	// lands on the right tab (the panel is chosen from the URL on load).
 	function tabHref(tab: 'list' | 'settings') {
 		const base = resolve('/(app)/lists/[id]', { id: data.list.id ?? '' });
 		return tab === 'settings' ? `${base}?tab=settings` : base;
 	}
+	const listTabs = $derived([
+		{ id: 'list', label: 'List', href: tabHref('list') },
+		{ id: 'settings', label: 'Settings', href: tabHref('settings') }
+	]);
 
 	// The public giver link is this list's share slug on the current (tenant) origin.
 	const shareUrl = $derived(`${page.url.origin}/l/${data.list.share_slug ?? ''}`);
@@ -94,36 +102,10 @@
 <h1 class="mt-1 text-2xl font-bold">{data.list.title}</h1>
 
 <!-- Tabs: List (items — the primary view) and Settings (list-level config +
-     import/export). The active tab is deep-linkable via ?tab=settings (#128). -->
-<nav class="mt-4 flex gap-1 border-b text-sm" aria-label="List sections">
-	<!-- eslint-disable svelte/no-navigation-without-resolve -- resolved list path; the
-	     ?tab query is the no-JS fallback and JS intercepts for shallow routing. -->
-	<a
-		href={tabHref('list')}
-		onclick={(e) => selectTab(e, 'list')}
-		aria-current={activeTab === 'list' ? 'page' : undefined}
-		class={`-mb-px border-b-2 px-3 py-2 ${
-			activeTab === 'list'
-				? 'border-black font-medium'
-				: 'border-transparent text-gray-500 hover:text-gray-700'
-		}`}
-	>
-		List
-	</a>
-	<a
-		href={tabHref('settings')}
-		onclick={(e) => selectTab(e, 'settings')}
-		aria-current={activeTab === 'settings' ? 'page' : undefined}
-		class={`-mb-px border-b-2 px-3 py-2 ${
-			activeTab === 'settings'
-				? 'border-black font-medium'
-				: 'border-transparent text-gray-500 hover:text-gray-700'
-		}`}
-	>
-		Settings
-	</a>
-	<!-- eslint-enable svelte/no-navigation-without-resolve -->
-</nav>
+     import/export). The visible panel keys off `activeTab` (bound into <Tabs>), so a
+     click switches immediately; the choice is mirrored to ?tab=settings for a
+     deep-linkable / reload-stable URL (#128). -->
+<Tabs tabs={listTabs} bind:active={activeTab} onselect={mirrorTabToUrl} label="List sections" />
 
 {#if activeTab === 'settings'}
 	<!-- List settings: reserver tier (#126) + co-buy default (#100) + thank-you note
