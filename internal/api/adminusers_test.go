@@ -18,7 +18,8 @@ func adminUsersPath(tenantID string) string { return "/admin/tenants/" + tenantI
 
 func TestAdminListTenantsAndUsers(t *testing.T) {
 	h := newHarness(t)
-	adminTok := h.adminToken(h.seedAdmin())
+	admin := h.seedAdmin()
+	adminTok := h.adminToken(admin)
 
 	resp, body := h.req(http.MethodGet, "/admin/tenants", anyHost, adminTok, nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode, "body: %s", body)
@@ -36,16 +37,23 @@ func TestAdminListTenantsAndUsers(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode, "body: %s", body)
 	up := decode[gen.AdminUserPage](t, body)
 	require.GreaterOrEqual(t, up.Total, 1)
-	// The harness owner defaults to the owner role (migration default).
-	var owner *gen.AdminUser
+	// The harness owner defaults to the owner role (migration default) and holds no
+	// admin capability; the seeded admin surfaces is_admin=true (ADR-0010).
+	var owner, adminUser *gen.AdminUser
 	for i := range up.Items {
-		if up.Items[i].Id == h.owner.ID {
+		switch up.Items[i].Id {
+		case h.owner.ID:
 			owner = &up.Items[i]
+		case admin.ID:
+			adminUser = &up.Items[i]
 		}
 	}
 	require.NotNil(t, owner)
 	assert.Equal(t, gen.Owner, owner.Role)
 	assert.False(t, owner.Banned)
+	assert.False(t, owner.IsAdmin, "a plain owner is not an admin")
+	require.NotNil(t, adminUser)
+	assert.True(t, adminUser.IsAdmin, "the granted account surfaces is_admin")
 }
 
 func TestAdminCreateUser(t *testing.T) {

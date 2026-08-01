@@ -638,6 +638,8 @@ export interface components {
             name?: string;
             role: components["schemas"]["AdminUserRole"];
             banned: boolean;
+            /** @description Whether this account holds the instance-admin capability (ADR-0010). */
+            is_admin: boolean;
         };
         AdminUserPage: {
             items: components["schemas"]["AdminUser"][];

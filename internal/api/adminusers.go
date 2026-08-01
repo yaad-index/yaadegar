@@ -166,6 +166,7 @@ func toAdminUser(u storage.User) gen.AdminUser {
 		Email:    u.Email,
 		Role:     gen.AdminUserRole(u.Role),
 		Banned:   u.Banned,
+		IsAdmin:  u.IsAdmin,
 	}
 	if u.Name != "" {
 		au.Name = ptr(u.Name)

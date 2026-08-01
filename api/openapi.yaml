@@ -1071,7 +1071,7 @@ components:
 
     AdminUser:
       type: object
-      required: [id, tenant_id, email, role, banned]
+      required: [id, tenant_id, email, role, banned, is_admin]
       properties:
         id: { type: string }
         tenant_id: { type: string }
@@ -1079,6 +1079,9 @@ components:
         name: { type: string }
         role: { $ref: "#/components/schemas/AdminUserRole" }
         banned: { type: boolean }
+        is_admin:
+          type: boolean
+          description: Whether this account holds the instance-admin capability (ADR-0010).
 
     AdminUserPage:
       type: object
