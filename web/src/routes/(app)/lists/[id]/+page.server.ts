@@ -11,10 +11,15 @@ const addItemSchema = z.object({
 	url: z.string().url('Must be a valid URL').optional().or(z.literal('')),
 	note: z.string().max(4000).optional(),
 	quantity_wanted: z.coerce.number().int().min(1).default(1),
-	// Carried through from a URL preview (the ?/preview action) so a scraped image
-	// and price ride along into the create; not directly typed by the owner.
+	// image_url rides along from a URL preview (scraped, not directly typed).
 	image_url: z.string().optional(),
-	price_minor: z.coerce.number().int().optional(),
+	// price_minor is driven by the owner-editable price amount (major units → minor,
+	// #128 price editing); an empty amount submits '' which must mean "no price", so
+	// preprocess it to undefined rather than coercing to 0.
+	price_minor: z.preprocess(
+		(v) => (v === '' || v == null ? undefined : v),
+		z.coerce.number().int().nonnegative().optional()
+	),
 	price_currency: z.string().optional()
 });
 
@@ -44,6 +49,11 @@ export const actions: Actions = {
 	add: async ({ request, locals, params }) => {
 		const form = await superValidate(request, zod4(addItemSchema));
 		if (!form.valid) return fail(400, { addForm: form });
+		// Money requires a currency: if an amount is set, a 3-letter currency is too.
+		const priceCurrency = (form.data.price_currency || '').trim().toUpperCase();
+		if (form.data.price_minor != null && !priceCurrency) {
+			return message(form, 'Add a 3-letter currency for the price.', { status: 400 });
+		}
 		const client = backendClient({ host: locals.host, token: locals.token });
 		const { error: err } = await client.POST('/api/v1/lists/{listId}/items', {
 			params: { path: { listId: params.id } },
@@ -54,8 +64,8 @@ export const actions: Actions = {
 				quantity_wanted: form.data.quantity_wanted,
 				image_url: form.data.image_url || undefined,
 				price:
-					form.data.price_minor != null && form.data.price_currency
-						? { amount_minor: form.data.price_minor, currency: form.data.price_currency }
+					form.data.price_minor != null && priceCurrency
+						? { amount_minor: form.data.price_minor, currency: priceCurrency }
 						: undefined,
 				// priority isn't surfaced in the UI; send the default (the spec marks it
 				// required, though the backend defaults it too).
@@ -114,6 +124,25 @@ export const actions: Actions = {
 		const thankYouInherit = fd.get('thank_you_inherit') === 'on';
 		const thank_you_template = thankYouInherit ? null : String(fd.get('thank_you_template') ?? '');
 		if (!itemId || !name) return fail(400, { editError: 'Name is required.' });
+		// Editable price (#128 price editing): an entered amount (major units) → Money.
+		// Money requires a currency. Set-if-present, like the other edit fields.
+		const priceAmountRaw = String(fd.get('price_amount') ?? '').trim();
+		const priceCurrency = String(fd.get('price_currency') ?? '')
+			.trim()
+			.toUpperCase();
+		let price: { amount_minor: number; currency: string } | undefined;
+		if (priceAmountRaw !== '') {
+			const amount = Number(priceAmountRaw);
+			if (!Number.isFinite(amount) || amount < 0) {
+				return fail(400, { editError: 'Price must be a non-negative number.' });
+			}
+			if (!priceCurrency) {
+				return fail(400, { editError: 'Add a 3-letter currency for the price.' });
+			}
+			// 100-subunit assumption: major → minor. Technically wrong for zero-decimal
+			// currencies (JPY); price is a hint and multi-currency (#24) is lowest priority.
+			price = { amount_minor: Math.round(amount * 100), currency: priceCurrency };
+		}
 		const client = backendClient({ host: locals.host, token: locals.token });
 		// The item PATCH is set-if-present; send only the fields with values (clearing a
 		// field back to empty is not supported by the current backend semantics).
@@ -125,7 +154,8 @@ export const actions: Actions = {
 				url: url || undefined,
 				note: note || undefined,
 				allow_cobuy,
-				thank_you_template
+				thank_you_template,
+				...(price ? { price } : {})
 			}
 		});
 		if (err) return fail(400, { editError: 'Could not update the item.' });
