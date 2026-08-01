@@ -154,8 +154,9 @@ func toGenPublicItem(it storage.Item, avail storage.Availability, funded storage
 
 func toGenUser(u storage.User, t storage.Tenant) gen.User {
 	return gen.User{
-		Id:   ptr(u.ID),
-		Name: ptr(u.Name),
+		Id:      ptr(u.ID),
+		Name:    ptr(u.Name),
+		IsAdmin: ptr(u.IsAdmin),
 		Tenant: &struct {
 			Id        *string `json:"id,omitempty"`
 			Subdomain *string `json:"subdomain,omitempty"`

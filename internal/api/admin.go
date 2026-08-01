@@ -9,76 +9,8 @@ import (
 	"github.com/yaad-index/yaadegar/internal/storage"
 )
 
-// AdminLogin authenticates the instance superadmin and issues a session token
-// carrying role=superadmin and the sentinel tenant id (ADR-0005 §6). It is
-// unauthenticated and not tenant-scoped; when no superadmin is configured the
-// admin surface is disabled and this reports 404.
-func (s *Server) AdminLogin(ctx context.Context, req gen.AdminLoginRequestObject) (gen.AdminLoginResponseObject, error) {
-	if !s.adminEnabled {
-		return gen.AdminLogin404ApplicationProblemPlusJSONResponse(
-			problemDetail(404, "the admin surface is not enabled on this instance"),
-		), nil
-	}
-	if req.Body == nil || req.Body.Username == "" || req.Body.Password == "" {
-		return gen.AdminLogin400ApplicationProblemPlusJSONResponse{
-			BadRequestApplicationProblemPlusJSONResponse: badRequest("username and password are required"),
-		}, nil
-	}
-
-	// Brute-force guard, fail-closed before any credential work.
-	ipKey, idKey := s.loginKeys(ctx, "admin", req.Body.Username)
-	if !s.loginAllowed(ipKey, idKey) {
-		return gen.AdminLogin429ApplicationProblemPlusJSONResponse{
-			TooManyRequestsApplicationProblemPlusJSONResponse: tooManyRequests(),
-		}, nil
-	}
-
-	admin, err := s.store.AdminByUsername(ctx, req.Body.Username)
-	if err != nil {
-		if errors.Is(err, storage.ErrNotFound) {
-			auth.VerifyDummy(req.Body.Password) // constant-time vs. a real account (#62)
-			s.loginFailed(ipKey, idKey)
-			return adminUnauthorized(), nil
-		}
-		return nil, err
-	}
-	okPw, err := auth.VerifyPassword(req.Body.Password, admin.PasswordHash)
-	if err != nil {
-		return nil, err
-	}
-	if !okPw {
-		s.loginFailed(ipKey, idKey)
-		return adminUnauthorized(), nil
-	}
-
-	token, err := s.auth.Issuer().Issue(auth.Principal{
-		UserID:   admin.ID,
-		TenantID: auth.SuperadminTenant,
-		Role:     auth.RoleSuperadmin,
-	})
-	if err != nil {
-		return nil, err
-	}
-	s.loginSucceeded(ipKey, idKey)
-	return gen.AdminLogin200JSONResponse{
-		AccessToken: token,
-		TokenType:   gen.Bearer,
-		ExpiresIn:   int(s.auth.Issuer().AccessTTL().Seconds()),
-	}, nil
-}
-
-// AdminGetMe returns the authenticated superadmin. requireAdmin has already
-// enforced the surface being enabled and the superadmin role.
-func (s *Server) AdminGetMe(ctx context.Context, _ gen.AdminGetMeRequestObject) (gen.AdminGetMeResponseObject, error) {
-	admin, ok := adminFromContext(ctx)
-	if !ok {
-		return nil, errMissingContext
-	}
-	return gen.AdminGetMe200JSONResponse{Id: ptr(admin.ID), Username: ptr(admin.Username)}, nil
-}
-
-// AdminCreateTenant provisions a tenant over HTTP (the superadmin equivalent of
-// the create-tenant CLI). requireAdmin has already enforced the surface and role.
+// AdminCreateTenant provisions a tenant over HTTP (the admin equivalent of the
+// create-tenant CLI). requireAdmin has already enforced the instance-admin capability.
 func (s *Server) AdminCreateTenant(ctx context.Context, req gen.AdminCreateTenantRequestObject) (gen.AdminCreateTenantResponseObject, error) {
 	if req.Body == nil || req.Body.Subdomain == "" {
 		return gen.AdminCreateTenant400ApplicationProblemPlusJSONResponse{
@@ -103,7 +35,7 @@ func (s *Server) AdminCreateTenant(ctx context.Context, req gen.AdminCreateTenan
 }
 
 // AdminCreateOwner provisions a password-credentialed owner in a tenant (the
-// superadmin equivalent of create-owner). The email doubles as the login username;
+// admin equivalent of create-owner). The email doubles as the login username;
 // the password is hashed server-side and never echoed back.
 func (s *Server) AdminCreateOwner(ctx context.Context, req gen.AdminCreateOwnerRequestObject) (gen.AdminCreateOwnerResponseObject, error) {
 	if req.Body == nil || req.Body.TenantId == "" || req.Body.Email == "" || req.Body.Password == "" {
@@ -142,12 +74,4 @@ func (s *Server) AdminCreateOwner(ctx context.Context, req gen.AdminCreateOwnerR
 	return gen.AdminCreateOwner201JSONResponse{
 		Id: ptr(owner.ID), TenantId: ptr(tenant.ID), Email: ptr(owner.Email),
 	}, nil
-}
-
-// adminUnauthorized is the single 401 for a failed admin login, so it never
-// distinguishes unknown-admin from wrong-password.
-func adminUnauthorized() gen.AdminLogin401ApplicationProblemPlusJSONResponse {
-	return gen.AdminLogin401ApplicationProblemPlusJSONResponse{
-		UnauthorizedApplicationProblemPlusJSONResponse: unauthorized("invalid username or password"),
-	}
 }

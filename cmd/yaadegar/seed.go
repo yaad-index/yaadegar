@@ -13,10 +13,9 @@ import (
 	"github.com/yaad-index/yaadegar/internal/storage/sqlstore"
 )
 
-// HashPasswordCmd prints the argon2id hash of a password for the operator to paste
-// into the superadmin configuration (ADR-0005 §6). The password is read from
-// $YAADEGAR_PASSWORD or, if unset, from stdin — never a flag, so it does not land
-// in shell history or the process list.
+// HashPasswordCmd prints the argon2id hash of a password (the same hash the login
+// flow verifies against). The password is read from $YAADEGAR_PASSWORD or, if unset,
+// from stdin — never a flag, so it does not land in shell history or the process list.
 type HashPasswordCmd struct{}
 
 // Run reads the password and prints its argon2id hash.
@@ -65,9 +64,9 @@ func (f storageFlags) open(ctx context.Context) (storage.Store, error) {
 	return store, nil
 }
 
-// CreateTenantCmd seeds a tenant. Owner self-registration and superadmin bootstrap
-// are still deferred, so this (with create-owner) is how a local instance gets its
-// first tenant + login for hands-on testing.
+// CreateTenantCmd seeds a tenant. Owner self-registration is still deferred, so this
+// (with create-owner, then grant-admin for the first admin) is how a local instance
+// gets its first tenant + login for hands-on testing.
 type CreateTenantCmd struct {
 	storageFlags
 	Subdomain string `name:"subdomain" required:"" help:"Tenant subdomain (lowercase slug), addressed as <subdomain>.<base-domain>."`
@@ -138,6 +137,54 @@ func (c *CreateOwnerCmd) Run() error {
 	}
 	fmt.Printf("created owner %s (username %q) in tenant %q — log in at %s.<base-domain>\n",
 		user.ID, username, tenant.Subdomain, tenant.Subdomain)
+	return nil
+}
+
+// GrantAdminCmd grants (or --revoke) the instance-admin capability on an existing
+// owner, resolved by tenant subdomain + login handle (ADR-0010). This is the
+// headless bootstrap for the admin surface: there is no separate admin credential —
+// the granted owner reaches /admin with their ordinary owner session. A fresh
+// instance provisions its first admin with create-tenant → create-owner → grant-admin.
+type GrantAdminCmd struct {
+	storageFlags
+	Tenant   string `name:"tenant" required:"" help:"Subdomain of the tenant the owner lives in."`
+	Username string `name:"username" required:"" help:"Login handle of the owner to grant/revoke the admin capability on."`
+	Revoke   bool   `name:"revoke" help:"Revoke the admin capability instead of granting it."`
+}
+
+// Run resolves the tenant and user, then flips the is_admin capability.
+func (c *GrantAdminCmd) Run() error {
+	ctx := context.Background()
+	store, err := c.open(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = store.Close() }()
+
+	tenant, err := store.TenantBySubdomain(ctx, c.Tenant)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return fmt.Errorf("no tenant with subdomain %q — create it first with create-tenant", c.Tenant)
+		}
+		return fmt.Errorf("resolve tenant: %w", err)
+	}
+	ts := store.ForTenant(tenant)
+	user, err := ts.Users().ByUsername(ctx, c.Username)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return fmt.Errorf("no user with username %q in tenant %q", c.Username, c.Tenant)
+		}
+		return fmt.Errorf("resolve user: %w", err)
+	}
+	grant := !c.Revoke
+	if err := ts.Users().SetAdmin(ctx, user.ID, grant); err != nil {
+		return fmt.Errorf("set admin capability: %w", err)
+	}
+	state := "granted"
+	if !grant {
+		state = "revoked"
+	}
+	fmt.Printf("instance-admin capability %s for %q (%s) in tenant %q\n", state, c.Username, user.ID, tenant.Subdomain)
 	return nil
 }
 

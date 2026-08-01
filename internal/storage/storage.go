@@ -83,16 +83,6 @@ type Store interface {
 	// absent.
 	SetTenantOAuthGoogle(ctx context.Context, tenantID string, enabled bool) error
 
-	// EnsureAdmin idempotently provisions the instance-level superadmin from
-	// configuration: it inserts the admin, or updates the stored password hash when
-	// the username already exists (so rotating the configured hash takes effect).
-	// Instance-level — not tenant-scoped (ADR-0005 §6).
-	EnsureAdmin(ctx context.Context, username, passwordHash string) (Admin, error)
-	// AdminByUsername looks up the superadmin by username; ErrNotFound if absent.
-	AdminByUsername(ctx context.Context, username string) (Admin, error)
-	// AdminByID looks up the superadmin by id; ErrNotFound if absent.
-	AdminByID(ctx context.Context, id string) (Admin, error)
-
 	// ForTenant returns a data-access handle bound to exactly one tenant. Every
 	// repository reached through it filters and stamps tenant_id from t.ID; there
 	// is no unscoped repository.
@@ -152,6 +142,9 @@ type UserRepo interface {
 	SetRole(ctx context.Context, userID string, role UserRole) error
 	// SetBanned sets/clears a user's ban flag (ADR-0009). ErrNotFound if absent.
 	SetBanned(ctx context.Context, userID string, banned bool) error
+	// SetAdmin sets/clears a user's instance-admin capability (ADR-0010). The CLI
+	// grant is its bootstrap caller; ErrNotFound if the user is absent.
+	SetAdmin(ctx context.Context, userID string, isAdmin bool) error
 }
 
 // ListRepo persists lists within the bound tenant. Ownership lives in a join table

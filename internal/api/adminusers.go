@@ -10,9 +10,8 @@ import (
 )
 
 // Admin user management (ADR-0009 Cut 1). These endpoints live on the instance
-// superadmin surface (/admin/*), already gated by requireAdmin (role=superadmin,
-// no tenant-match) — the instance-admin capability is the existing superadmin, not
-// a second concept.
+// admin surface (/admin/*), already gated by requireAdmin — which authorizes the
+// instance-admin capability (an is_admin owner, ADR-0010), not a separate identity.
 
 // AdminListTenants returns a page of all tenants for the admin browse.
 func (s *Server) AdminListTenants(ctx context.Context, req gen.AdminListTenantsRequestObject) (gen.AdminListTenantsResponseObject, error) {

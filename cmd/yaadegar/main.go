@@ -50,8 +50,9 @@ type CLI struct {
 	// Seed / operator commands.
 	CreateTenant      CreateTenantCmd      `cmd:"" name:"create-tenant" help:"Create a tenant."`
 	CreateOwner       CreateOwnerCmd       `cmd:"" name:"create-owner" help:"Create an owner with a password credential in a tenant."`
+	GrantAdmin        GrantAdminCmd        `cmd:"" name:"grant-admin" help:"Grant (or --revoke) the instance-admin capability on an existing owner (ADR-0010)."`
 	EnableTenantOAuth EnableTenantOAuthCmd `cmd:"" name:"enable-tenant-oauth" help:"Turn Google login on (or --disable off) for a tenant (ADR-0008)."`
-	HashPassword      HashPasswordCmd      `cmd:"" name:"hash-password" help:"Print the argon2id hash of a password (read from $YAADEGAR_PASSWORD or stdin) for the superadmin config."`
+	HashPassword      HashPasswordCmd      `cmd:"" name:"hash-password" help:"Print the argon2id hash of a password (read from $YAADEGAR_PASSWORD or stdin)."`
 }
 
 // ServeCmd runs the HTTP server until interrupted.
@@ -101,13 +102,6 @@ type ServeCmd struct {
 	OAuthGoogleClientID     string `name:"oauth-google-client-id" env:"YAADEGAR_OAUTH_GOOGLE_CLIENT_ID" help:"Google OAuth client id for owner login (#21). Set with the client secret and redirect base to enable Google login."`
 	OAuthGoogleClientSecret string `name:"oauth-google-client-secret" env:"YAADEGAR_OAUTH_GOOGLE_CLIENT_SECRET" help:"Google OAuth client secret (provide via the environment)."`
 	OAuthRedirectBase       string `name:"oauth-redirect-base" env:"YAADEGAR_OAUTH_REDIRECT_BASE" help:"Public https base URL of the fixed OAuth redirect host (e.g. https://yaadegar.example). The single registered redirect_uri is this base + /api/v1/auth/oauth/google/callback."`
-
-	// Superadmin config (ADR-0005 §6). Both set → the /admin surface is enabled and
-	// the identity is ensured at startup; neither set → the admin surface is
-	// disabled (not an error). The password is provided as an argon2id hash from
-	// `yaadegar hash-password`, never as plaintext.
-	SuperadminUsername     string `name:"superadmin-username" env:"YAADEGAR_SUPERADMIN_USERNAME" help:"Superadmin login username. Set together with the password hash to enable the /admin surface."`
-	SuperadminPasswordHash string `name:"superadmin-password-hash" env:"YAADEGAR_SUPERADMIN_PASSWORD_HASH" help:"Superadmin argon2id password hash (from 'yaadegar hash-password'). Never a plaintext password."`
 
 	// Login brute-force rate limit (applies to both owner and admin login), per IP
 	// and per username. In-memory (single-instance); a multi-instance deployment
@@ -165,14 +159,6 @@ func (c *ServeCmd) Run(cli *CLI) error {
 		return err
 	}
 
-	// Superadmin bootstrap (ADR-0005 §6): both fields set → ensure the identity
-	// (idempotent) and enable /admin; neither set → the admin surface stays
-	// disabled; exactly one set → a misconfiguration, fail closed with a clear error.
-	adminEnabled, err := ensureSuperadmin(ctx, store, c, logger)
-	if err != nil {
-		return err
-	}
-
 	// Google OAuth owner login (ADR-0008). Built after the auth service so the JWT
 	// secret (reused to sign the state cookie + handoff ticket) is already validated.
 	// A partial client config fails closed here; none configured leaves it nil (off).
@@ -201,7 +187,6 @@ func (c *ServeCmd) Run(cli *CLI) error {
 		Logger:              logger,
 		Email:               sender,
 		Auth:                authService,
-		AdminEnabled:        adminEnabled,
 		TrustForwardedHost:  c.TrustForwardedHost,
 		LoginLimiter:        auth.NewInMemoryLimiter(c.LoginRateMaxFailures, c.LoginRateWindow, clock.Real{}),
 		DomainCNAMETarget:   c.DomainCNAMETarget,
@@ -227,25 +212,6 @@ func (c *ServeCmd) Run(cli *CLI) error {
 	go runSweeper(ctx, "cobuy-expiry", cobuySweeper, c.DecaySweepInterval, logger)
 
 	return server.New(c.HTTPAddr, handler, logger).Run(ctx)
-}
-
-// ensureSuperadmin applies the superadmin bootstrap rule and reports whether the
-// admin surface is enabled. Both fields set → EnsureAdmin (idempotent) + enabled;
-// neither → disabled; exactly one → a fail-closed configuration error.
-func ensureSuperadmin(ctx context.Context, store storage.Store, c *ServeCmd, logger *slog.Logger) (bool, error) {
-	switch {
-	case c.SuperadminUsername != "" && c.SuperadminPasswordHash != "":
-		if _, err := store.EnsureAdmin(ctx, c.SuperadminUsername, c.SuperadminPasswordHash); err != nil {
-			return false, fmt.Errorf("ensure superadmin: %w", err)
-		}
-		logger.Info("admin surface enabled", "superadmin", c.SuperadminUsername)
-		return true, nil
-	case c.SuperadminUsername != "" || c.SuperadminPasswordHash != "":
-		return false, errors.New(
-			"superadmin requires both --superadmin-username and --superadmin-password-hash (set neither to disable the admin surface)")
-	default:
-		return false, nil // no superadmin configured; admin surface disabled
-	}
 }
 
 // oauthCallbackPath is the single callback path registered as the redirect_uri;

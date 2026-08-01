@@ -3,7 +3,7 @@ import { backendClient } from '$lib/server/api';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, params }) => {
-	const client = backendClient({ host: locals.host, token: locals.adminToken });
+	const client = backendClient({ host: locals.host, token: locals.token });
 	const { data } = await client.GET('/admin/tenants/{tenantId}/users', {
 		params: { path: { tenantId: params.tenantId } }
 	});
@@ -27,7 +27,7 @@ export const actions: Actions = {
 		const email = String(fd.get('email') ?? '').trim();
 		const role = String(fd.get('role') ?? 'owner') === 'giver' ? 'giver' : 'owner';
 		if (!email) return fail(400, { actionError: 'Enter an email.' });
-		const client = backendClient({ host: locals.host, token: locals.adminToken });
+		const client = backendClient({ host: locals.host, token: locals.token });
 		const { error, response } = await client.POST('/admin/tenants/{tenantId}/users', {
 			params: { path: { tenantId: params.tenantId } },
 			body: { email, role }
@@ -52,7 +52,7 @@ export const actions: Actions = {
 		const body: { role?: 'owner' | 'giver'; banned?: boolean } = {};
 		if (fd.has('role')) body.role = String(fd.get('role')) === 'giver' ? 'giver' : 'owner';
 		if (fd.has('banned')) body.banned = String(fd.get('banned')) === 'true';
-		const client = backendClient({ host: locals.host, token: locals.adminToken });
+		const client = backendClient({ host: locals.host, token: locals.token });
 		const { error, response } = await client.PATCH('/admin/tenants/{tenantId}/users/{userId}', {
 			params: { path: { tenantId: params.tenantId, userId } },
 			body

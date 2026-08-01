@@ -61,43 +61,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/admin/auth/login": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Log in as the instance superadmin
-         * @description Exchanges the superadmin username+password for a session token on the instance-level admin surface. Unauthenticated; not tenant-scoped. Returns 404 when no superadmin is configured (the admin surface is disabled).
-         */
-        post: operations["adminLogin"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/admin/me": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** The current superadmin */
-        get: operations["adminGetMe"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/admin/tenants": {
         parameters: {
             query?: never;
@@ -105,10 +68,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List all tenants (superadmin) */
+        /** List all tenants (admin) */
         get: operations["adminListTenants"];
         put?: never;
-        /** Create a tenant (superadmin) */
+        /** Create a tenant (admin) */
         post: operations["adminCreateTenant"];
         delete?: never;
         options?: never;
@@ -125,7 +88,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create an owner with a password credential in a tenant (superadmin) */
+        /** Create an owner with a password credential in a tenant (admin) */
         post: operations["adminCreateOwner"];
         delete?: never;
         options?: never;
@@ -142,11 +105,11 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** List a tenant's users (superadmin) */
+        /** List a tenant's users (admin) */
         get: operations["adminListUsers"];
         put?: never;
         /**
-         * Create a user by email in a tenant (superadmin)
+         * Create a user by email in a tenant (admin)
          * @description Provisions an owner or giver account for an email with no password; the user later sets credentials via an enabled login method (ADR-0009 Cut 1).
          */
         post: operations["adminCreateUser"];
@@ -173,7 +136,7 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * Change a user's role or ban state (superadmin)
+         * Change a user's role or ban state (admin)
          * @description Updates a user's role (owner ↔ giver) and/or ban flag (ADR-0009 Cut 1). Demotion to giver is REJECTED with 409 while the account still owns lists — owner access flows through list ownership, so the admin must reassign or delete those lists first; the error names the blocking count.
          */
         patch: operations["adminUpdateUser"];
@@ -627,15 +590,13 @@ export interface components {
         User: {
             id?: string;
             name?: string;
+            /** @description Whether this account holds the instance-admin capability (ADR-0010). The frontend uses it to reveal the admin surface; every /admin call is still authorized server-side. */
+            is_admin?: boolean;
             tenant?: {
                 id?: string;
                 /** @example alice */
                 subdomain?: string;
             };
-        };
-        AdminIdentity: {
-            id?: string;
-            username?: string;
         };
         Tenant: {
             id?: string;
@@ -1108,73 +1069,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LoginMethods"];
-                };
-            };
-        };
-    };
-    adminLogin: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LoginRequest"];
-            };
-        };
-        responses: {
-            /** @description Authentication succeeded; a superadmin session token. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LoginResponse"];
-                };
-            };
-            400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthorized"];
-            /** @description The admin surface is not enabled on this instance. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            429: components["responses"]["TooManyRequests"];
-        };
-    };
-    adminGetMe: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The authenticated superadmin. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AdminIdentity"];
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-            /** @description The admin surface is not enabled on this instance. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
