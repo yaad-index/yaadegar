@@ -51,24 +51,19 @@ type harness struct {
 	authSvc  *auth.Service
 }
 
-func newHarness(t *testing.T) *harness { return newHarnessOpt(t, false) }
+func newHarness(t *testing.T) *harness { return newHarnessBuild(t, nil, false) }
 
-// newHarnessOpt builds the test harness, optionally enabling the /admin surface.
-func newHarnessOpt(t *testing.T, adminEnabled bool) *harness {
-	return newHarnessLimited(t, adminEnabled, nil)
-}
-
-// newHarnessLimited additionally injects a login rate limiter (nil → no limiting).
-func newHarnessLimited(t *testing.T, adminEnabled bool, limiter auth.Limiter) *harness {
-	return newHarnessBuild(t, adminEnabled, limiter, false)
+// newHarnessLimited injects a login rate limiter (nil → no limiting).
+func newHarnessLimited(t *testing.T, limiter auth.Limiter) *harness {
+	return newHarnessBuild(t, limiter, false)
 }
 
 // newHarnessTrusted builds a harness with X-Forwarded-Host trust enabled.
 func newHarnessTrusted(t *testing.T) *harness {
-	return newHarnessBuild(t, false, nil, true)
+	return newHarnessBuild(t, nil, true)
 }
 
-func newHarnessBuild(t *testing.T, adminEnabled bool, limiter auth.Limiter, trustForwardedHost bool) *harness {
+func newHarnessBuild(t *testing.T, limiter auth.Limiter, trustForwardedHost bool) *harness {
 	t.Helper()
 	ctx := context.Background()
 	dsn := "file:" + filepath.Join(t.TempDir(), "api.db")
@@ -96,7 +91,6 @@ func newHarnessBuild(t *testing.T, adminEnabled bool, limiter auth.Limiter, trus
 		Previewer:          preview.New(pf),
 		Resolver:           fr,
 		Auth:               authSvc,
-		AdminEnabled:       adminEnabled,
 		TrustForwardedHost: trustForwardedHost,
 		LoginLimiter:       limiter,
 		DomainCNAMETarget:  "cname.yaadegar.test",
@@ -157,13 +151,11 @@ func (h *harness) tokenFor(userID, tenantID string) string {
 	return tok
 }
 
-// adminTokenFor mints a superadmin JWT (role=superadmin, sentinel tid).
-func (h *harness) adminTokenFor(adminID string) string {
-	tok, err := h.authSvc.Issuer().Issue(auth.Principal{
-		UserID: adminID, TenantID: auth.SuperadminTenant, Role: auth.RoleSuperadmin,
-	})
-	require.NoError(h.t, err)
-	return tok
+// adminToken mints an ordinary owner session token for an is_admin owner (ADR-0010):
+// admin is a capability on an owner account, so the admin surface is reached with a
+// normal owner token whose home tenant carries the flag.
+func (h *harness) adminToken(u storage.User) string {
+	return h.tokenFor(u.ID, u.TenantID)
 }
 
 // --- a tiny ResponseWriter recorder (avoids httptest server networking) ---

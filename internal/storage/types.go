@@ -119,18 +119,14 @@ type User struct {
 	Role UserRole
 	// Banned marks an instance-admin ban: a banned account cannot log in or hold a
 	// session (enforced at issue and at the owner middleware's per-request load).
-	Banned    bool
+	Banned bool
+	// IsAdmin is the instance-admin capability (ADR-0010): an owner account that
+	// also carries this flag reaches the non-tenant-scoped /admin surface. It is
+	// orthogonal to Role — the capability, not a separate identity, is what makes an
+	// account an admin. requireAdmin reads it per-request from the token's home
+	// tenant, so revoking it takes effect immediately.
+	IsAdmin   bool
 	CreatedAt time.Time
-}
-
-// Admin is the instance-level superadmin (ADR-0005 §6): not tied to any tenant,
-// authenticated on the separate /admin surface. PasswordHash is an argon2id hash;
-// the plaintext is never stored.
-type Admin struct {
-	ID           string
-	Username     string
-	PasswordHash string
-	CreatedAt    time.Time
 }
 
 // List is an owner's wishlist. ShareSlug is the opaque, unguessable handle used

@@ -22,10 +22,10 @@ func (r userRepo) Create(ctx context.Context, u storage.User) (storage.User, err
 	}
 	u.TenantID = r.tenantID
 	_, err := r.db.ExecContext(ctx, r.rb(
-		`INSERT INTO users (id, tenant_id, name, email, username, password_hash, role, banned, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+		`INSERT INTO users (id, tenant_id, name, email, username, password_hash, role, banned, is_admin, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		u.ID, u.TenantID, u.Name, u.Email, usernameArg(u.Username), u.PasswordHash,
-		string(u.Role), boolToInt(u.Banned), fmtTime(u.CreatedAt))
+		string(u.Role), boolToInt(u.Banned), boolToInt(u.IsAdmin), fmtTime(u.CreatedAt))
 	if err != nil {
 		if r.d.isUniqueViolation(err) {
 			return storage.User{}, storage.ErrConflict // e.g. a duplicate username in the tenant
@@ -37,13 +37,13 @@ func (r userRepo) Create(ctx context.Context, u storage.User) (storage.User, err
 
 func (r userRepo) Get(ctx context.Context, id string) (storage.User, error) {
 	return r.scanUser(r.db.QueryRowContext(ctx, r.rb(
-		`SELECT id, tenant_id, name, email, username, password_hash, role, banned, created_at
+		`SELECT id, tenant_id, name, email, username, password_hash, role, banned, is_admin, created_at
 		   FROM users WHERE tenant_id = ? AND id = ?`), r.tenantID, id))
 }
 
 func (r userRepo) ByUsername(ctx context.Context, username string) (storage.User, error) {
 	return r.scanUser(r.db.QueryRowContext(ctx, r.rb(
-		`SELECT id, tenant_id, name, email, username, password_hash, role, banned, created_at
+		`SELECT id, tenant_id, name, email, username, password_hash, role, banned, is_admin, created_at
 		   FROM users WHERE tenant_id = ? AND username = ?`), r.tenantID, username))
 }
 
@@ -56,7 +56,7 @@ func (r userRepo) ByEmail(ctx context.Context, email string) (storage.User, erro
 		return storage.User{}, storage.ErrNotFound
 	}
 	return r.scanUser(r.db.QueryRowContext(ctx, r.rb(
-		`SELECT id, tenant_id, name, email, username, password_hash, role, banned, created_at
+		`SELECT id, tenant_id, name, email, username, password_hash, role, banned, is_admin, created_at
 		   FROM users WHERE tenant_id = ? AND email = ?
 		  ORDER BY created_at, id LIMIT 1`), r.tenantID, email))
 }
@@ -79,10 +79,11 @@ func scanUserRow(row rowScanner) (storage.User, error) {
 		username  sql.NullString
 		role      string
 		banned    int
+		isAdmin   int
 		createdAt string
 	)
 	if err := row.Scan(&u.ID, &u.TenantID, &u.Name, &u.Email, &username, &u.PasswordHash,
-		&role, &banned, &createdAt); err != nil {
+		&role, &banned, &isAdmin, &createdAt); err != nil {
 		return storage.User{}, err
 	}
 	if username.Valid {
@@ -90,6 +91,7 @@ func scanUserRow(row rowScanner) (storage.User, error) {
 	}
 	u.Role = storage.UserRole(role)
 	u.Banned = banned != 0
+	u.IsAdmin = isAdmin != 0
 	ts, err := parseTime(createdAt)
 	if err != nil {
 		return storage.User{}, err
@@ -106,7 +108,7 @@ func (r userRepo) List(ctx context.Context, p storage.Page) ([]storage.User, int
 		return nil, 0, err
 	}
 	rows, err := r.db.QueryContext(ctx, r.rb(
-		`SELECT id, tenant_id, name, email, username, password_hash, role, banned, created_at
+		`SELECT id, tenant_id, name, email, username, password_hash, role, banned, is_admin, created_at
 		   FROM users WHERE tenant_id = ?
 		  ORDER BY created_at, id LIMIT ? OFFSET ?`), r.tenantID, p.Limit, p.Offset)
 	if err != nil {
@@ -138,6 +140,16 @@ func (r userRepo) SetRole(ctx context.Context, userID string, role storage.UserR
 func (r userRepo) SetBanned(ctx context.Context, userID string, banned bool) error {
 	res, err := r.db.ExecContext(ctx, r.rb(
 		`UPDATE users SET banned = ? WHERE tenant_id = ? AND id = ?`), boolToInt(banned), r.tenantID, userID)
+	if err != nil {
+		return err
+	}
+	return expectOne(res)
+}
+
+// SetAdmin sets or clears a user's instance-admin capability (ADR-0010).
+func (r userRepo) SetAdmin(ctx context.Context, userID string, isAdmin bool) error {
+	res, err := r.db.ExecContext(ctx, r.rb(
+		`UPDATE users SET is_admin = ? WHERE tenant_id = ? AND id = ?`), boolToInt(isAdmin), r.tenantID, userID)
 	if err != nil {
 		return err
 	}

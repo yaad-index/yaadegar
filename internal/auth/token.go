@@ -15,23 +15,10 @@ import (
 type Role string
 
 const (
-	// RoleOwner is a tenant-bound list owner — the only role issued in Cut A1.
+	// RoleOwner is a tenant-bound list owner. Every issued session token carries it;
+	// the instance-admin capability is a per-user flag (ADR-0010), not a token role.
 	RoleOwner Role = "owner"
-	// RoleSuperadmin is the instance-level administrator. The value exists in A1 so
-	// the claims model is stable, but no superadmin is bootstrapped and the
-	// admin-surface carve-out from the tenant-match invariant lands with A2 — so in
-	// A1 every issued token is an owner token (ADR-0005 §5/§6).
-	RoleSuperadmin Role = "superadmin"
 )
-
-// SuperadminTenant is the sentinel tenant id a superadmin token carries. The
-// instance-level superadmin is not tenant-scoped (ADR-0005 §6), but Claims require
-// a non-empty tid, so this deliberately-synthetic value stands in. It is NOT a UUID
-// — and tenant ids always are (storage mints them with uuid) — so it can never
-// equal a real tenant id. That guarantee is load-bearing: the owner surface's
-// tenant-match check therefore always rejects a superadmin token, independently of
-// the role check. If tenant ids ever stop being UUIDs, revisit this value.
-const SuperadminTenant = "__superadmin__"
 
 // signingMethod is the one algorithm this service signs and accepts. Pinning it
 // (rather than trusting a token's own `alg` header) is the defense against the

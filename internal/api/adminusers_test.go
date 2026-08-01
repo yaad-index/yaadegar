@@ -17,8 +17,8 @@ import (
 func adminUsersPath(tenantID string) string { return "/admin/tenants/" + tenantID + "/users" }
 
 func TestAdminListTenantsAndUsers(t *testing.T) {
-	h := newHarnessOpt(t, true)
-	adminTok := h.adminTokenFor(h.seedAdmin("root", "sup3r-secret"))
+	h := newHarness(t)
+	adminTok := h.adminToken(h.seedAdmin())
 
 	resp, body := h.req(http.MethodGet, "/admin/tenants", anyHost, adminTok, nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode, "body: %s", body)
@@ -49,8 +49,8 @@ func TestAdminListTenantsAndUsers(t *testing.T) {
 }
 
 func TestAdminCreateUser(t *testing.T) {
-	h := newHarnessOpt(t, true)
-	adminTok := h.adminTokenFor(h.seedAdmin("root", "sup3r-secret"))
+	h := newHarness(t)
+	adminTok := h.adminToken(h.seedAdmin())
 
 	// Create a giver by email (no password).
 	resp, body := h.req(http.MethodPost, adminUsersPath(h.tenant.ID), anyHost, adminTok,
@@ -76,8 +76,8 @@ func TestAdminCreateUser(t *testing.T) {
 }
 
 func TestAdminUpdateUser_RoleAndBan(t *testing.T) {
-	h := newHarnessOpt(t, true)
-	adminTok := h.adminTokenFor(h.seedAdmin("root", "sup3r-secret"))
+	h := newHarness(t)
+	adminTok := h.adminToken(h.seedAdmin())
 	ctx := context.Background()
 
 	giver, err := h.store.ForTenant(h.tenant).Users().Create(ctx, storage.User{
@@ -107,8 +107,8 @@ func TestAdminUpdateUser_RoleAndBan(t *testing.T) {
 // Demotion of an owner who still owns lists is rejected with 409 and an actionable
 // message naming the count (the change-role precondition, ADR-0009 Cut 1).
 func TestAdminUpdateUser_DemotionBlockedByOwnedLists(t *testing.T) {
-	h := newHarnessOpt(t, true)
-	adminTok := h.adminTokenFor(h.seedAdmin("root", "sup3r-secret"))
+	h := newHarness(t)
+	adminTok := h.adminToken(h.seedAdmin())
 	ctx := context.Background()
 
 	_, err := h.store.ForTenant(h.tenant).Lists().Create(ctx, storage.List{Title: "Birthday"}, h.owner.ID)
@@ -128,7 +128,7 @@ func TestAdminUpdateUser_DemotionBlockedByOwnedLists(t *testing.T) {
 // A banned account is rejected both at the owner middleware (an existing token) and
 // at password login (issue time) — ADR-0009 ban enforcement.
 func TestBanEnforcement(t *testing.T) {
-	h := newHarnessOpt(t, true)
+	h := newHarness(t)
 	ctx := context.Background()
 
 	// An existing owner token stops working once the account is banned (middleware).

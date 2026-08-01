@@ -16,8 +16,8 @@ import (
 // unknown host is a 404 — the request names no tenant we serve.
 func (s *Server) resolveTenant(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// /healthz is host-agnostic ops; /admin is the instance-level superadmin
-		// surface and is deliberately NOT tenant-scoped (ADR-0005 §6). The OAuth
+		// /healthz is host-agnostic ops; /admin is the instance-level admin surface
+		// and is deliberately NOT tenant-scoped (ADR-0010). The OAuth
 		// endpoints (ADR-0008) are host-agnostic too: start/callback run on the fixed
 		// redirect host (no tenant) and carry their tenant in the signed state, then
 		// the ticket — so they resolve the tenant themselves, not from the Host.
@@ -94,9 +94,9 @@ func (s *Server) tenantForHost(ctx context.Context, host string) (storage.Tenant
 // Two load-bearing checks: the token is validated with the algorithm pinned to
 // HS256 (auth.Issuer rejects alg:none / any mismatch), and the token's tenant
 // claim must equal the Host-resolved tenant — a token minted for one tenant is
-// rejected on another tenant's host (no cross-tenant replay). In Cut A1 every
-// issued token is an owner token; the superadmin admin-surface carve-out lands
-// with A2.
+// rejected on another tenant's host (no cross-tenant replay). Every issued token is
+// an owner token; the instance-admin capability is a per-user flag checked only on
+// the /admin surface (ADR-0010), so it grants nothing here.
 func (s *Server) requireOwner(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/api/v1/") || strings.HasPrefix(r.URL.Path, "/api/v1/auth/") {
@@ -118,11 +118,10 @@ func (s *Server) requireOwner(next http.Handler) http.Handler {
 			writeProblem(w, http.StatusUnauthorized, "invalid or expired token")
 			return
 		}
-		// Two independent checks guard the owner/admin boundary (ADR-0005 §6). (1)
-		// Positive role assertion: only an owner token is accepted here, so a
-		// superadmin token is rejected on its role alone. (2) Tenant-match invariant
-		// (below): the token's tenant must equal the Host-resolved tenant, which the
-		// superadmin sentinel tid also fails. Either check alone closes the boundary.
+		// Positive role assertion: only an owner token is accepted here. Combined with
+		// the tenant-match invariant below (the token's tenant must equal the
+		// Host-resolved tenant), a token minted for one tenant cannot reach another's
+		// owner surface (ADR-0005 §5).
 		if principal.Role != auth.RoleOwner {
 			writeProblem(w, http.StatusUnauthorized, "owner authentication required")
 			return
@@ -148,22 +147,19 @@ func (s *Server) requireOwner(next http.Handler) http.Handler {
 	})
 }
 
-// requireAdmin enforces superadmin authentication on the instance-level admin
-// surface (/admin/*), except the unauthenticated login endpoint. It authorizes by
-// ROLE (superadmin) and never applies the tenant-match invariant — the superadmin
-// is not tenant-scoped (ADR-0005 §6). This is the mirror of requireOwner's role
-// check: an owner token is rejected here by role, and a superadmin token is
-// rejected on the owner surface by role, so the boundary holds in both directions
-// independently of the sentinel tid. When no superadmin is configured the surface
-// reports 404 rather than failing the process.
+// requireAdmin enforces the instance-admin capability on the /admin/* surface
+// (ADR-0010). Admin is a per-user flag, not a separate identity: the caller holds an
+// ordinary owner session (the /admin surface is not tenant-scoped, so the token
+// carries its own home tenant). The middleware validates that owner token, loads the
+// user from its home tenant, and requires `is_admin` — and, like the owner surface,
+// rejects a banned account. The load is per-request, so revoking admin (or banning)
+// takes effect immediately. An owner without the capability is a 403; an unauth or
+// bad token is a 401. The surface needs no separate "enabled" gate: an instance with
+// no admin simply has a surface nobody can pass.
 func (s *Server) requireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/admin/") || r.URL.Path == "/admin/auth/login" {
-			next.ServeHTTP(w, r) // non-admin paths and the unauth login pass through
-			return
-		}
-		if !s.adminEnabled {
-			writeProblem(w, http.StatusNotFound, "the admin surface is not enabled on this instance")
+		if !strings.HasPrefix(r.URL.Path, "/admin/") {
+			next.ServeHTTP(w, r) // non-admin paths pass through
 			return
 		}
 		token := bearerToken(r)
@@ -176,16 +172,27 @@ func (s *Server) requireAdmin(next http.Handler) http.Handler {
 			writeProblem(w, http.StatusUnauthorized, "invalid or expired token")
 			return
 		}
-		if principal.Role != auth.RoleSuperadmin {
-			writeProblem(w, http.StatusForbidden, "superadmin role required")
-			return
-		}
-		admin, err := s.store.AdminByID(r.Context(), principal.UserID)
+		// Load the user from the token's home tenant. /admin is not Host-scoped, so the
+		// tenant comes from the token, not the request Host.
+		tenant, err := s.store.TenantByID(r.Context(), principal.TenantID)
 		if err != nil {
 			writeProblem(w, http.StatusUnauthorized, "invalid credentials")
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(withAdmin(r.Context(), admin)))
+		user, err := s.store.ForTenant(tenant).Users().Get(r.Context(), principal.UserID)
+		if err != nil {
+			writeProblem(w, http.StatusUnauthorized, "invalid credentials")
+			return
+		}
+		if user.Banned {
+			writeProblem(w, http.StatusUnauthorized, "this account is suspended")
+			return
+		}
+		if !user.IsAdmin {
+			writeProblem(w, http.StatusForbidden, "instance-admin capability required")
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(withOwner(r.Context(), user)))
 	})
 }
 

@@ -9,91 +9,93 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/yaad-index/yaadegar/internal/api/gen"
-	"github.com/yaad-index/yaadegar/internal/auth"
+	"github.com/yaad-index/yaadegar/internal/storage"
 )
 
-// seedAdmin creates the instance superadmin with an argon2id-hashed password —
-// the same hash → login round-trip the operator gets via `hash-password`.
-func (h *harness) seedAdmin(username, password string) string {
+// seedAdmin creates an owner carrying the instance-admin capability in the harness
+// tenant and returns it (ADR-0010). Admin is a flag on an ordinary owner, not a
+// separate identity — so the returned account reaches /admin with an owner session.
+func (h *harness) seedAdmin() storage.User {
 	h.t.Helper()
-	hash, err := auth.HashPassword(password)
+	u, err := h.store.ForTenant(h.tenant).Users().Create(context.Background(), storage.User{
+		Name: "Root", IsAdmin: true,
+	})
 	require.NoError(h.t, err)
-	admin, err := h.store.EnsureAdmin(context.Background(), username, hash)
-	require.NoError(h.t, err)
-	return admin.ID
+	return u
 }
 
 // anyHost is a host with no configured tenant — the admin surface is not
 // tenant-scoped, so /admin works regardless of Host.
 const anyHost = "admin.example.test"
 
-// TestAdminSurfaceDisabledByDefault: with no superadmin configured, the whole
-// /admin surface reports 404.
-func TestAdminSurfaceDisabledByDefault(t *testing.T) {
-	h := newHarness(t) // adminEnabled = false
+// TestAdminSurfaceRequiresCapability: the /admin surface is always mounted, but an
+// unauthenticated caller is 401 and a non-admin owner is 403.
+func TestAdminSurfaceRequiresCapability(t *testing.T) {
+	h := newHarness(t)
 
-	resp, _ := h.req(http.MethodPost, "/admin/auth/login", anyHost, "",
-		map[string]any{"username": "root", "password": "x"})
-	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
-
-	resp, _ = h.req(http.MethodGet, "/admin/me", anyHost, "", nil)
-	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
-}
-
-// TestAdminLoginAndMe: with the surface enabled, the superadmin logs in and the
-// token authenticates /admin/me — the hash-password → login round-trip.
-func TestAdminLoginAndMe(t *testing.T) {
-	h := newHarnessOpt(t, true)
-	h.seedAdmin("root", "sup3r-secret")
-
-	resp, body := h.req(http.MethodPost, "/admin/auth/login", anyHost, "",
-		map[string]any{"username": "root", "password": "sup3r-secret"})
-	require.Equal(t, http.StatusOK, resp.StatusCode, "body: %s", body)
-	lr := decode[gen.LoginResponse](t, body)
-	require.NotEmpty(t, lr.AccessToken)
-
-	resp, body = h.req(http.MethodGet, "/admin/me", anyHost, lr.AccessToken, nil)
-	require.Equal(t, http.StatusOK, resp.StatusCode, "body: %s", body)
-	me := decode[gen.AdminIdentity](t, body)
-	assert.Equal(t, "root", *me.Username)
-
-	// Wrong password → 401.
-	resp, _ = h.req(http.MethodPost, "/admin/auth/login", anyHost, "",
-		map[string]any{"username": "root", "password": "wrong"})
+	// Unauthenticated → 401.
+	resp, _ := h.req(http.MethodGet, "/admin/tenants", anyHost, "", nil)
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 
-	// No token on a protected admin endpoint → 401.
-	resp, _ = h.req(http.MethodGet, "/admin/me", anyHost, "", nil)
-	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	// A plain owner (no capability) → 403.
+	resp, _ = h.req(http.MethodGet, "/admin/tenants", anyHost, h.ownerToken(), nil)
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode, "a non-admin owner must not reach /admin")
 }
 
-// TestAdminOwnerBoundary is the crux security test: the owner/admin boundary holds
-// in BOTH directions, each by an independent check.
-func TestAdminOwnerBoundary(t *testing.T) {
-	h := newHarnessOpt(t, true)
-	adminID := h.seedAdmin("root", "sup3r-secret")
-	adminTok := h.adminTokenFor(adminID)
+// TestAdminCapabilityGrantsSurface: an is_admin owner reaches /admin with its
+// ordinary owner session, and that same session is only a normal owner on /api/v1.
+func TestAdminCapabilityGrantsSurface(t *testing.T) {
+	h := newHarness(t)
+	adminTok := h.adminToken(h.seedAdmin())
 
-	// (1) An owner token is rejected on /admin by the role check (403).
-	resp, _ := h.req(http.MethodGet, "/admin/me", anyHost, h.ownerToken(), nil)
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode, "owner token must not reach /admin")
+	// The capability opens the admin surface.
+	resp, body := h.req(http.MethodGet, "/admin/tenants", anyHost, adminTok, nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode, "body: %s", body)
 
-	// (2) A superadmin token is rejected on the owner surface — the role=owner
-	// assertion AND the sentinel-tid tenant-match both fail.
+	// The same token is just an owner on /api/v1 for its home tenant (the capability
+	// grants nothing here) — a normal owner call succeeds.
 	resp, _ = h.req(http.MethodGet, "/api/v1/me", h.ownerHost(), adminTok, nil)
-	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode, "superadmin token must not satisfy owner auth")
-
-	// The superadmin token still works on its own surface (sanity).
-	resp, _ = h.req(http.MethodGet, "/admin/me", anyHost, adminTok, nil)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// And the tenant-match invariant is unchanged: the admin's token does not satisfy
+	// another tenant's owner surface.
+	resp, _ = h.req(http.MethodGet, "/api/v1/me", "neworg."+baseDomain, adminTok, nil)
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode, "unknown tenant host is 404 before auth")
 }
 
-// TestAdminProvisioning: the superadmin creates a tenant and an owner over HTTP,
-// and the created owner logs in end-to-end on the new tenant's host. Also the
-// error matrix (409 duplicates, 404 unknown tenant, 403 owner token, 401 unauth).
+// TestAdminRevocationTakesEffectImmediately: clearing the capability locks the
+// account out of /admin on the very next request (per-request flag load).
+func TestAdminRevocationTakesEffectImmediately(t *testing.T) {
+	h := newHarness(t)
+	admin := h.seedAdmin()
+	tok := h.adminToken(admin)
+
+	resp, _ := h.req(http.MethodGet, "/admin/tenants", anyHost, tok, nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	require.NoError(t, h.store.ForTenant(h.tenant).Users().SetAdmin(context.Background(), admin.ID, false))
+
+	resp, _ = h.req(http.MethodGet, "/admin/tenants", anyHost, tok, nil)
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode, "revoked capability locks out immediately")
+}
+
+// TestAdminBannedRejected: a banned admin is rejected on the admin surface too.
+func TestAdminBannedRejected(t *testing.T) {
+	h := newHarness(t)
+	admin := h.seedAdmin()
+	tok := h.adminToken(admin)
+	require.NoError(t, h.store.ForTenant(h.tenant).Users().SetBanned(context.Background(), admin.ID, true))
+
+	resp, _ := h.req(http.MethodGet, "/admin/tenants", anyHost, tok, nil)
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode, "a banned admin is rejected")
+}
+
+// TestAdminProvisioning: an admin creates a tenant and an owner over HTTP, and the
+// created owner logs in end-to-end on the new tenant's host. Also the error matrix
+// (409 duplicates, 404 unknown tenant, 403 non-admin owner, 401 unauth).
 func TestAdminProvisioning(t *testing.T) {
-	h := newHarnessOpt(t, true)
-	adminTok := h.adminTokenFor(h.seedAdmin("root", "sup3r-secret"))
+	h := newHarness(t)
+	adminTok := h.adminToken(h.seedAdmin())
 
 	// Create a tenant.
 	resp, body := h.req(http.MethodPost, "/admin/tenants", anyHost, adminTok,
@@ -134,18 +136,8 @@ func TestAdminProvisioning(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode, "unknown tenant")
 
 	resp, _ = h.req(http.MethodPost, "/admin/tenants", anyHost, h.ownerToken(), map[string]any{"subdomain": "x"})
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode, "owner token rejected from admin provisioning")
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode, "non-admin owner rejected from admin provisioning")
 
 	resp, _ = h.req(http.MethodPost, "/admin/tenants", anyHost, "", map[string]any{"subdomain": "x"})
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode, "unauth rejected")
-}
-
-// TestAdminProvisioningDisabled: with the surface off, provisioning is 404.
-func TestAdminProvisioningDisabled(t *testing.T) {
-	h := newHarness(t) // adminEnabled = false
-	resp, _ := h.req(http.MethodPost, "/admin/tenants", anyHost, "", map[string]any{"subdomain": "x"})
-	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
-	resp, _ = h.req(http.MethodPost, "/admin/owners", anyHost, "",
-		map[string]any{"tenant_id": "t", "email": "e@x.test", "password": "p"})
-	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }

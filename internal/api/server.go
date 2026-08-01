@@ -26,7 +26,6 @@ type Server struct {
 	previewer          *preview.Previewer
 	resolver           Resolver
 	auth               *auth.Service
-	adminEnabled       bool
 	trustForwardedHost bool
 	loginLimiter       auth.Limiter
 	domainCNAMETarget  string
@@ -75,11 +74,6 @@ type Options struct {
 	// if nil, since the owner surface must never fall open (the fail-closed
 	// construction lives in NewService, called at startup).
 	Auth *auth.Service
-	// AdminEnabled turns on the instance-level superadmin surface (/admin). When
-	// false (no superadmin configured), the admin endpoints report 404 — the
-	// surface is simply absent, not a hard failure (ADR-0005 §6). Startup ensures
-	// the configured admin identity exists before setting this.
-	AdminEnabled bool
 	// LoginLimiter throttles brute-force login attempts (owner + admin). Defaults
 	// to a no-op limiter (no limiting) when nil.
 	LoginLimiter auth.Limiter
@@ -130,7 +124,6 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 		previewer:           opts.Previewer,
 		resolver:            opts.Resolver,
 		auth:                opts.Auth,
-		adminEnabled:        opts.AdminEnabled,
 		trustForwardedHost:  opts.TrustForwardedHost,
 		loginLimiter:        opts.LoginLimiter,
 		domainCNAMETarget:   opts.DomainCNAMETarget,
@@ -197,8 +190,8 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 	mux.HandleFunc("GET "+oauthCompletePath, s.handleOAuthComplete)
 
 	// Middleware order (outermost first): resolve tenant (skips /admin + /healthz),
-	// enforce owner auth on /api/v1, enforce superadmin auth on /admin, then lift
-	// any capability token into context for the giver handlers.
+	// enforce owner auth on /api/v1, enforce the instance-admin capability on /admin
+	// (ADR-0010), then lift any capability token into context for the giver handlers.
 	var h http.Handler = mux
 	h = captureCapabilityToken(h)
 	h = s.requireAdmin(h)

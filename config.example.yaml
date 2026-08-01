@@ -10,9 +10,9 @@
 # loses to a flag. Each key's matching env var and flag are noted inline.
 #
 # SECRETS ARE NOT SET HERE. The JWT signing secret, the SMTP password, and the
-# superadmin password hash are read from the environment only — never put a real
-# value in this file (it is meant to be committed/shared as a template). They are
-# listed at the bottom for reference, without values.
+# OAuth client secret are read from the environment only — never put a real value in
+# this file (it is meant to be committed/shared as a template). They are listed at
+# the bottom for reference, without values.
 
 # --- Server ---------------------------------------------------------------------
 
@@ -108,10 +108,14 @@
 # (env YAADEGAR_AUTH_ACCESS_TTL, flag --auth-access-ttl)
 # auth-access-ttl: "12h"
 
-# Superadmin login username. Set it together with the password hash (a secret, see
-# the bottom) to enable the instance /admin surface; leave both unset to disable it.
-# (env YAADEGAR_SUPERADMIN_USERNAME, flag --superadmin-username)
-# superadmin-username: ""
+# --- Instance admin (ADR-0010) --------------------------------------------------
+#
+# Admin is a capability on an existing owner account, not a separate login: there is
+# no admin username or password to configure here. Grant it to an owner with the CLI
+#   yaadegar grant-admin --tenant <subdomain> --username <handle>
+# (and --revoke to remove it). That owner then reaches /admin with their ordinary
+# owner session. An instance with no admin simply has an /admin surface nobody can
+# open.
 
 # --- Google OAuth owner login (ADR-0008, #21) -----------------------------------
 #
@@ -168,8 +172,5 @@
 #                                     Required — the instance refuses to start if
 #                                     missing or too short.
 #   YAADEGAR_SMTP_PASSWORD            SMTP auth password (use an app password).
-#   YAADEGAR_SUPERADMIN_PASSWORD_HASH Superadmin argon2id hash from
-#                                     `yaadegar hash-password` (never a plaintext
-#                                     password). Pairs with superadmin-username.
 #   YAADEGAR_OAUTH_GOOGLE_CLIENT_SECRET  Google OAuth client secret (ADR-0008).
 #                                     Pairs with oauth-google-client-id.
