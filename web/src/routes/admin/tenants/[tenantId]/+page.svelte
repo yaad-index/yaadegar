@@ -45,7 +45,18 @@
 		<li class="rounded border p-3">
 			<div class="flex items-center justify-between">
 				<div>
-					<span class="font-medium">{user.email}</span>
+					<!-- Name is shown when present; email is the stable identifier and always
+					     shown (secondary when a name exists, primary when it does not). -->
+					{#if user.name}
+						<span class="font-medium">{user.name}</span>
+						<span class="ml-2 text-xs text-gray-500">{user.email}</span>
+					{:else}
+						<span class="font-medium">{user.email}</span>
+					{/if}
+					{#if user.is_admin}
+						<span class="ml-2 rounded bg-indigo-100 px-2 py-0.5 text-xs text-indigo-800">Admin</span
+						>
+					{/if}
 					{#if user.banned}
 						<span class="ml-2 rounded bg-red-100 px-2 py-0.5 text-xs text-red-800">Banned</span>
 					{/if}

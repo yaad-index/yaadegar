@@ -265,10 +265,13 @@ type AdminTenantPage struct {
 
 // AdminUser defines model for AdminUser.
 type AdminUser struct {
-	Banned bool    `json:"banned"`
-	Email  string  `json:"email"`
-	Id     string  `json:"id"`
-	Name   *string `json:"name,omitempty"`
+	Banned bool   `json:"banned"`
+	Email  string `json:"email"`
+	Id     string `json:"id"`
+
+	// IsAdmin Whether this account holds the instance-admin capability (ADR-0010).
+	IsAdmin bool    `json:"is_admin"`
+	Name    *string `json:"name,omitempty"`
 
 	// Role Per-tenant role (ADR-0009). The instance-admin capability is separate.
 	Role     AdminUserRole `json:"role"`
