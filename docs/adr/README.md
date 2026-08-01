@@ -49,3 +49,9 @@ supersedes the old one (and mark the old one `Superseded by ADR-XXXX`).
   first-class giver accounts that make the `registered` reserve tier real (alongside the
   untouched anonymous tiers), an instance self-registration policy, and an admin
   user-management surface; refines ADR-0005 §6 and ADR-0008 §5. **Status: Accepted.**
+- [ADR-0010: Admin as a per-user capability](0010-admin-as-a-user-capability.md) —
+  the instance-admin capability becomes an `is_admin` flag on an existing owner
+  account (one login is both owner and admin) instead of a separate admin identity;
+  retires the separate admin login, session cookie, and superadmin env credential;
+  `requireAdmin` becomes a per-request capability load with tenant-scoped tokens and
+  instance-wide reach confined to `/admin`; refines ADR-0009 §3. **Status: Proposed.**
