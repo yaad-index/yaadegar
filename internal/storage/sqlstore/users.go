@@ -156,6 +156,18 @@ func (r userRepo) SetAdmin(ctx context.Context, userID string, isAdmin bool) err
 	return expectOne(res)
 }
 
+// SetPasswordHash replaces a user's argon2id password credential (#141 set-password
+// CLI). The value is already hashed by the caller; no schema change (password_hash
+// exists). Scoped to the bound tenant, mirroring the other Set* mutations.
+func (r userRepo) SetPasswordHash(ctx context.Context, userID, passwordHash string) error {
+	res, err := r.db.ExecContext(ctx, r.rb(
+		`UPDATE users SET password_hash = ? WHERE tenant_id = ? AND id = ?`), passwordHash, r.tenantID, userID)
+	if err != nil {
+		return err
+	}
+	return expectOne(res)
+}
+
 // usernameArg maps an optional username to a NULL-able driver value, so
 // credential-less users store NULL (not ”) and the partial unique index permits
 // many of them per tenant.

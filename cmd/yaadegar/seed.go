@@ -20,22 +20,83 @@ type HashPasswordCmd struct{}
 
 // Run reads the password and prints its argon2id hash.
 func (c *HashPasswordCmd) Run() error {
-	pw := os.Getenv("YAADEGAR_PASSWORD")
-	if pw == "" {
-		data, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return fmt.Errorf("read password from stdin: %w", err)
-		}
-		pw = strings.TrimRight(string(data), "\r\n")
-	}
-	if pw == "" {
-		return errors.New("no password provided — set YAADEGAR_PASSWORD or pipe the password on stdin")
+	pw, err := readPassword()
+	if err != nil {
+		return err
 	}
 	hash, err := auth.HashPassword(pw)
 	if err != nil {
 		return err
 	}
 	fmt.Println(hash)
+	return nil
+}
+
+// readPassword reads a password from $YAADEGAR_PASSWORD or, if unset, from stdin —
+// never a flag, so it stays out of shell history and the process list. Shared by the
+// hash-password and set-password commands. Returns an error if none is provided.
+func readPassword() (string, error) {
+	pw := os.Getenv("YAADEGAR_PASSWORD")
+	if pw == "" {
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return "", fmt.Errorf("read password from stdin: %w", err)
+		}
+		pw = strings.TrimRight(string(data), "\r\n")
+	}
+	if pw == "" {
+		return "", errors.New("no password provided — set YAADEGAR_PASSWORD or pipe the password on stdin")
+	}
+	return pw, nil
+}
+
+// SetPasswordCmd resets an existing user's password, replacing their argon2id
+// credential via the same hashing path as create-owner (#141). It is the recovery
+// path for an owner/admin lockout: resolve the user by tenant subdomain + login
+// handle (like grant-admin) and update the credential in place — no schema change.
+// The new password is read from $YAADEGAR_PASSWORD or stdin, never a flag.
+type SetPasswordCmd struct {
+	storageFlags
+	Tenant   string `name:"tenant" required:"" help:"Subdomain of the tenant the user lives in."`
+	Username string `name:"username" required:"" help:"Login handle of the user whose password to reset."`
+}
+
+// Run reads the new password, resolves the tenant + user, and replaces the credential.
+func (c *SetPasswordCmd) Run() error {
+	pw, err := readPassword()
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+	store, err := c.open(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = store.Close() }()
+
+	tenant, err := store.TenantBySubdomain(ctx, c.Tenant)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return fmt.Errorf("no tenant with subdomain %q — create it first with create-tenant", c.Tenant)
+		}
+		return fmt.Errorf("resolve tenant: %w", err)
+	}
+	ts := store.ForTenant(tenant)
+	user, err := ts.Users().ByUsername(ctx, c.Username)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return fmt.Errorf("no user with username %q in tenant %q", c.Username, c.Tenant)
+		}
+		return fmt.Errorf("resolve user: %w", err)
+	}
+	hash, err := auth.HashPassword(pw)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+	if err := ts.Users().SetPasswordHash(ctx, user.ID, hash); err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+	fmt.Printf("password updated for %q (%s) in tenant %q\n", c.Username, user.ID, tenant.Subdomain)
 	return nil
 }
 

@@ -145,6 +145,10 @@ type UserRepo interface {
 	// SetAdmin sets/clears a user's instance-admin capability (ADR-0010). The CLI
 	// grant is its bootstrap caller; ErrNotFound if the user is absent.
 	SetAdmin(ctx context.Context, userID string, isAdmin bool) error
+	// SetPasswordHash replaces a user's argon2id password credential (#141
+	// set-password CLI — owner/admin password recovery). The caller supplies an
+	// already-hashed value. ErrNotFound if the user is absent.
+	SetPasswordHash(ctx context.Context, userID, passwordHash string) error
 }
 
 // ListRepo persists lists within the bound tenant. Ownership lives in a join table

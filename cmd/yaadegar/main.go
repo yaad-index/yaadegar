@@ -53,6 +53,7 @@ type CLI struct {
 	GrantAdmin        GrantAdminCmd        `cmd:"" name:"grant-admin" help:"Grant (or --revoke) the instance-admin capability on an existing owner (ADR-0010)."`
 	EnableTenantOAuth EnableTenantOAuthCmd `cmd:"" name:"enable-tenant-oauth" help:"Turn Google login on (or --disable off) for a tenant (ADR-0008)."`
 	HashPassword      HashPasswordCmd      `cmd:"" name:"hash-password" help:"Print the argon2id hash of a password (read from $YAADEGAR_PASSWORD or stdin)."`
+	SetPassword       SetPasswordCmd       `cmd:"" name:"set-password" help:"Reset an existing user's password credential (argon2id), reading the new password from $YAADEGAR_PASSWORD or stdin."`
 }
 
 // ServeCmd runs the HTTP server until interrupted.
