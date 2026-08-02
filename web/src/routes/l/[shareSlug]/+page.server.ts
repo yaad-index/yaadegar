@@ -1,4 +1,5 @@
 import { error, fail } from '@sveltejs/kit';
+import type { NumericRange } from '@sveltejs/kit';
 import { superValidate, message } from 'sveltekit-superforms';
 import { zod4 } from 'sveltekit-superforms/adapters';
 import { z } from 'zod';
@@ -40,6 +41,27 @@ interface PledgeState {
 }
 
 const isSecure = (url: URL) => url.protocol === 'https:';
+
+// On a failed public action, surface the backend's problem+json `detail` when it is a
+// 4xx — these details are written to be shown to the giver ("an email address is
+// required to reserve on this list", "that email address is not valid", "item not
+// found"). Without this the reserve/pledge actions collapsed every non-409/410 failure
+// into a generic retry message, hiding the real reason (e.g. the email-confirm reserver
+// tier needs an email, while the form calls it optional). 5xx details are never shown —
+// they can leak internals — so those, and any response with no usable detail, fall back
+// to the caller's generic message with a 400. `err` is openapi-fetch's parsed body.
+function backendReason(
+	err: unknown,
+	response: { status?: number } | undefined,
+	fallback: string
+): { text: string; status: NumericRange<400, 599> } {
+	const status = response?.status ?? 0;
+	const detail = (err as { detail?: unknown } | null | undefined)?.detail;
+	if (status >= 400 && status < 500 && typeof detail === 'string' && detail.trim() !== '') {
+		return { text: detail, status: status as NumericRange<400, 599> };
+	}
+	return { text: fallback, status: 400 };
+}
 
 export const load: PageServerLoad = async ({ params, locals, cookies, url }) => {
 	const client = backendClient({ host: locals.host });
@@ -152,7 +174,8 @@ export const actions: Actions = {
 				return message(form, 'Someone just reserved this one.', { status: 409 });
 			if (response?.status === 410)
 				return message(form, 'This list is no longer active.', { status: 410 });
-			return message(form, 'Could not reserve this item. Please try again.', { status: 400 });
+			const reason = backendReason(err, response, 'Could not reserve this item. Please try again.');
+			return message(form, reason.text, { status: reason.status });
 		}
 		// Persist the one-time token server-side; it never touches client JS.
 		addCap(
@@ -208,13 +231,19 @@ export const actions: Actions = {
 			}
 		});
 		if (err || !data?.contribution_id || !data?.capability_token) {
-			const detail =
-				response?.status === 409
-					? 'This item was just fully funded or reserved.'
-					: response?.status === 410
-						? 'This list is no longer active.'
-						: 'Could not record your pledge. Please try again.';
-			return fail(response?.status ?? 502, { pledgeForm: form, pledgeError: detail });
+			if (response?.status === 409)
+				return fail(409, {
+					pledgeForm: form,
+					pledgeError: 'This item was just fully funded or reserved.'
+				});
+			if (response?.status === 410)
+				return fail(410, { pledgeForm: form, pledgeError: 'This list is no longer active.' });
+			const reason = backendReason(
+				err,
+				response,
+				'Could not record your pledge. Please try again.'
+			);
+			return fail(reason.status, { pledgeForm: form, pledgeError: reason.text });
 		}
 		// Persist the pledge capability server-side (never to client JS).
 		addContribCap(

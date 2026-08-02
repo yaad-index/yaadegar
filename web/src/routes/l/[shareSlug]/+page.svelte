@@ -1,5 +1,21 @@
+<script module lang="ts">
+	// reserveNeedsEmail is the client-side guard for the reserve submit (#144): on an
+	// email-confirm list the backend rejects a reservation with no giver email, so the
+	// UI blocks that submit up front. Only the reserve action is gated — release,
+	// withdraw, refresh, and pledge (which has its own email field) submit freely.
+	// Extracted so the rule is unit-testable without driving `enhance` in the DOM.
+	export function reserveNeedsEmail(
+		actionSearch: string,
+		emailRequired: boolean,
+		email: string
+	): boolean {
+		return actionSearch === '?/reserve' && emailRequired && email.trim() === '';
+	}
+</script>
+
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import type { SubmitFunction } from '@sveltejs/kit';
 	import { resolve } from '$app/paths';
 	import { chipInAllowed } from '$lib/cobuy';
 	import type { PageData, ActionData } from './$types';
@@ -54,6 +70,23 @@
 		form && 'pledgeForm' in form ? form.pledgeForm?.errors?.contact_email?.[0] : undefined
 	);
 	const withdrawError = $derived(form && 'withdrawError' in form ? form.withdrawError : undefined);
+
+	// email_required (#144): an email-confirm list rejects a reservation with no giver
+	// email server-side. Mirror that in the UI — mark the email field required and block
+	// the reserve submit up front so the giver sees the requirement instead of a failed
+	// round-trip. Name stays genuinely optional; release/withdraw/pledge are unaffected.
+	const emailRequired = $derived(!data.closed && !!data.list?.email_required);
+	let giverEmail = $state('');
+	let clientEmailError = $state<string | null>(null);
+
+	const guardReserve: SubmitFunction = ({ action, cancel }) => {
+		if (reserveNeedsEmail(action.search, emailRequired, giverEmail)) {
+			clientEmailError = 'Enter your email to reserve on this list.';
+			cancel();
+			return;
+		}
+		clientEmailError = null;
+	};
 </script>
 
 <svelte:head>
@@ -90,6 +123,11 @@
 		{#if emailError}
 			<p class="mt-4 rounded bg-red-50 p-2 text-sm text-red-700" role="alert">{emailError}</p>
 		{/if}
+		{#if clientEmailError}
+			<p class="mt-4 rounded bg-red-50 p-2 text-sm text-red-700" role="alert">
+				{clientEmailError}
+			</p>
+		{/if}
 		{#if releaseError}
 			<p class="mt-4 rounded bg-red-50 p-2 text-sm text-red-700" role="alert">{releaseError}</p>
 		{/if}
@@ -100,9 +138,11 @@
 		<!-- One form drives reserve/release/pledge/withdraw: each button carries its own
 		     item_id and targets its action via formaction. The optional giver identity
 		     for a full reserve is entered once and applies to whichever item is reserved. -->
-		<form method="post" use:enhance class="mt-6">
+		<form method="post" use:enhance={guardReserve} class="mt-6">
 			<fieldset class="rounded border p-4">
-				<legend class="px-1 text-sm font-medium text-gray-700">Your details (optional)</legend>
+				<legend class="px-1 text-sm font-medium text-gray-700">
+					{emailRequired ? 'Your details' : 'Your details (optional)'}
+				</legend>
 				<div class="grid gap-3 sm:grid-cols-2">
 					<label class="block">
 						<span class="text-sm">Name</span>
@@ -114,18 +154,27 @@
 						/>
 					</label>
 					<label class="block">
-						<span class="text-sm">Email</span>
+						<span class="text-sm">{emailRequired ? 'Email (required)' : 'Email'}</span>
 						<input
 							class="mt-1 w-full rounded border p-2"
 							name="giver_email"
 							type="email"
 							autocomplete="email"
-							placeholder="For reminders only"
+							bind:value={giverEmail}
+							aria-required={emailRequired}
+							placeholder={emailRequired
+								? 'Required to reserve on this list'
+								: 'For reminders only'}
 						/>
 					</label>
 				</div>
 				<p class="mt-2 text-xs text-gray-500">
-					Used only to remind you — never shown to the list owner or other givers.
+					{#if emailRequired}
+						This list needs your email to confirm your reservation — never shown to the list owner
+						or other givers. Your name is optional.
+					{:else}
+						Used only to remind you — never shown to the list owner or other givers.
+					{/if}
 				</p>
 			</fieldset>
 

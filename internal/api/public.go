@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/yaad-index/yaadegar/internal/api/gen"
+	"github.com/yaad-index/yaadegar/internal/settings"
 	"github.com/yaad-index/yaadegar/internal/storage"
 )
 
@@ -51,10 +52,18 @@ func (s *Server) GetPublicList(ctx context.Context, req gen.GetPublicListRequest
 		avail := deriveAvailability(it.QuantityWanted, reserved[it.ID], funded[it.ID])
 		out = append(out, toGenPublicItem(it, avail, funded[it.ID], resolveAllowCobuy(it, list)))
 	}
+
+	// email_required (#144): mirror the tier the reserve path enforces so the giver UI
+	// can require the email up front instead of failing at submit. Only the
+	// email-confirmed tier rejects a missing giver email (reserveEmailConfirmed); the
+	// full-guest tier does not, so the flag is false there.
+	tier := settings.Resolve(list.ReserverTier, s.defaultReserverTier)
+	emailRequired := tier == storage.TierEmailConfirmed
 	return gen.GetPublicList200JSONResponse(gen.PublicList{
-		Title:     ptr(list.Title),
-		EventDate: toGenDate(list.EventDate),
-		Items:     &out,
+		Title:         ptr(list.Title),
+		EventDate:     toGenDate(list.EventDate),
+		EmailRequired: &emailRequired,
+		Items:         &out,
 	}), nil
 }
 
