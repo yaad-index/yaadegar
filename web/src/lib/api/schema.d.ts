@@ -843,6 +843,8 @@ export interface components {
             title?: string;
             /** Format: date */
             event_date?: string | null;
+            /** @description Whether a giver must supply an email to reserve on this list (#144), derived from the effective reserver tier (per-list override resolved against the instance default). The giver UI uses this to require the email field up front instead of failing at submit. */
+            email_required?: boolean;
             items?: components["schemas"]["PublicItem"][];
         };
         ReservationCreate: {

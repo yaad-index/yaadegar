@@ -610,9 +610,11 @@ type PublicItem struct {
 
 // PublicList defines model for PublicList.
 type PublicList struct {
-	EventDate *openapi_types.Date `json:"event_date,omitempty"`
-	Items     *[]PublicItem       `json:"items,omitempty"`
-	Title     *string             `json:"title,omitempty"`
+	// EmailRequired Whether a giver must supply an email to reserve on this list (#144), derived from the effective reserver tier (per-list override resolved against the instance default). The giver UI uses this to require the email field up front instead of failing at submit.
+	EmailRequired *bool               `json:"email_required,omitempty"`
+	EventDate     *openapi_types.Date `json:"event_date,omitempty"`
+	Items         *[]PublicItem       `json:"items,omitempty"`
+	Title         *string             `json:"title,omitempty"`
 }
 
 // ReservationConfirmed defines model for ReservationConfirmed.
