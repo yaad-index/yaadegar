@@ -106,6 +106,13 @@
 		</p>
 	{:else if data.list}
 		<h1 class="text-2xl font-bold">{data.list.title}</h1>
+		{#if data.descriptionHtml}
+			<!-- data.descriptionHtml is sanitized server-side (renderNote: marked → sanitize-html
+			     tight allowlist); {@html} only ever touches this pre-sanitized field (#143, ADR-0006). -->
+			<!-- eslint-disable svelte/no-at-html-tags -->
+			<div class="prose prose-sm mt-2 max-w-none text-gray-700">{@html data.descriptionHtml}</div>
+			<!-- eslint-enable svelte/no-at-html-tags -->
+		{/if}
 		{#if data.list.event_date}
 			<p class="mt-1 text-sm text-gray-600">For {data.list.event_date}</p>
 		{/if}

@@ -452,10 +452,13 @@ type List struct {
 	CreatedAt  *time.Time `json:"created_at,omitempty"`
 
 	// DecayDays The decay-period override; null means inheriting the instance default.
-	DecayDays *int                `json:"decay_days,omitempty"`
-	EventDate *openapi_types.Date `json:"event_date,omitempty"`
-	Id        *string             `json:"id,omitempty"`
-	ItemCount *int                `json:"item_count,omitempty"`
+	DecayDays *int `json:"decay_days,omitempty"`
+
+	// Description The owner-editable list description (#143); "" = none.
+	Description *string             `json:"description,omitempty"`
+	EventDate   *openapi_types.Date `json:"event_date,omitempty"`
+	Id          *string             `json:"id,omitempty"`
+	ItemCount   *int                `json:"item_count,omitempty"`
 
 	// ReserverConfirmWindow The confirm-window override in minutes; null inherits the instance default.
 	ReserverConfirmWindow *int `json:"reserver_confirm_window,omitempty"`
@@ -500,8 +503,11 @@ type ListUpdate struct {
 	Active *bool `json:"active,omitempty"`
 
 	// AllowCobuy List-level default for whether items may be co-bought (#100). Items inherit this unless they set their own override. Defaults to true; a new list is always created co-buy-enabled and is toggled here.
-	AllowCobuy            *bool          `json:"allow_cobuy,omitempty"`
-	DecayDays             NullableInt    `json:"decay_days,omitempty"`
+	AllowCobuy *bool       `json:"allow_cobuy,omitempty"`
+	DecayDays  NullableInt `json:"decay_days,omitempty"`
+
+	// Description Owner-editable list description (#143): a light-markdown body shown to givers at the top of the public list. "" = none. Rendered to sanitized HTML in the frontend (ADR-0006); the server enforces the length cap.
+	Description           *string        `json:"description,omitempty"`
 	EventDate             NullableDate   `json:"event_date,omitempty"`
 	ReserverConfirmWindow NullableInt    `json:"reserver_confirm_window,omitempty"`
 	ReserverTier          NullableString `json:"reserver_tier,omitempty"`
@@ -610,6 +616,9 @@ type PublicItem struct {
 
 // PublicList defines model for PublicList.
 type PublicList struct {
+	// Description The owner-editable list description (#143), if set.
+	Description *string `json:"description,omitempty"`
+
 	// EmailRequired Whether a giver must supply an email to reserve on this list (#144), derived from the effective reserver tier (per-list override resolved against the instance default). The giver UI uses this to require the email field up front instead of failing at submit.
 	EmailRequired *bool               `json:"email_required,omitempty"`
 	EventDate     *openapi_types.Date `json:"event_date,omitempty"`

@@ -84,6 +84,7 @@ export const load: PageServerLoad = async ({ params, locals, cookies, url }) => 
 				reservedItemIds: [] as string[],
 				pledged: {} as Record<string, PledgeState>,
 				noteHtml: {} as Record<string, string>,
+				descriptionHtml: '',
 				form,
 				pledgeForm
 			};
@@ -144,6 +145,9 @@ export const load: PageServerLoad = async ({ params, locals, cookies, url }) => 
 		pledged,
 		// Notes rendered to sanitized HTML server-side; {@html} only touches this map.
 		noteHtml: Object.fromEntries((data.items ?? []).map((i) => [i.id ?? '', renderNote(i.note)])),
+		// The list description (#143) rides the same renderNote sanitize path; {@html}
+		// only ever touches this pre-sanitized string (ADR-0006 security boundary).
+		descriptionHtml: renderNote(data.description),
 		form,
 		pledgeForm
 	};

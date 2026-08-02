@@ -61,6 +61,7 @@ func (s *Server) GetPublicList(ctx context.Context, req gen.GetPublicListRequest
 	emailRequired := tier == storage.TierEmailConfirmed
 	return gen.GetPublicList200JSONResponse(gen.PublicList{
 		Title:         ptr(list.Title),
+		Description:   ptr(list.Description),
 		EventDate:     toGenDate(list.EventDate),
 		EmailRequired: &emailRequired,
 		Items:         &out,

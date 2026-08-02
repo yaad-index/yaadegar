@@ -41,6 +41,9 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		// Notes are rendered to sanitized HTML server-side; {@html} only ever touches
 		// this map, never a raw note (ADR-0006 security boundary).
 		noteHtml: Object.fromEntries(items.map((i) => [i.id ?? '', renderNote(i.note)])),
+		// The list description (#143) rides the same sanitize path as item notes: the
+		// raw markdown is rendered to safe HTML here, and {@html} only ever touches this.
+		descriptionHtml: renderNote(listRes.data.description),
 		addForm: await superValidate(zod4(addItemSchema))
 	};
 };
@@ -168,6 +171,9 @@ export const actions: Actions = {
 		const fd = await request.formData();
 		const allow_cobuy = String(fd.get('allow_cobuy') ?? 'true') === 'true';
 		const thank_you_template = String(fd.get('thank_you_template') ?? '');
+		// List description (#143): raw markdown, stored as-is; the backend caps its
+		// length and it is sanitized on render (renderNote), never here. "" clears it.
+		const description = String(fd.get('description') ?? '');
 		// Reserver tier (#126): an empty selection clears the override back to the
 		// instance default (null, three-state per #111); otherwise it sets the tier.
 		const reserverTierRaw = String(fd.get('reserver_tier') ?? '');
@@ -175,7 +181,7 @@ export const actions: Actions = {
 		const client = backendClient({ host: locals.host, token: locals.token });
 		const { error: err } = await client.PATCH('/api/v1/lists/{listId}', {
 			params: { path: { listId: params.id } },
-			body: { allow_cobuy, thank_you_template, reserver_tier }
+			body: { allow_cobuy, thank_you_template, reserver_tier, description }
 		});
 		if (err) return fail(400, { settingsError: 'Could not update list settings.' });
 		return { settingsSaved: true };

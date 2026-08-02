@@ -116,6 +116,13 @@
 
 <a href={resolve('/')} class="text-sm text-gray-500 hover:underline">← Your lists</a>
 <h1 class="mt-1 text-2xl font-bold">{data.list.title}</h1>
+{#if data.descriptionHtml}
+	<!-- data.descriptionHtml is sanitized server-side (renderNote: marked → sanitize-html
+	     tight allowlist); {@html} only ever touches this pre-sanitized field (#143, ADR-0006). -->
+	<!-- eslint-disable svelte/no-at-html-tags -->
+	<div class="prose prose-sm mt-2 max-w-none text-gray-700">{@html data.descriptionHtml}</div>
+	<!-- eslint-enable svelte/no-at-html-tags -->
+{/if}
 
 <!-- Tabs: List (items — the primary view) and Settings (list-level config +
      import/export). The visible panel keys off `activeTab` (bound into <Tabs>), so a
@@ -130,6 +137,21 @@
 	<section class="mt-3 rounded border p-3">
 		<p class="text-sm font-medium">List settings</p>
 		<form method="post" action="?/settings" use:formEnhance class="mt-2 space-y-3">
+			<div>
+				<label class="block text-sm text-gray-700" for="list-description">Description</label>
+				<textarea
+					id="list-description"
+					name="description"
+					rows="3"
+					maxlength="2000"
+					class="mt-1 w-full rounded border p-2 text-sm"
+					placeholder="Shown to givers at the top of your list. Light markdown (bold, italic, links, lists). Leave blank for none."
+					>{data.list.description ?? ''}</textarea
+				>
+				<p class="mt-0.5 text-xs text-gray-500">
+					Supports light markdown; links open in a new tab. Max 2000 characters.
+				</p>
+			</div>
 			<div class="flex items-center gap-2">
 				<label class="text-sm text-gray-700" for="list-allow-cobuy">Group-buying default</label>
 				<select id="list-allow-cobuy" name="allow_cobuy" class="rounded border p-1.5 text-sm">

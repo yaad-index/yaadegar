@@ -725,6 +725,8 @@ export interface components {
             allow_cobuy?: boolean;
             /** @description List-level default owner→giver thank-you note body (#22), emailed to a reserver when their reservation goes active. "" disables it. A `{item}` token is replaced with the item name; the note carries no giver identity. */
             thank_you_template?: string;
+            /** @description Owner-editable list description (#143): a light-markdown body shown to givers at the top of the public list. "" = none. Rendered to sanitized HTML in the frontend (ADR-0006); the server enforces the length cap. */
+            description?: string;
         };
         List: {
             id?: string;
@@ -743,6 +745,8 @@ export interface components {
             allow_cobuy?: boolean;
             /** @description The list-level default thank-you note body (#22); "" = no note. */
             thank_you_template?: string;
+            /** @description The owner-editable list description (#143); "" = none. */
+            description?: string;
             active?: boolean;
             item_count?: number;
             /** Format: date-time */
@@ -841,6 +845,8 @@ export interface components {
         };
         PublicList: {
             title?: string;
+            /** @description The owner-editable list description (#143), if set. */
+            description?: string | null;
             /** Format: date */
             event_date?: string | null;
             /** @description Whether a giver must supply an email to reserve on this list (#144), derived from the effective reserver tier (per-list override resolved against the instance default). The giver UI uses this to require the email field up front instead of failing at submit. */

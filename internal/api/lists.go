@@ -3,10 +3,17 @@ package api
 import (
 	"context"
 	"errors"
+	"unicode/utf8"
 
 	"github.com/yaad-index/yaadegar/internal/api/gen"
 	"github.com/yaad-index/yaadegar/internal/storage"
 )
+
+// maxListDescriptionLen caps the owner-editable list description (#143). A sane
+// bound on a giver-facing free-text field: long enough for a real blurb, short
+// enough that it can't be abused with an oversized body. Counted in runes so the
+// limit is about characters, not bytes.
+const maxListDescriptionLen = 2000
 
 func (s *Server) CreateList(ctx context.Context, req gen.CreateListRequestObject) (gen.CreateListResponseObject, error) {
 	ts, _, ok := s.tenantStore(ctx)
@@ -187,6 +194,17 @@ func (s *Server) UpdateList(ctx context.Context, req gen.UpdateListRequestObject
 	}
 	if req.Body.ThankYouTemplate != nil {
 		l.ThankYouTemplate = *req.Body.ThankYouTemplate // list-level thank-you default (#22); "" = off
+	}
+	if req.Body.Description != nil {
+		// Owner-editable list description (#143); "" = none. Cap the raw length here —
+		// the markdown is rendered to sanitized HTML in the frontend load (the same
+		// renderNote path item notes use, ADR-0006), never in this handler.
+		if utf8.RuneCountInString(*req.Body.Description) > maxListDescriptionLen {
+			return gen.UpdateList400ApplicationProblemPlusJSONResponse{
+				BadRequestApplicationProblemPlusJSONResponse: badRequest("description is too long"),
+			}, nil
+		}
+		l.Description = *req.Body.Description
 	}
 
 	updated, err := ts.Lists().Update(ctx, l)
