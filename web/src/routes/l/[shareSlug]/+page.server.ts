@@ -169,7 +169,8 @@ export const actions: Actions = {
 				quantity: 1
 			}
 		});
-		if (err || !data?.reservation_id || !data?.capability_token) {
+		// A real failure: a backend error, or no reservation was created at all.
+		if (err || !data?.reservation_id) {
 			if (response?.status === 409)
 				return message(form, 'Someone just reserved this one.', { status: 409 });
 			if (response?.status === 410)
@@ -177,7 +178,17 @@ export const actions: Actions = {
 			const reason = backendReason(err, response, 'Could not reserve this item. Please try again.');
 			return message(form, reason.text, { status: reason.status });
 		}
-		// Persist the one-time token server-side; it never touches client JS.
+		// Email-confirm tier (#144): a successful reserve is held as pending_confirmation
+		// (202) and a confirmation link is emailed — NO capability token is issued until
+		// the giver confirms. That is a SUCCESS: tell them to check their email and store
+		// nothing (there is no token yet; confirming issues it). Guarding on the missing
+		// token alone previously mis-reported this — the primary email-confirm path — as a
+		// failure while the reservation was actually created.
+		if (data.status === 'pending_confirmation' || !data.capability_token) {
+			return message(form, 'Almost there — check your email to confirm your reservation.');
+		}
+		// full_guest tier: the reservation is active now and a one-time capability token
+		// is returned (201) — persist it server-side; it never touches client JS.
 		addCap(
 			cookies,
 			params.shareSlug,

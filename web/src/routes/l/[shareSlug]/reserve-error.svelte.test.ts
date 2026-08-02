@@ -86,6 +86,28 @@ describe('reserve action surfaces the backend reason (#144)', () => {
 		expect(msgOf(res)).toBe('Someone just reserved this one.');
 		expect(statusOf(res)).toBe(409);
 	});
+
+	it('treats a 202 pending_confirmation (no token) as success, not failure', async () => {
+		// The email-confirm primary path: the reservation IS created and a confirm email
+		// sent; no capability token exists yet. This must read as success, not the generic
+		// error (the pre-fix guard mis-classified the missing token as a failure).
+		const res = await callReserve(okReserveFields, {
+			data: { reservation_id: 'r1', status: 'pending_confirmation' },
+			error: undefined,
+			response: { status: 202 }
+		});
+		expect(msgOf(res)).toBe('Almost there — check your email to confirm your reservation.');
+		expect(statusOf(res)).toBeUndefined(); // a success message, not a fail()
+	});
+
+	it('keeps the 201 active-with-token path as a confirmed reserve', async () => {
+		const res = await callReserve(okReserveFields, {
+			data: { reservation_id: 'r1', status: 'active', capability_token: 'tok' },
+			error: undefined,
+			response: { status: 201 }
+		});
+		expect(msgOf(res)).toBe('Reserved — thank you!');
+	});
 });
 
 describe('pledge action surfaces the backend reason (#144)', () => {
