@@ -267,6 +267,36 @@ paths:
               schema: { $ref: "#/components/schemas/User" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /api/v1/me/password:
+    put:
+      operationId: changePassword
+      tags: [auth]
+      summary: Change the authenticated owner's password
+      description: >
+        Changes the authenticated owner's own password (ADR-0011). The current
+        password is verified, the shared password policy is applied to the new one,
+        and the credential version is bumped — so every OTHER active session for
+        this user is immediately invalidated. The response re-issues THIS session (a
+        fresh access token at the new version) so the caller stays logged in on the
+        session that made the change. A wrong current password is rejected with a
+        clear reason rather than a generic error.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangePasswordRequest" }
+      responses:
+        "200":
+          description: >
+            Password changed. A fresh session access token for the acting session is
+            returned; the caller replaces its stored token with it.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /api/v1/settings:
     get:
       operationId: getTenantSettings
@@ -1125,6 +1155,21 @@ components:
         expires_in:
           type: integer
           description: Access-token lifetime in seconds.
+
+    ChangePasswordRequest:
+      type: object
+      required: [current_password, new_password]
+      properties:
+        current_password:
+          type: string
+          minLength: 1
+          description: The caller's current password, re-verified before the change.
+        new_password:
+          type: string
+          minLength: 1
+          description: >
+            The replacement password. Must satisfy the instance password policy (a
+            minimum length); a too-short value is rejected with a clear reason.
 
     TenantSettings:
       type: object
