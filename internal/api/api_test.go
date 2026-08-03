@@ -142,10 +142,19 @@ func (h *harness) ownerToken() string {
 }
 
 // tokenFor mints an owner JWT for an arbitrary user/tenant, for cross-tenant and
-// negative auth tests.
+// negative auth tests. It stamps credential_version 1 — the default a freshly
+// created user carries — so the owner middleware's version check (ADR-0011) passes
+// for the seeded owner.
 func (h *harness) tokenFor(userID, tenantID string) string {
+	return h.tokenForVersion(userID, tenantID, 1)
+}
+
+// tokenForVersion mints an owner JWT pinning an explicit credential_version, for the
+// stale-session tests (a token whose version no longer matches the stored one).
+func (h *harness) tokenForVersion(userID, tenantID string, credentialVersion int) string {
 	tok, err := h.authSvc.Issuer().Issue(auth.Principal{
 		UserID: userID, TenantID: tenantID, Role: auth.RoleOwner,
+		CredentialVersion: credentialVersion,
 	})
 	require.NoError(h.t, err)
 	return tok

@@ -143,6 +143,14 @@ func (s *Server) requireOwner(next http.Handler) http.Handler {
 			writeProblem(w, http.StatusUnauthorized, "this account is suspended")
 			return
 		}
+		// Credential-version check (ADR-0011): the token pins the credential_version it
+		// was minted at; a password mutation bumps the stored version, so a stale token
+		// is rejected here. This reuses the user load just done — no extra read, no
+		// cache (the single indexed lookup is the whole cost we chose to pay).
+		if owner.CredentialVersion != principal.CredentialVersion {
+			writeProblem(w, http.StatusUnauthorized, "session expired; sign in again")
+			return
+		}
 		next.ServeHTTP(w, r.WithContext(withOwner(r.Context(), owner)))
 	})
 }
@@ -190,6 +198,13 @@ func (s *Server) requireAdmin(next http.Handler) http.Handler {
 		}
 		if !user.IsAdmin {
 			writeProblem(w, http.StatusForbidden, "instance-admin capability required")
+			return
+		}
+		// Same credential-version check as the owner surface (ADR-0011): /admin is
+		// reached with an ordinary owner session, so a password mutation must revoke it
+		// here too. The user load above already happened, so this adds no read.
+		if user.CredentialVersion != principal.CredentialVersion {
+			writeProblem(w, http.StatusUnauthorized, "session expired; sign in again")
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(withOwner(r.Context(), user)))

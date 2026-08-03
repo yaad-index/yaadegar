@@ -254,10 +254,25 @@ func (s *Server) handleOAuthComplete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Load the user's current credential_version so the session pins it (ADR-0011).
+	// The ticket only carries identity; a fresh read here keeps the OAuth session on
+	// the same invalidation footing as a password login.
+	tenant, err := s.store.TenantByID(r.Context(), t.TenantID)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "invalid ticket")
+		return
+	}
+	user, err := s.store.ForTenant(tenant).Users().Get(r.Context(), t.UserID)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "invalid ticket")
+		return
+	}
+
 	token, err := s.auth.Issuer().Issue(auth.Principal{
-		UserID:   t.UserID,
-		TenantID: t.TenantID,
-		Role:     auth.RoleOwner,
+		UserID:            t.UserID,
+		TenantID:          t.TenantID,
+		Role:              auth.RoleOwner,
+		CredentialVersion: user.CredentialVersion,
 	})
 	if err != nil {
 		s.logger.Error("oauth complete: issue session failed", "err", err)

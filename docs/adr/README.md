@@ -58,8 +58,10 @@ supersedes the old one (and mark the old one `Superseded by ADR-XXXX`).
 - [ADR-0011: Password lifecycle](0011-password-lifecycle.md) — a per-user
   `credential_version` claim checked in `requireOwner` so every password mutation
   immediately revokes prior sessions (an eyes-open trade against ADR-0005 §1's
-  stateless validation, mitigated by a short-TTL cache); an authenticated
-  change-password endpoint that re-issues only the acting session; an
-  enumeration-safe email forgot-password reset; and one version-bumping mutation
-  funnel for all four password entry points (set-password CLI, change, reset,
-  create-owner); addresses #142 + #148. **Status: Proposed.**
+  stateless validation — the check folds into the user load the middleware already
+  does, and ships without a cache; an in-process cache is a documented future
+  optimization); an authenticated change-password endpoint that re-issues only the
+  acting session; an enumeration-safe email forgot-password reset that auto-logs-in
+  on confirm; and one version-bumping mutation funnel for all four password entry
+  points (set-password CLI, change, reset, create-owner); addresses #142 + #148.
+  **Status: Accepted.**

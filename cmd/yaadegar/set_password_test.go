@@ -46,8 +46,9 @@ func TestSetPasswordUpdatesCredential(t *testing.T) {
 	sf := tempStorageFlags(t)
 	seedOwner(t, sf, "acme", "owner", "old-pw")
 
-	// set-password reads the new password from the environment.
-	t.Setenv("YAADEGAR_PASSWORD", "new-pw")
+	// set-password reads the new password from the environment. It must satisfy the
+	// shared password policy (ADR-0011): at least auth.MinPasswordLen characters.
+	t.Setenv("YAADEGAR_PASSWORD", "new-password")
 	require.NoError(t, (&SetPasswordCmd{storageFlags: sf, Tenant: "acme", Username: "owner"}).Run())
 
 	// The stored credential now verifies against the new password, and the old one
@@ -61,12 +62,28 @@ func TestSetPasswordUpdatesCredential(t *testing.T) {
 	user, err := store.ForTenant(tenant).Users().ByUsername(ctx, "owner")
 	require.NoError(t, err)
 
-	okNew, err := auth.VerifyPassword("new-pw", user.PasswordHash)
+	okNew, err := auth.VerifyPassword("new-password", user.PasswordHash)
 	require.NoError(t, err)
 	assert.True(t, okNew, "new password verifies after set-password")
 	okOld, err := auth.VerifyPassword("old-pw", user.PasswordHash)
 	require.NoError(t, err)
 	assert.False(t, okOld, "old password no longer verifies")
+
+	// set-password bumps credential_version (ADR-0011), so prior sessions are revoked:
+	// the owner started at 1, and one reset moves it to 2.
+	assert.Equal(t, 2, user.CredentialVersion)
+}
+
+// TestSetPasswordRejectsShortPassword: the shared policy is enforced on the CLI path
+// (ADR-0011 §4) — a too-short new password is refused and the credential is unchanged.
+func TestSetPasswordRejectsShortPassword(t *testing.T) {
+	sf := tempStorageFlags(t)
+	seedOwner(t, sf, "acme", "owner", "old-pw")
+
+	t.Setenv("YAADEGAR_PASSWORD", "short") // below auth.MinPasswordLen
+	err := (&SetPasswordCmd{storageFlags: sf, Tenant: "acme", Username: "owner"}).Run()
+	require.Error(t, err)
+	assert.ErrorIs(t, err, auth.ErrPasswordTooShort)
 }
 
 func TestSetPasswordUnknownTenantOrUser(t *testing.T) {
