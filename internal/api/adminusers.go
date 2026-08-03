@@ -7,6 +7,7 @@ import (
 
 	"github.com/yaad-index/yaadegar/internal/api/gen"
 	"github.com/yaad-index/yaadegar/internal/storage"
+	"github.com/yaad-index/yaadegar/internal/token"
 )
 
 // Admin user management (ADR-0009 Cut 1). These endpoints live on the instance
@@ -76,7 +77,8 @@ func (s *Server) AdminCreateUser(ctx context.Context, req gen.AdminCreateUserReq
 	if req.Body.Name != nil && *req.Body.Name != "" {
 		name = *req.Body.Name
 	}
-	user, err := s.store.ForTenant(tenant).Users().Create(ctx, storage.User{
+	ts := s.store.ForTenant(tenant)
+	user, err := ts.Users().Create(ctx, storage.User{
 		Name:     name,
 		Email:    email,
 		Username: &email, // the email doubles as the login handle
@@ -90,6 +92,24 @@ func (s *Server) AdminCreateUser(ctx context.Context, req gen.AdminCreateUserReq
 		}
 		return nil, err
 	}
+
+	// Unified onboarding (ADR-0012 Decision 6 / cut 1b): the account is created with
+	// no password, so email a single-use set-password/invite link that establishes the
+	// first credential and logs the person in — the same token store and /reset confirm
+	// the forgot-password flow uses. Non-fatal by design: the account exists regardless,
+	// and a fresh link is self-servable via forgot-password (resettable now covers
+	// no-password accounts). Sent off the response path so a slow relay never stalls the
+	// admin.
+	if raw, tokenHash, terr := token.New(); terr != nil {
+		s.logger.ErrorContext(ctx, "admin invite: mint token failed", "error", terr)
+	} else if _, terr := ts.PasswordResetTokens().Create(ctx, storage.PasswordResetToken{
+		UserID: user.ID, TokenHash: tokenHash, ExpiresAt: s.clock.Now().Add(setPasswordInviteTTL),
+	}); terr != nil {
+		s.logger.ErrorContext(ctx, "admin invite: persist token failed", "error", terr)
+	} else {
+		s.sendInviteEmailAsync(tenant, user.Email, raw)
+	}
+
 	return gen.AdminCreateUser201JSONResponse(toAdminUser(user)), nil
 }
 

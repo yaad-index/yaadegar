@@ -17,6 +17,14 @@ import (
 // short, single-use, so a leaked-then-expired link is inert.
 const passwordResetTTL = time.Hour
 
+// setPasswordInviteTTL is how long an admin invite / first-password link stays valid
+// (ADR-0012 cut 1b). It is longer than passwordResetTTL because an invited person
+// acts on their own schedule, not right after a self-initiated request. The link is
+// still single-use and hashed, and a fresh one is always self-servable from the
+// forgot-password path (resettable now covers no-password accounts), so a lapsed
+// invite is a recoverable inconvenience, not a lockout.
+const setPasswordInviteTTL = 72 * time.Hour
+
 // RequestPasswordReset starts the forgot-password flow (ADR-0011 cut 3). It is
 // enumeration-safe: the response is ALWAYS a 202 with no body, whether or not the
 // identifier resolves to an account. Two things keep existence from leaking:
@@ -58,9 +66,9 @@ func (s *Server) RequestPasswordReset(ctx context.Context, req gen.RequestPasswo
 	return gen.RequestPasswordReset202Response{}, nil
 }
 
-// lookupResettable resolves an identifier (username or email) to an account that can
-// actually be reset — one with a password credential and a deliverable email, not
-// banned. Any miss returns found=false so the caller stays silent.
+// lookupResettable resolves an identifier (username or email) to an account that may
+// receive a reset / establish-password link — a deliverable email on a non-banned
+// account (see resettable). Any miss returns found=false so the caller stays silent.
 func (s *Server) lookupResettable(ctx context.Context, ts storage.TenantStore, identifier string) (storage.User, bool) {
 	if u, err := ts.Users().ByUsername(ctx, identifier); err == nil {
 		return u, resettable(u)
@@ -71,8 +79,14 @@ func (s *Server) lookupResettable(ctx context.Context, ts storage.TenantStore, i
 	return storage.User{}, false
 }
 
+// resettable reports whether an account may receive a reset / establish-password
+// link. Eligibility is a deliverable email on a non-banned account — deliberately
+// NOT conditioned on an existing password (ADR-0012 Decision 2 / cut 1b): a
+// no-password account (admin-invited or OAuth-created) must be able to establish a
+// FIRST password through this same flow, so the request path serves both "set first"
+// and "reset". The confirm path sets the hash and bumps credential_version either way.
 func resettable(u storage.User) bool {
-	return u.PasswordHash != "" && u.Email != "" && !u.Banned
+	return u.Email != "" && !u.Banned
 }
 
 // sendResetEmailAsync emails the reset link off the request path so response timing
@@ -89,6 +103,25 @@ func (s *Server) sendResetEmailAsync(tenant storage.Tenant, to, rawToken string)
 				"\n\nThis link can be used once and expires soon. If you didn't request it, you can ignore this email.",
 		}); err != nil {
 			s.logger.ErrorContext(ctx, "password reset: send email failed", "error", err)
+		}
+	}()
+}
+
+// sendInviteEmailAsync emails a first-password / set-password invite off the request
+// path (ADR-0012 cut 1b). It reuses the reset link + confirm machinery — the same
+// /reset landing sets the password and logs the person in — with invite-appropriate
+// copy. Failures are logged, never fatal to account creation.
+func (s *Server) sendInviteEmailAsync(tenant storage.Tenant, to, rawToken string) {
+	link := s.resetLink(tenant, rawToken)
+	go func() {
+		ctx := context.Background()
+		if err := s.email.Send(ctx, email.Message{
+			To:      to,
+			Subject: "Set your password",
+			Body: "An account was created for you. Set your password to finish setting up and sign in: " + link +
+				"\n\nThis link can be used once and expires in a few days. If it expires, use the \"forgot password\" link on the sign-in page to get a new one.",
+		}); err != nil {
+			s.logger.ErrorContext(ctx, "invite: send email failed", "error", err)
 		}
 	}()
 }
@@ -168,6 +201,17 @@ func (s *Server) ConfirmPasswordReset(ctx context.Context, req gen.ConfirmPasswo
 	user, err := ts.Users().Get(ctx, prt.UserID)
 	if err != nil {
 		return nil, err
+	}
+	// Establishing a password through an emailed link proves email ownership, so it
+	// also completes activation for a still-pending account (ADR-0012 cut 1b) — the
+	// same proof the verification link would give. Without this, a pending account that
+	// set its password here would auto-login once but then be unable to log in again
+	// (the login gate rejects pending). A no-op for an already-active account.
+	if user.Status == storage.UserStatusPending {
+		if err := ts.Users().SetStatus(ctx, user.ID, storage.UserStatusActive); err != nil {
+			return nil, err
+		}
+		user.Status = storage.UserStatusActive
 	}
 	tok, err := s.auth.Issuer().Issue(auth.Principal{
 		UserID:            user.ID,
