@@ -65,3 +65,13 @@ supersedes the old one (and mark the old one `Superseded by ADR-XXXX`).
   on confirm; and one version-bumping mutation funnel for all four password entry
   points (set-password CLI, change, reset, create-owner); addresses #142 + #148.
   **Status: Accepted.**
+- [ADR-0012: Registration mechanics](0012-registration-mechanics.md) — fills in
+  ADR-0009's deferred self-registration and registered-giver-reserve cuts without
+  changing its policy/role model: two policy-gated signup methods (Google OAuth
+  one-click no-password vs email+password with CAPTCHA + email-link verification),
+  the empty-hash "no password set" state reused from ADR-0011 (change-password 403s,
+  reset flow establishes a password), a single-use email-verification token store
+  mirroring `password_reset_tokens`, one unified invite/set-password onboarding flow
+  for admin-created and no-password accounts (rejecting emailed temp-passwords), and
+  the authenticated `registered`-tier reserve with a reserver dashboard and no
+  per-reservation email (anonymity to the owner preserved). **Status: Accepted.**

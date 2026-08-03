@@ -16,15 +16,16 @@ type tenantStore struct {
 }
 
 var (
-	_ storage.TenantStore       = (*tenantStore)(nil)
-	_ storage.UserRepo          = userRepo{}
-	_ storage.ListRepo          = listRepo{}
-	_ storage.ItemRepo          = itemRepo{}
-	_ storage.ReservationRepo   = reservationRepo{}
-	_ storage.ContributionRepo  = contributionRepo{}
-	_ storage.MatchRepo         = matchRepo{}
-	_ storage.DomainRepo        = domainRepo{}
-	_ storage.OAuthIdentityRepo = oauthIdentityRepo{}
+	_ storage.TenantStore            = (*tenantStore)(nil)
+	_ storage.UserRepo               = userRepo{}
+	_ storage.ListRepo               = listRepo{}
+	_ storage.ItemRepo               = itemRepo{}
+	_ storage.ReservationRepo        = reservationRepo{}
+	_ storage.ContributionRepo       = contributionRepo{}
+	_ storage.MatchRepo              = matchRepo{}
+	_ storage.DomainRepo             = domainRepo{}
+	_ storage.OAuthIdentityRepo      = oauthIdentityRepo{}
+	_ storage.PasswordResetTokenRepo = passwordResetRepo{}
 )
 
 func (t *tenantStore) base() baseRepo {
@@ -40,6 +41,9 @@ func (t *tenantStore) Matches() storage.MatchRepo              { return matchRep
 func (t *tenantStore) Domains() storage.DomainRepo             { return domainRepo{t.base()} }
 func (t *tenantStore) OAuthIdentities() storage.OAuthIdentityRepo {
 	return oauthIdentityRepo{t.base()}
+}
+func (t *tenantStore) PasswordResetTokens() storage.PasswordResetTokenRepo {
+	return passwordResetRepo{t.base()}
 }
 
 // baseRepo carries the shared connection, dialect, and — crucially — the bound

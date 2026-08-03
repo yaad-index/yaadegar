@@ -136,6 +136,20 @@ type User struct {
 	CreatedAt         time.Time
 }
 
+// PasswordResetToken is a single-use, short-TTL credential for the forgot-password
+// flow (ADR-0011 cut 3). TokenHash is the sha256 of the raw token; the raw value is
+// emailed once and never stored (like the reservation capability token, ADR-0003 §3).
+// UsedAt is nil until the token is claimed at confirm — the single-use guard.
+type PasswordResetToken struct {
+	ID        string
+	TenantID  string
+	UserID    string
+	TokenHash string
+	ExpiresAt time.Time
+	UsedAt    *time.Time
+	CreatedAt time.Time
+}
+
 // List is an owner's wishlist. ShareSlug is the opaque, unguessable handle used
 // by the public giver surface.
 type List struct {
