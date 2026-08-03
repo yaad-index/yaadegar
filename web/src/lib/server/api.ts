@@ -56,6 +56,90 @@ export function backendPostRaw(opts: {
 	return fetch(BACKEND_ORIGIN + opts.path, { method: 'POST', headers, body: opts.body });
 }
 
+// Hop-by-hop headers (RFC 7230 §6.1) are connection-scoped and must not be
+// forwarded across a proxy hop, on either leg.
+const HOP_BY_HOP = new Set([
+	'connection',
+	'keep-alive',
+	'proxy-authenticate',
+	'proxy-authorization',
+	'te',
+	'trailer',
+	'transfer-encoding',
+	'upgrade'
+]);
+
+// Inbound request headers the proxy refuses to trust from the caller. The proxy
+// sets x-forwarded-host itself from the real inbound Host, so an external client
+// can't spoof another tenant's host (the backend resolves + trusts the tenant by
+// x-forwarded-host — ADR-0004 §7). content-length is recomputed by the outbound
+// fetch from the forwarded body.
+const STRIP_INBOUND = new Set([
+	'host',
+	'content-length',
+	'x-forwarded-host',
+	'x-forwarded-for',
+	'x-forwarded-proto',
+	'forwarded'
+]);
+
+// backendProxy is the transparent public passthrough for the versioned REST API
+// (#145). External clients (mobile, curl, third-party frontends) reach the backend
+// at /api/v1/* on the web origin — the backend port is unpublished, so this is the
+// sole public door. The request is forwarded verbatim (method, headers, body) and
+// the upstream response returned unchanged — real status, body, and headers —
+// explicitly NOT the BFF re-wrapping that swallows the API's reason (cf. #144).
+// The tenant host is stamped from the real inbound Host (any client-supplied
+// forwarding headers are dropped first); redirects and Set-Cookie pass through
+// untouched. Structurally scoped to /api/v1 by its route, with a defensive guard
+// so it can never reach a sibling internal route.
+export async function backendProxy(opts: {
+	request: Request;
+	url: URL;
+	host: string;
+}): Promise<Response> {
+	const { request, url, host } = opts;
+	if (!url.pathname.startsWith('/api/v1/')) {
+		return new Response('Not found', { status: 404 });
+	}
+
+	const headers = new Headers();
+	for (const [key, value] of request.headers) {
+		const lower = key.toLowerCase();
+		if (HOP_BY_HOP.has(lower) || STRIP_INBOUND.has(lower)) continue;
+		headers.set(key, value);
+	}
+	headers.set('x-forwarded-host', host);
+
+	const method = request.method;
+	const body = method === 'GET' || method === 'HEAD' ? undefined : await request.arrayBuffer();
+
+	const upstream = await fetch(BACKEND_ORIGIN + url.pathname + url.search, {
+		method,
+		headers,
+		body,
+		redirect: 'manual'
+	});
+
+	const out = new Headers();
+	for (const [key, value] of upstream.headers) {
+		if (HOP_BY_HOP.has(key.toLowerCase())) continue;
+		out.set(key, value);
+	}
+	// Preserve every Set-Cookie separately (the header iterator collapses them).
+	const setCookies = upstream.headers.getSetCookie();
+	if (setCookies.length) {
+		out.delete('set-cookie');
+		for (const cookie of setCookies) out.append('set-cookie', cookie);
+	}
+
+	return new Response(upstream.body, {
+		status: upstream.status,
+		statusText: upstream.statusText,
+		headers: out
+	});
+}
+
 // backendOAuthPassthrough is a thin, transparent proxy for the browser-facing OAuth
 // redirect endpoints (ADR-0008 Cut 2). The backend has no published port — this
 // SvelteKit service is the sole proxy — so the browser reaches /start, /callback,
