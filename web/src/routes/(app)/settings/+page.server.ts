@@ -1,5 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import { backendClient } from '$lib/server/api';
+import { setSession } from '$lib/server/session';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -26,6 +27,41 @@ export const actions: Actions = {
 		});
 		if (err || !data) return fail(400, { error: 'Could not update settings.' });
 		return { settings: data, saved: true };
+	},
+
+	// Change the owner's own password (ADR-0011 cut 2). On success the backend
+	// re-issues THIS session (a fresh token at the bumped credential version), so we
+	// swap the session cookie to keep the owner logged in here while every other
+	// session drops. A wrong current password / policy failure surfaces the backend's
+	// real reason (per #144), not a generic error.
+	changePassword: async ({ request, cookies, locals, url }) => {
+		const fd = await request.formData();
+		const currentPassword = String(fd.get('current_password') ?? '');
+		const newPassword = String(fd.get('new_password') ?? '');
+		const confirmPassword = String(fd.get('confirm_password') ?? '');
+		if (!currentPassword || !newPassword) {
+			return fail(400, { passwordError: 'Enter your current and new password.' });
+		}
+		if (newPassword !== confirmPassword) {
+			return fail(400, { passwordError: 'The new passwords do not match.' });
+		}
+		const client = backendClient({ host: locals.host, token: locals.token });
+		const {
+			data,
+			error: err,
+			response
+		} = await client.PUT('/api/v1/me/password', {
+			body: { current_password: currentPassword, new_password: newPassword }
+		});
+		if (err || !data) {
+			return fail(response.status || 400, {
+				passwordError: err?.detail ?? 'Could not change your password.'
+			});
+		}
+		// The change invalidated every session, including this cookie's old token —
+		// install the re-issued one so the owner stays signed in on this device.
+		setSession(cookies, data.access_token, data.expires_in, url.protocol === 'https:');
+		return { passwordChanged: true };
 	},
 
 	// Register a custom domain. The response carries the CNAME target and the TXT

@@ -159,6 +159,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Change the authenticated owner's password
+         * @description Changes the authenticated owner's own password (ADR-0011). The current password is verified, the shared password policy is applied to the new one, and the credential version is bumped — so every OTHER active session for this user is immediately invalidated. The response re-issues THIS session (a fresh access token at the new version) so the caller stays logged in on the session that made the change. A wrong current password is rejected with a clear reason rather than a generic error.
+         */
+        put: operations["changePassword"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings": {
         parameters: {
             query?: never;
@@ -672,6 +692,12 @@ export interface components {
             token_type: "Bearer";
             /** @description Access-token lifetime in seconds. */
             expires_in: number;
+        };
+        ChangePasswordRequest: {
+            /** @description The caller's current password, re-verified before the change. */
+            current_password: string;
+            /** @description The replacement password. Must satisfy the instance password policy (a minimum length); a too-short value is rejected with a clear reason. */
+            new_password: string;
         };
         TenantSettings: {
             /** @description Whether Google login is turned on for this tenant. */
@@ -1284,6 +1310,33 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    changePassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Password changed. A fresh session access token for the acting session is returned; the caller replaces its stored token with it. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     getTenantSettings: {

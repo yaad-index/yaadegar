@@ -44,6 +44,59 @@
 </section>
 
 <section class="mt-8">
+	<h2 class="font-medium">Password</h2>
+	<p class="mt-1 text-sm text-gray-600">
+		Change your password. You'll stay signed in here; any other devices signed in with the old
+		password are signed out.
+	</p>
+
+	{#if form?.passwordChanged}
+		<p class="mt-3 rounded bg-green-50 p-2 text-sm text-green-700" role="status">
+			Password changed.
+		</p>
+	{/if}
+	{#if form?.passwordError}
+		<p class="mt-3 rounded bg-red-50 p-2 text-sm text-red-700" role="alert">{form.passwordError}</p>
+	{/if}
+
+	<form method="post" action="?/changePassword" use:enhance class="mt-3 max-w-sm space-y-2">
+		<label class="block">
+			<span class="text-sm text-gray-700">Current password</span>
+			<input
+				class="mt-1 w-full rounded border p-2"
+				type="password"
+				name="current_password"
+				autocomplete="current-password"
+				required
+			/>
+		</label>
+		<label class="block">
+			<span class="text-sm text-gray-700">New password</span>
+			<input
+				class="mt-1 w-full rounded border p-2"
+				type="password"
+				name="new_password"
+				autocomplete="new-password"
+				minlength="8"
+				required
+			/>
+		</label>
+		<label class="block">
+			<span class="text-sm text-gray-700">Confirm new password</span>
+			<input
+				class="mt-1 w-full rounded border p-2"
+				type="password"
+				name="confirm_password"
+				autocomplete="new-password"
+				minlength="8"
+				required
+			/>
+		</label>
+		<button class="rounded bg-black px-3 py-2 text-white" type="submit">Change password</button>
+	</form>
+</section>
+
+<section class="mt-8">
 	<h2 class="font-medium">Custom domains</h2>
 	<p class="mt-1 text-sm text-gray-600">
 		Serve your lists from your own hostname. Add it, publish the two DNS records shown, then verify.
