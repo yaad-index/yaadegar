@@ -106,10 +106,15 @@ func (s *Server) GetAuthMethods(ctx context.Context, _ gen.GetAuthMethodsRequest
 	if s.baseDomain != "" {
 		loginURL = "https://" + tenant.Subdomain + "." + s.baseDomain + "/login"
 	}
+	// Self-registration is on when the instance policy is not disabled (ADR-0012).
+	// The frontend uses it to show the register affordance and to warn when a
+	// per-list `registered` reserve tier is set on a closed-registration instance.
+	_, registrationEnabled := registrationRole(s.registrationPolicy)
 	return gen.GetAuthMethods200JSONResponse{
-		Password: s.auth.Enabled(auth.MethodPassword) && !custom,
-		Google:   s.oauth != nil && tenant.OAuthGoogleEnabled && !custom,
-		LoginUrl: loginURL,
+		Password:            s.auth.Enabled(auth.MethodPassword) && !custom,
+		Google:              s.oauth != nil && tenant.OAuthGoogleEnabled && !custom,
+		LoginUrl:            loginURL,
+		RegistrationEnabled: registrationEnabled,
 	}, nil
 }
 

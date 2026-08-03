@@ -70,6 +70,15 @@ func (s *Server) CreateReservation(ctx context.Context, req gen.CreateReservatio
 	if tier == storage.TierEmailConfirmed {
 		return s.reserveEmailConfirmed(ctx, ts, item, qty, giverName, giverEmail)
 	}
+	if tier == storage.TierRegistered {
+		// A registered-tier list refuses the anonymous path (ADR-0012 Decision 4): a
+		// registered account must reserve through POST /api/v1/me/reservations, which
+		// binds the reservation to the account server-side. The anonymous surface has
+		// no account to bind, so it cannot satisfy the tier.
+		return gen.CreateReservation401ApplicationProblemPlusJSONResponse(
+			problemDetail(401, "this list requires a registered account; sign in and reserve from your account"),
+		), nil
+	}
 
 	raw, hash, err := token.New()
 	if err != nil {

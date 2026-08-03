@@ -236,6 +236,11 @@ type ReservationRepo interface {
 	// never match (ADR-0007 §3).
 	ByConfirmTokenHash(ctx context.Context, tokenHash string) (Reservation, error)
 	ListByItem(ctx context.Context, itemID string) ([]Reservation, error)
+	// ListByReserver returns a page of the reservations bound to an account — its
+	// own "things I've reserved" dashboard (#20) — joined to each item + list for
+	// display, newest first, live reservations only. Scoped by tenant +
+	// reserver_user_id, so it never surfaces another account's reservation.
+	ListByReserver(ctx context.Context, userID string, p Page) ([]ReserverReservation, int, error)
 	Delete(ctx context.Context, id string) error
 
 	// The decay transitions below are each row-locked and idempotent: they act

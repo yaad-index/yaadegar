@@ -176,6 +176,24 @@ func (e MatchState) Valid() bool {
 	}
 }
 
+// Defines values for MyReservationState.
+const (
+	MyReservationStateActive           MyReservationState = "active"
+	MyReservationStateReserverNotified MyReservationState = "reserver_notified"
+)
+
+// Valid indicates whether the value is a known member of the MyReservationState enum.
+func (e MyReservationState) Valid() bool {
+	switch e {
+	case MyReservationStateActive:
+		return true
+	case MyReservationStateReserverNotified:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ReservationConfirmedStatus.
 const (
 	ReservationConfirmedStatusActive ReservationConfirmedStatus = "active"
@@ -540,6 +558,9 @@ type LoginMethods struct {
 
 	// Password Whether to render the username+password form on this host (the instance has password login enabled AND this is not a custom domain).
 	Password bool `json:"password"`
+
+	// RegistrationEnabled Whether this instance allows self-registration (the ADR-0009 policy is not `disabled`). The frontend uses it to show/hide the register affordance and to warn when a per-list `registered` reserve tier is set on a closed-registration instance (ADR-0012 Decision 5).
+	RegistrationEnabled bool `json:"registration_enabled"`
 }
 
 // LoginRequest defines model for LoginRequest.
@@ -581,6 +602,40 @@ type Money struct {
 	// AmountMinor Amount in minor units (e.g. cents).
 	AmountMinor int    `json:"amount_minor"`
 	Currency    string `json:"currency"`
+}
+
+// MyReservation One row of the reserver's own dashboard: a reservation the account made, with just enough list/item context to display and manage it. Carries no other reserver's identity.
+type MyReservation struct {
+	CreatedAt     time.Time `json:"created_at"`
+	ItemId        string    `json:"item_id"`
+	ItemName      string    `json:"item_name"`
+	ListTitle     string    `json:"list_title"`
+	Quantity      int       `json:"quantity"`
+	ReservationId string    `json:"reservation_id"`
+
+	// ShareSlug The list's share slug, so the dashboard can link back to it.
+	ShareSlug string `json:"share_slug"`
+
+	// State The reservation's lifecycle state as it appears on the dashboard — active, or reserver_notified while a decay reminder is outstanding. Released/expired reservations are omitted from the dashboard.
+	State MyReservationState `json:"state"`
+}
+
+// MyReservationState The reservation's lifecycle state as it appears on the dashboard — active, or reserver_notified while a decay reminder is outstanding. Released/expired reservations are omitted from the dashboard.
+type MyReservationState string
+
+// MyReservationCreate defines model for MyReservationCreate.
+type MyReservationCreate struct {
+	ItemId   string `json:"item_id"`
+	Quantity *int   `json:"quantity,omitempty"`
+
+	// ShareSlug The share slug of the list holding the item.
+	ShareSlug string `json:"share_slug"`
+}
+
+// MyReservationPage defines model for MyReservationPage.
+type MyReservationPage struct {
+	Items []MyReservation `json:"items"`
+	Total int             `json:"total"`
 }
 
 // NullableBool defines model for NullableBool.
@@ -802,6 +857,12 @@ type ListItemsParams struct {
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// ListMyReservationsParams defines parameters for ListMyReservations.
+type ListMyReservationsParams struct {
+	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
 // KeepByDecayTokenJSONBody defines parameters for KeepByDecayToken.
 type KeepByDecayTokenJSONBody struct {
 	Token string `json:"token"`
@@ -872,6 +933,9 @@ type CreateItemJSONRequestBody = ItemCreate
 
 // ChangePasswordJSONRequestBody defines body for ChangePassword for application/json ContentType.
 type ChangePasswordJSONRequestBody = ChangePasswordRequest
+
+// CreateMyReservationJSONRequestBody defines body for CreateMyReservation for application/json ContentType.
+type CreateMyReservationJSONRequestBody = MyReservationCreate
 
 // UpdateTenantSettingsJSONRequestBody defines body for UpdateTenantSettings for application/json ContentType.
 type UpdateTenantSettingsJSONRequestBody = TenantSettingsUpdate
@@ -980,6 +1044,15 @@ type ServerInterface interface {
 	// ChangePassword Change the authenticated owner's password
 	// (PUT /api/v1/me/password)
 	ChangePassword(w http.ResponseWriter, r *http.Request)
+	// ListMyReservations List the authenticated account's own reservations
+	// (GET /api/v1/me/reservations)
+	ListMyReservations(w http.ResponseWriter, r *http.Request, params ListMyReservationsParams)
+	// CreateMyReservation Reserve an item as the authenticated account
+	// (POST /api/v1/me/reservations)
+	CreateMyReservation(w http.ResponseWriter, r *http.Request)
+	// DeleteMyReservation Release one of the authenticated account's own reservations
+	// (DELETE /api/v1/me/reservations/{reservationId})
+	DeleteMyReservation(w http.ResponseWriter, r *http.Request, reservationId string)
 	// GetTenantSettings Get the owner's tenant settings
 	// (GET /api/v1/settings)
 	GetTenantSettings(w http.ResponseWriter, r *http.Request)
@@ -1700,6 +1773,92 @@ func (siw *ServerInterfaceWrapper) ChangePassword(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// ListMyReservations operation middleware
+func (siw *ServerInterfaceWrapper) ListMyReservations(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListMyReservationsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListMyReservations(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateMyReservation operation middleware
+func (siw *ServerInterfaceWrapper) CreateMyReservation(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateMyReservation(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteMyReservation operation middleware
+func (siw *ServerInterfaceWrapper) DeleteMyReservation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "reservationId" -------------
+	var reservationId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "reservationId", r.PathValue("reservationId"), &reservationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "reservationId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteMyReservation(w, r, reservationId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetTenantSettings operation middleware
 func (siw *ServerInterfaceWrapper) GetTenantSettings(w http.ResponseWriter, r *http.Request) {
 
@@ -2145,6 +2304,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/admin/tenants/{tenantId}/users/{userId}", wrapper.AdminUpdateUser)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/me", wrapper.GetCurrentUser)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/me/password", wrapper.ChangePassword)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/me/reservations", wrapper.ListMyReservations)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/me/reservations", wrapper.CreateMyReservation)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/me/reservations/{reservationId}", wrapper.DeleteMyReservation)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/settings", wrapper.GetTenantSettings)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/settings", wrapper.UpdateTenantSettings)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/lists", wrapper.ListLists)
@@ -4037,6 +4199,190 @@ func (response ChangePassword403ApplicationProblemPlusJSONResponse) VisitChangeP
 	return err
 }
 
+type ListMyReservationsRequestObject struct {
+	Params ListMyReservationsParams
+}
+
+type ListMyReservationsResponseObject interface {
+	VisitListMyReservationsResponse(w http.ResponseWriter) error
+}
+
+type ListMyReservations200JSONResponse MyReservationPage
+
+func (response ListMyReservations200JSONResponse) VisitListMyReservationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMyReservations401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response ListMyReservations401ApplicationProblemPlusJSONResponse) VisitListMyReservationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMyReservationRequestObject struct {
+	Body *CreateMyReservationJSONRequestBody
+}
+
+type CreateMyReservationResponseObject interface {
+	VisitCreateMyReservationResponse(w http.ResponseWriter) error
+}
+
+type CreateMyReservation201JSONResponse ReservationCreated
+
+func (response CreateMyReservation201JSONResponse) VisitCreateMyReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMyReservation400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response CreateMyReservation400ApplicationProblemPlusJSONResponse) VisitCreateMyReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMyReservation401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response CreateMyReservation401ApplicationProblemPlusJSONResponse) VisitCreateMyReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMyReservation404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response CreateMyReservation404ApplicationProblemPlusJSONResponse) VisitCreateMyReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMyReservation409ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateMyReservation409ApplicationProblemPlusJSONResponse) VisitCreateMyReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMyReservation410ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateMyReservation410ApplicationProblemPlusJSONResponse) VisitCreateMyReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMyReservationRequestObject struct {
+	ReservationId string `json:"reservationId"`
+}
+
+type DeleteMyReservationResponseObject interface {
+	VisitDeleteMyReservationResponse(w http.ResponseWriter) error
+}
+
+type DeleteMyReservation204Response struct {
+}
+
+func (response DeleteMyReservation204Response) VisitDeleteMyReservationResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteMyReservation401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteMyReservation401ApplicationProblemPlusJSONResponse) VisitDeleteMyReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMyReservation404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteMyReservation404ApplicationProblemPlusJSONResponse) VisitDeleteMyReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetTenantSettingsRequestObject struct {
 }
 
@@ -4813,6 +5159,20 @@ func (response CreateReservation400ApplicationProblemPlusJSONResponse) VisitCrea
 	return err
 }
 
+type CreateReservation401ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateReservation401ApplicationProblemPlusJSONResponse) VisitCreateReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateReservation404ApplicationProblemPlusJSONResponse struct {
 	NotFoundApplicationProblemPlusJSONResponse
 }
@@ -4957,6 +5317,15 @@ type StrictServerInterface interface {
 	// ChangePassword Change the authenticated owner's password
 	// (PUT /api/v1/me/password)
 	ChangePassword(ctx context.Context, request ChangePasswordRequestObject) (ChangePasswordResponseObject, error)
+	// ListMyReservations List the authenticated account's own reservations
+	// (GET /api/v1/me/reservations)
+	ListMyReservations(ctx context.Context, request ListMyReservationsRequestObject) (ListMyReservationsResponseObject, error)
+	// CreateMyReservation Reserve an item as the authenticated account
+	// (POST /api/v1/me/reservations)
+	CreateMyReservation(ctx context.Context, request CreateMyReservationRequestObject) (CreateMyReservationResponseObject, error)
+	// DeleteMyReservation Release one of the authenticated account's own reservations
+	// (DELETE /api/v1/me/reservations/{reservationId})
+	DeleteMyReservation(ctx context.Context, request DeleteMyReservationRequestObject) (DeleteMyReservationResponseObject, error)
 	// GetTenantSettings Get the owner's tenant settings
 	// (GET /api/v1/settings)
 	GetTenantSettings(ctx context.Context, request GetTenantSettingsRequestObject) (GetTenantSettingsResponseObject, error)
@@ -5848,6 +6217,89 @@ func (sh *strictHandler) ChangePassword(w http.ResponseWriter, r *http.Request) 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ChangePasswordResponseObject); ok {
 		if err := validResponse.VisitChangePasswordResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListMyReservations operation middleware
+func (sh *strictHandler) ListMyReservations(w http.ResponseWriter, r *http.Request, params ListMyReservationsParams) {
+	var request ListMyReservationsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListMyReservations(ctx, request.(ListMyReservationsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListMyReservations")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListMyReservationsResponseObject); ok {
+		if err := validResponse.VisitListMyReservationsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateMyReservation operation middleware
+func (sh *strictHandler) CreateMyReservation(w http.ResponseWriter, r *http.Request) {
+	var request CreateMyReservationRequestObject
+
+	var body CreateMyReservationJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateMyReservation(ctx, request.(CreateMyReservationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateMyReservation")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateMyReservationResponseObject); ok {
+		if err := validResponse.VisitCreateMyReservationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteMyReservation operation middleware
+func (sh *strictHandler) DeleteMyReservation(w http.ResponseWriter, r *http.Request, reservationId string) {
+	var request DeleteMyReservationRequestObject
+
+	request.ReservationId = reservationId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteMyReservation(ctx, request.(DeleteMyReservationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteMyReservation")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteMyReservationResponseObject); ok {
+		if err := validResponse.VisitDeleteMyReservationResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
