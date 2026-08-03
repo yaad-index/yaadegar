@@ -55,3 +55,11 @@ supersedes the old one (and mark the old one `Superseded by ADR-XXXX`).
   retires the separate admin login, session cookie, and superadmin env credential;
   `requireAdmin` becomes a per-request capability load with tenant-scoped tokens and
   instance-wide reach confined to `/admin`; refines ADR-0009 §3. **Status: Proposed.**
+- [ADR-0011: Password lifecycle](0011-password-lifecycle.md) — a per-user
+  `credential_version` claim checked in `requireOwner` so every password mutation
+  immediately revokes prior sessions (an eyes-open trade against ADR-0005 §1's
+  stateless validation, mitigated by a short-TTL cache); an authenticated
+  change-password endpoint that re-issues only the acting session; an
+  enumeration-safe email forgot-password reset; and one version-bumping mutation
+  funnel for all four password entry points (set-password CLI, change, reset,
+  create-owner); addresses #142 + #148. **Status: Proposed.**
