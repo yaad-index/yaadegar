@@ -94,6 +94,57 @@ func TestTenantMatchInvariant(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
+// TestStaleCredentialVersionRejected: a token whose cver claim no longer matches the
+// user's stored credential_version is rejected on the owner surface (ADR-0011).
+func TestStaleCredentialVersionRejected(t *testing.T) {
+	h := newHarness(t)
+
+	// The seeded owner is at stored version 1. A token pinning a different version is
+	// a stale session and must be rejected, even though it is otherwise valid.
+	stale := h.tokenForVersion(h.owner.ID, h.tenant.ID, 99)
+	resp, _ := h.req(http.MethodGet, "/api/v1/me", h.ownerHost(), stale, nil)
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+
+	// Sanity: the matching-version token works.
+	resp, _ = h.req(http.MethodGet, "/api/v1/me", h.ownerHost(), h.ownerToken(), nil)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+// TestPasswordChangeInvalidatesToken: a password mutation bumps the stored
+// credential_version, so a previously-issued session token stops authenticating
+// while a freshly-issued one works (ADR-0011 — the core invalidation guarantee).
+func TestPasswordChangeInvalidatesToken(t *testing.T) {
+	h := newHarness(t)
+	user := h.seedCredentialedUser("erin", "first-password")
+
+	// Log in → a live session token (cver = 1).
+	resp, body := h.req(http.MethodPost, "/api/v1/auth/login", h.ownerHost(), "",
+		map[string]any{"username": "erin", "password": "first-password"})
+	require.Equal(t, http.StatusOK, resp.StatusCode, "body: %s", body)
+	oldToken := decode[gen.LoginResponse](t, body).AccessToken
+
+	// It authenticates now.
+	resp, _ = h.req(http.MethodGet, "/api/v1/me", h.ownerHost(), oldToken, nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// A password mutation (the set-password funnel's storage half) bumps the version.
+	newHash, err := auth.HashNewPassword("second-password")
+	require.NoError(t, err)
+	require.NoError(t, h.store.ForTenant(h.tenant).Users().SetPasswordHash(context.Background(), user.ID, newHash))
+
+	// The old token is now invalid — the stored version moved past its cver.
+	resp, _ = h.req(http.MethodGet, "/api/v1/me", h.ownerHost(), oldToken, nil)
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+
+	// A fresh login picks up the new version and authenticates.
+	resp, body = h.req(http.MethodPost, "/api/v1/auth/login", h.ownerHost(), "",
+		map[string]any{"username": "erin", "password": "second-password"})
+	require.Equal(t, http.StatusOK, resp.StatusCode, "body: %s", body)
+	newToken := decode[gen.LoginResponse](t, body).AccessToken
+	resp, _ = h.req(http.MethodGet, "/api/v1/me", h.ownerHost(), newToken, nil)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
 // TestLoginIsUnauthenticated: the login endpoint itself needs no token (it is the
 // way to get one).
 func TestLoginIsUnauthenticated(t *testing.T) {

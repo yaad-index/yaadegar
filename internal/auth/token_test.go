@@ -32,6 +32,18 @@ func TestIssueValidateRoundtrip(t *testing.T) {
 	assert.Equal(t, auth.RoleOwner, p.Role)
 }
 
+// TestIssueValidateCredentialVersion checks the cver claim round-trips (ADR-0011):
+// the issuer stamps the principal's credential_version and validation reads it back.
+func TestIssueValidateCredentialVersion(t *testing.T) {
+	i := testIssuer(clock.NewFake(epoch))
+	tok, err := i.Issue(auth.Principal{UserID: "u1", TenantID: "t1", Role: auth.RoleOwner, CredentialVersion: 7})
+	require.NoError(t, err)
+
+	p, err := i.Validate(tok)
+	require.NoError(t, err)
+	assert.Equal(t, 7, p.CredentialVersion)
+}
+
 func TestValidateRejectsExpired(t *testing.T) {
 	clk := clock.NewFake(epoch)
 	i := testIssuer(clk)

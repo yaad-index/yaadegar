@@ -30,6 +30,40 @@ const (
 // ErrInvalidHash marks a stored hash that is not a well-formed argon2id PHC string.
 var ErrInvalidHash = errors.New("auth: malformed password hash")
 
+// MinPasswordLen is the shared password policy's minimum length in bytes (ADR-0011
+// §4). The policy is defined once here so every password-mutation path — the
+// create-owner and set-password CLIs today, change-password and reset later —
+// enforces the same floor. It is a minimum, not a strength meter: length is the
+// single highest-signal rule, and pairing it with the argon2id hashing already in
+// place is the pragmatic baseline.
+const MinPasswordLen = 8
+
+// ErrPasswordTooShort is returned by ValidatePasswordPolicy for a password below
+// MinPasswordLen. Callers surface it to the operator/user; it names the rule that
+// failed without echoing the password.
+var ErrPasswordTooShort = fmt.Errorf("auth: password must be at least %d characters", MinPasswordLen)
+
+// ValidatePasswordPolicy enforces the shared password policy (ADR-0011 §4). It is
+// the one place the rules live; extend it (not each call site) as the policy grows.
+func ValidatePasswordPolicy(plaintext string) error {
+	if len(plaintext) < MinPasswordLen {
+		return ErrPasswordTooShort
+	}
+	return nil
+}
+
+// HashNewPassword is the single funnel every password-setting path routes through
+// (ADR-0011 §4): it applies the shared policy, then hashes. No caller hashes a new
+// password directly — going through here is what guarantees a password can never be
+// stored in violation of the policy. The credential_version bump is the storage
+// layer's half of the same invariant (SetPasswordHash / a fresh Create).
+func HashNewPassword(plaintext string) (string, error) {
+	if err := ValidatePasswordPolicy(plaintext); err != nil {
+		return "", err
+	}
+	return HashPassword(plaintext)
+}
+
 // HashPassword returns an argon2id PHC-encoded hash of the plaintext
 // (`$argon2id$v=19$m=...,t=...,p=...$salt$hash`), with a fresh random salt. The
 // plaintext is never stored or logged.

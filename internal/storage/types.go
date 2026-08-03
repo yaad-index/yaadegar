@@ -125,8 +125,15 @@ type User struct {
 	// orthogonal to Role — the capability, not a separate identity, is what makes an
 	// account an admin. requireAdmin reads it per-request from the token's home
 	// tenant, so revoking it takes effect immediately.
-	IsAdmin   bool
-	CreatedAt time.Time
+	IsAdmin bool
+	// CredentialVersion is the session-invalidation counter (ADR-0011): every
+	// password mutation increments it, and an issued session JWT pins the value it
+	// was minted at. The owner middleware rejects a token whose `cver` claim no
+	// longer matches this stored value, so a password change/reset/set-password
+	// revokes all prior sessions immediately. Starts at 1 (the migration default);
+	// Create seeds a new account at 1.
+	CredentialVersion int
+	CreatedAt         time.Time
 }
 
 // List is an owner's wishlist. ShareSlug is the opaque, unguessable handle used

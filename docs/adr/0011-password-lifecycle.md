@@ -1,6 +1,6 @@
 # ADR-0011: Password lifecycle (change, reset, session invalidation)
 
-**Status:** Proposed
+**Status:** Accepted
 
 **Extends** [ADR-0005](0005-owner-authentication.md) (owner authentication: the
 session JWT, its claims, and the `requireOwner` middleware) and builds on
@@ -57,16 +57,21 @@ previously-issued tokens for that user become invalid** — they carry the old
 version and fail the check.
 
 This is a deliberate, eyes-open departure from ADR-0005 §1's fully-stateless
-validation: it introduces **one indexed primary-key read per authenticated
-request** (the user's current version). We own that cost explicitly rather than
-pretend it is free. Two things bound it:
+validation: owner-request validation now depends on **the user's current
+`credential_version`**, a per-request read rather than a pure signature check. We
+own that explicitly rather than pretend it is free. Three things bound it:
 
-- **A short-TTL in-process cache** of `user_id → credential_version` (single-node,
-  a few seconds) collapses the read to memory for hot sessions. The staleness it
-  introduces is bounded by the TTL — a revoked token may survive for at most that
-  window — which is an acceptable trade against the per-request DB hit. A
-  multi-node deployment either accepts the same small window per node or shares the
-  cache behind the existing store seam (out of scope here).
+- **The read is not additional on the owner surface.** `requireOwner` already loads
+  the user row every request (the ban check, ADR-0009), so the version comparison
+  folds into that existing lookup — it adds a column, not a query. The `/admin`
+  surface, which also loads the user per request, gets the same check for the same
+  reason.
+- **No cache ships in this design.** The per-request indexed lookup is the shipped
+  mechanism; an in-process `user_id → credential_version` cache is a *documented
+  future optimization*, to be added only if profiling shows the version lookup hot.
+  Deferring it keeps revocation exact (no staleness window) and avoids the
+  multi-node cache-coherence question until there is evidence the read is worth
+  optimizing away.
 - **The access-token TTL stays short regardless** (ADR-0005 §5). The version check
   is the *immediate* revocation; the short TTL remains the backstop.
 
@@ -111,8 +116,10 @@ Two anonymous endpoints, following the emailed-capability pattern:
   unused), applies the shared password policy, sets the new password, marks the
   token used, and **bumps `credential_version`** — so a reset **doubles as
   breach-response for free**: it changes the secret *and* revokes every existing
-  session in one step. It may optionally issue a fresh session so the user lands
-  logged in.
+  session in one step. The confirm response **issues a fresh session so the user
+  lands logged in** on the device that completed the reset — the just-set password
+  is proof enough of identity, and a forced re-login immediately after would be pure
+  friction. Every *other* session is already dead from the version bump.
 
 Reset tokens are single-use and short-lived; the exact table shape and TTL are an
 implementation detail of the funnel, modeled on the existing token tables.
@@ -140,11 +147,14 @@ gets set in violation of the policy.**
 ## Consequences
 
 - **Sessions become revocable** at the cost of ADR-0005 §1's zero-DB-read promise:
-  authenticated owner requests now do one primary-key read of the acting user's
-  `credential_version` (mitigated by the short-TTL cache in Decision 1). This is the
-  central trade-off — immediate revocation is not free, and the ADR chooses to pay
-  a bounded, cached, single-row read for it. The public/giver surface is unchanged
-  (it never carried a session; ADR-0005 §2).
+  authenticated owner requests now read the acting user's `credential_version`. On
+  the owner and `/admin` surfaces that read folds into the per-request user load the
+  middleware already performs (the ban check), so it adds a column, not a query. No
+  cache ships — the exact per-request check is the mechanism, with an in-process
+  cache left as a documented future optimization if profiling ever shows it hot
+  (Decision 1). This is the central trade-off, and the ADR chooses exact revocation
+  over a staleness window. The public/giver surface is unchanged (it never carried a
+  session; ADR-0005 §2).
 - **Reset and change both invalidate other sessions**, giving #142 a real recovery
   story and #148 its revocation, and making an operator `set-password` a genuine
   lockout/breach-response tool rather than a secret swap an attacker's live token

@@ -30,13 +30,24 @@ type Principal struct {
 	UserID   string
 	TenantID string
 	Role     Role
+	// CredentialVersion is the user's credential_version at the moment the token was
+	// minted (ADR-0011). The owner middleware compares it against the stored version
+	// and rejects the token on a mismatch, so a password mutation revokes prior
+	// sessions. Issuers stamp the user's current version; validation reads it back.
+	CredentialVersion int
 }
 
-// Claims is the JWT payload: the standard registered claims plus the tenant id and
-// role. `sub` carries the user id.
+// Claims is the JWT payload: the standard registered claims plus the tenant id,
+// role, and credential version. `sub` carries the user id.
 type Claims struct {
 	TenantID string `json:"tid"`
 	Role     Role   `json:"role"`
+	// CredentialVersion pins the session to the user's credential_version at issue
+	// (ADR-0011); the owner middleware rejects the token once the stored version moves
+	// past it. Omitted-as-zero on a legacy token predating this claim, which then
+	// fails the version check against the stored default of 1 — a one-time forced
+	// re-login on upgrade, which is the safe direction.
+	CredentialVersion int `json:"cver"`
 	jwt.RegisteredClaims
 }
 
@@ -65,8 +76,9 @@ func (i *Issuer) AccessTTL() time.Duration { return i.accessTTL }
 func (i *Issuer) Issue(p Principal) (string, error) {
 	now := i.clock.Now()
 	claims := Claims{
-		TenantID: p.TenantID,
-		Role:     p.Role,
+		TenantID:          p.TenantID,
+		Role:              p.Role,
+		CredentialVersion: p.CredentialVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   p.UserID,
 			Issuer:    i.issuerID,
@@ -111,5 +123,10 @@ func (i *Issuer) Validate(tokenString string) (Principal, error) {
 	if claims.Subject == "" || claims.TenantID == "" || claims.Role == "" {
 		return Principal{}, fmt.Errorf("%w: missing required claims", ErrInvalidToken)
 	}
-	return Principal{UserID: claims.Subject, TenantID: claims.TenantID, Role: claims.Role}, nil
+	return Principal{
+		UserID:            claims.Subject,
+		TenantID:          claims.TenantID,
+		Role:              claims.Role,
+		CredentialVersion: claims.CredentialVersion,
+	}, nil
 }

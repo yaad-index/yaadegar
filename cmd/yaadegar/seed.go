@@ -89,7 +89,7 @@ func (c *SetPasswordCmd) Run() error {
 		}
 		return fmt.Errorf("resolve user: %w", err)
 	}
-	hash, err := auth.HashPassword(pw)
+	hash, err := auth.HashNewPassword(pw)
 	if err != nil {
 		return fmt.Errorf("hash password: %w", err)
 	}
@@ -178,7 +178,7 @@ func (c *CreateOwnerCmd) Run() error {
 		return fmt.Errorf("resolve tenant: %w", err)
 	}
 
-	hash, err := auth.HashPassword(c.Password)
+	hash, err := auth.HashNewPassword(c.Password)
 	if err != nil {
 		return fmt.Errorf("hash password: %w", err)
 	}

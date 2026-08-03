@@ -20,12 +20,15 @@ func (r userRepo) Create(ctx context.Context, u storage.User) (storage.User, err
 	if u.Role == "" {
 		u.Role = storage.RoleOwner
 	}
+	if u.CredentialVersion == 0 {
+		u.CredentialVersion = 1 // a new account starts at version 1 (ADR-0011)
+	}
 	u.TenantID = r.tenantID
 	_, err := r.db.ExecContext(ctx, r.rb(
-		`INSERT INTO users (id, tenant_id, name, email, username, password_hash, role, banned, is_admin, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+		`INSERT INTO users (id, tenant_id, name, email, username, password_hash, role, banned, is_admin, credential_version, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		u.ID, u.TenantID, u.Name, u.Email, usernameArg(u.Username), u.PasswordHash,
-		string(u.Role), boolToInt(u.Banned), boolToInt(u.IsAdmin), fmtTime(u.CreatedAt))
+		string(u.Role), boolToInt(u.Banned), boolToInt(u.IsAdmin), u.CredentialVersion, fmtTime(u.CreatedAt))
 	if err != nil {
 		if r.d.isUniqueViolation(err) {
 			return storage.User{}, storage.ErrConflict // e.g. a duplicate username in the tenant
@@ -37,13 +40,13 @@ func (r userRepo) Create(ctx context.Context, u storage.User) (storage.User, err
 
 func (r userRepo) Get(ctx context.Context, id string) (storage.User, error) {
 	return r.scanUser(r.db.QueryRowContext(ctx, r.rb(
-		`SELECT id, tenant_id, name, email, username, password_hash, role, banned, is_admin, created_at
+		`SELECT id, tenant_id, name, email, username, password_hash, role, banned, is_admin, credential_version, created_at
 		   FROM users WHERE tenant_id = ? AND id = ?`), r.tenantID, id))
 }
 
 func (r userRepo) ByUsername(ctx context.Context, username string) (storage.User, error) {
 	return r.scanUser(r.db.QueryRowContext(ctx, r.rb(
-		`SELECT id, tenant_id, name, email, username, password_hash, role, banned, is_admin, created_at
+		`SELECT id, tenant_id, name, email, username, password_hash, role, banned, is_admin, credential_version, created_at
 		   FROM users WHERE tenant_id = ? AND username = ?`), r.tenantID, username))
 }
 
@@ -56,7 +59,7 @@ func (r userRepo) ByEmail(ctx context.Context, email string) (storage.User, erro
 		return storage.User{}, storage.ErrNotFound
 	}
 	return r.scanUser(r.db.QueryRowContext(ctx, r.rb(
-		`SELECT id, tenant_id, name, email, username, password_hash, role, banned, is_admin, created_at
+		`SELECT id, tenant_id, name, email, username, password_hash, role, banned, is_admin, credential_version, created_at
 		   FROM users WHERE tenant_id = ? AND email = ?
 		  ORDER BY created_at, id LIMIT 1`), r.tenantID, email))
 }
@@ -83,7 +86,7 @@ func scanUserRow(row rowScanner) (storage.User, error) {
 		createdAt string
 	)
 	if err := row.Scan(&u.ID, &u.TenantID, &u.Name, &u.Email, &username, &u.PasswordHash,
-		&role, &banned, &isAdmin, &createdAt); err != nil {
+		&role, &banned, &isAdmin, &u.CredentialVersion, &createdAt); err != nil {
 		return storage.User{}, err
 	}
 	if username.Valid {
@@ -108,7 +111,7 @@ func (r userRepo) List(ctx context.Context, p storage.Page) ([]storage.User, int
 		return nil, 0, err
 	}
 	rows, err := r.db.QueryContext(ctx, r.rb(
-		`SELECT id, tenant_id, name, email, username, password_hash, role, banned, is_admin, created_at
+		`SELECT id, tenant_id, name, email, username, password_hash, role, banned, is_admin, credential_version, created_at
 		   FROM users WHERE tenant_id = ?
 		  ORDER BY created_at, id LIMIT ? OFFSET ?`), r.tenantID, p.Limit, p.Offset)
 	if err != nil {
@@ -156,12 +159,15 @@ func (r userRepo) SetAdmin(ctx context.Context, userID string, isAdmin bool) err
 	return expectOne(res)
 }
 
-// SetPasswordHash replaces a user's argon2id password credential (#141 set-password
-// CLI). The value is already hashed by the caller; no schema change (password_hash
-// exists). Scoped to the bound tenant, mirroring the other Set* mutations.
+// SetPasswordHash replaces a user's argon2id password credential and bumps its
+// credential_version in the same write (ADR-0011), so every password mutation
+// atomically revokes all prior sessions — an operator set-password becomes a real
+// lockout, not a secret swap a live token ignores. The value is already hashed by
+// the caller. Scoped to the bound tenant, mirroring the other Set* mutations.
 func (r userRepo) SetPasswordHash(ctx context.Context, userID, passwordHash string) error {
 	res, err := r.db.ExecContext(ctx, r.rb(
-		`UPDATE users SET password_hash = ? WHERE tenant_id = ? AND id = ?`), passwordHash, r.tenantID, userID)
+		`UPDATE users SET password_hash = ?, credential_version = credential_version + 1
+		   WHERE tenant_id = ? AND id = ?`), passwordHash, r.tenantID, userID)
 	if err != nil {
 		return err
 	}
