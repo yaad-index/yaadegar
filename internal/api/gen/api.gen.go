@@ -22,16 +22,16 @@ import (
 
 // Defines values for AdminUserRole.
 const (
-	Giver AdminUserRole = "giver"
-	Owner AdminUserRole = "owner"
+	AdminUserRoleGiver AdminUserRole = "giver"
+	AdminUserRoleOwner AdminUserRole = "owner"
 )
 
 // Valid indicates whether the value is a known member of the AdminUserRole enum.
 func (e AdminUserRole) Valid() bool {
 	switch e {
-	case Giver:
+	case AdminUserRoleGiver:
 		return true
-	case Owner:
+	case AdminUserRoleOwner:
 		return true
 	default:
 		return false
@@ -221,6 +221,24 @@ func (e ReservationCreatedStatus) Valid() bool {
 	case ReservationCreatedStatusActive:
 		return true
 	case ReservationCreatedStatusPendingConfirmation:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UserRole.
+const (
+	UserRoleGiver UserRole = "giver"
+	UserRoleOwner UserRole = "owner"
+)
+
+// Valid indicates whether the value is a known member of the UserRole enum.
+func (e UserRole) Valid() bool {
+	switch e {
+	case UserRoleGiver:
+		return true
+	case UserRoleOwner:
 		return true
 	default:
 		return false
@@ -784,11 +802,17 @@ type User struct {
 	// IsAdmin Whether this account holds the instance-admin capability (ADR-0010). The frontend uses it to reveal the admin surface; every /admin call is still authorized server-side.
 	IsAdmin *bool   `json:"is_admin,omitempty"`
 	Name    *string `json:"name,omitempty"`
-	Tenant  *struct {
+
+	// Role The account's tenant role (ADR-0009): owner ⊇ giver (an owner may give, a giver owns no lists). The frontend uses it to land a giver on their reserver dashboard rather than the owner "your lists" page (ADR-0012).
+	Role   *UserRole `json:"role,omitempty"`
+	Tenant *struct {
 		Id        *string `json:"id,omitempty"`
 		Subdomain *string `json:"subdomain,omitempty"`
 	} `json:"tenant,omitempty"`
 }
+
+// UserRole The account's tenant role (ADR-0009): owner ⊇ giver (an owner may give, a giver owns no lists). The frontend uses it to land a giver on their reserver dashboard rather than the owner "your lists" page (ADR-0012).
+type UserRole string
 
 // ItemId defines model for ItemId.
 type ItemId = string

@@ -30,6 +30,10 @@
 	// The add form's price is entered in major units and drives the hidden price_minor
 	// the ?/add action reads (see the 100-subunit note on the server). null = no price.
 	let priceAmount = $state<number | null>(null);
+	// The selected reserver tier, bound so the registered-tier warning reacts live to
+	// the choice (ADR-0012 Decision 5). Initialized from the list's current override.
+	// svelte-ignore state_referenced_locally
+	let reserverTier = $state(data.list.reserver_tier ?? '');
 	// svelte-ignore state_referenced_locally
 	const { form, errors, message, enhance, submitting } = superForm(data.addForm, {
 		resetForm: false,
@@ -159,18 +163,29 @@
 					<option value="false" selected={data.list.allow_cobuy === false}>Not allowed</option>
 				</select>
 			</div>
-			<div class="flex items-center gap-2">
-				<label class="text-sm text-gray-700" for="list-reserver-tier">Who can reserve</label>
-				<select id="list-reserver-tier" name="reserver_tier" class="rounded border p-1.5 text-sm">
-					<!-- Empty value = inherit the instance default (null override, three-state). -->
-					<option value="" selected={data.list.reserver_tier == null}>Inherit default</option>
-					<option value="full_guest" selected={data.list.reserver_tier === 'full_guest'}
-						>Anyone</option
+			<div>
+				<div class="flex items-center gap-2">
+					<label class="text-sm text-gray-700" for="list-reserver-tier">Who can reserve</label>
+					<!-- bind:value drives the live warning below; the value still posts as
+					     reserver_tier. Empty = inherit the instance default (null, three-state). -->
+					<select
+						id="list-reserver-tier"
+						name="reserver_tier"
+						bind:value={reserverTier}
+						class="rounded border p-1.5 text-sm"
 					>
-					<option value="email_confirmed" selected={data.list.reserver_tier === 'email_confirmed'}
-						>Require email confirmation</option
-					>
-				</select>
+						<option value="">Inherit default</option>
+						<option value="full_guest">Anyone</option>
+						<option value="email_confirmed">Require email confirmation</option>
+						<option value="registered">Require an account</option>
+					</select>
+				</div>
+				{#if reserverTier === 'registered' && !data.registrationEnabled}
+					<p class="mt-1 rounded bg-amber-50 p-2 text-xs text-amber-800" role="status">
+						Self-registration is disabled on this instance, so only operator-created accounts can
+						reserve on this list.
+					</p>
+				{/if}
 			</div>
 			<div>
 				<label class="block text-sm text-gray-700" for="list-thank-you"

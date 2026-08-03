@@ -197,9 +197,9 @@ func toAdminUser(u storage.User) gen.AdminUser {
 // toStorageRole validates and maps the API role enum to the storage role.
 func toStorageRole(r gen.AdminUserRole) (storage.UserRole, bool) {
 	switch r {
-	case gen.Owner:
+	case gen.AdminUserRoleOwner:
 		return storage.RoleOwner, true
-	case gen.Giver:
+	case gen.AdminUserRoleGiver:
 		return storage.RoleGiver, true
 	default:
 		return "", false

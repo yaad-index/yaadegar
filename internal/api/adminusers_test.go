@@ -49,7 +49,7 @@ func TestAdminListTenantsAndUsers(t *testing.T) {
 		}
 	}
 	require.NotNil(t, owner)
-	assert.Equal(t, gen.Owner, owner.Role)
+	assert.Equal(t, gen.AdminUserRoleOwner, owner.Role)
 	assert.False(t, owner.Banned)
 	assert.False(t, owner.IsAdmin, "a plain owner is not an admin")
 	require.NotNil(t, adminUser)
@@ -65,7 +65,7 @@ func TestAdminCreateUser(t *testing.T) {
 		map[string]any{"email": "gwen@example.test", "role": "giver"})
 	require.Equal(t, http.StatusCreated, resp.StatusCode, "body: %s", body)
 	u := decode[gen.AdminUser](t, body)
-	assert.Equal(t, gen.Giver, u.Role)
+	assert.Equal(t, gen.AdminUserRoleGiver, u.Role)
 	assert.Equal(t, "gwen@example.test", u.Email)
 	assert.False(t, u.Banned)
 
@@ -97,7 +97,7 @@ func TestAdminUpdateUser_RoleAndBan(t *testing.T) {
 	// Promote giver → owner.
 	resp, body := h.req(http.MethodPatch, userURL, anyHost, adminTok, map[string]any{"role": "owner"})
 	require.Equal(t, http.StatusOK, resp.StatusCode, "body: %s", body)
-	assert.Equal(t, gen.Owner, decode[gen.AdminUser](t, body).Role)
+	assert.Equal(t, gen.AdminUserRoleOwner, decode[gen.AdminUser](t, body).Role)
 
 	// Ban, then unban.
 	resp, body = h.req(http.MethodPatch, userURL, anyHost, adminTok, map[string]any{"banned": true})

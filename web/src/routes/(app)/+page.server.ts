@@ -1,4 +1,4 @@
-import { fail } from '@sveltejs/kit';
+import { fail, redirect } from '@sveltejs/kit';
 import { superValidate, message } from 'sveltekit-superforms';
 import { zod4 } from 'sveltekit-superforms/adapters';
 import { z } from 'zod';
@@ -9,7 +9,13 @@ const createListSchema = z.object({
 	title: z.string().min(1, 'Title is required')
 });
 
-export const load: PageServerLoad = async ({ locals }) => {
+export const load: PageServerLoad = async ({ locals, parent }) => {
+	// A giver owns no lists (the create box would 403), so their home is the reserver
+	// dashboard, not this owner "your lists" page (ADR-0012 cut 3b, closing the cut-1a
+	// cosmetic gap). Owners land here as before.
+	const { user } = await parent();
+	if (user?.role === 'giver') redirect(303, '/reservations');
+
 	const client = backendClient({ host: locals.host, token: locals.token });
 	const { data } = await client.GET('/api/v1/lists', { params: { query: { limit: 200 } } });
 	return {

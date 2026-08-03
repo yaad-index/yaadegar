@@ -25,11 +25,15 @@ const addItemSchema = z.object({
 
 export const load: PageServerLoad = async ({ locals, params }) => {
 	const client = backendClient({ host: locals.host, token: locals.token });
-	const [listRes, itemsRes] = await Promise.all([
+	const [listRes, itemsRes, methodsRes] = await Promise.all([
 		client.GET('/api/v1/lists/{listId}', { params: { path: { listId: params.id } } }),
 		client.GET('/api/v1/lists/{listId}/items', {
 			params: { path: { listId: params.id }, query: { limit: 200 } }
-		})
+		}),
+		// For the reserver-tier control: whether self-registration is enabled on this
+		// instance, so the settings UI can warn when a `registered` tier is chosen on a
+		// closed-registration instance (ADR-0012 Decision 5 / cut 3b).
+		client.GET('/api/v1/auth/methods')
 	]);
 	if (listRes.error || !listRes.data) {
 		error(listRes.response.status || 404, 'List not found.');
@@ -38,6 +42,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	return {
 		list: listRes.data,
 		items,
+		registrationEnabled: methodsRes.data?.registration_enabled ?? false,
 		// Notes are rendered to sanitized HTML server-side; {@html} only ever touches
 		// this map, never a raw note (ADR-0006 security boundary).
 		noteHtml: Object.fromEntries(items.map((i) => [i.id ?? '', renderNote(i.note)])),

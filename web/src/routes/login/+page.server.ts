@@ -50,7 +50,12 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 	return {
 		form: await superValidate(zod4(loginSchema)),
-		methods: methods ?? { password: true, google: false, login_url: '' },
+		methods: methods ?? {
+			password: true,
+			google: false,
+			login_url: '',
+			registration_enabled: false
+		},
 		host: locals.host,
 		oauthError
 	};
