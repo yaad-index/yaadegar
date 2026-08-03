@@ -291,12 +291,13 @@ func (s *Server) handleOAuthComplete(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, sanitizeReturnTo(t.ReturnTo), http.StatusFound)
 }
 
-// resolveOAuthOwner applies the link-only account model (ADR-0008 §5):
-//   - an already-linked subject resolves straight to its owner (returning login);
-//   - otherwise the verified email must match an existing owner, that owner must
-//     not already be linked to a different subject, and the link is recorded.
-//
-// It never provisions an owner.
+// resolveOAuthOwner resolves a Google-verified identity to an account (ADR-0008 §5,
+// extended by ADR-0012 cut 2):
+//   - an already-linked subject resolves straight to its account (returning login);
+//   - a verified email matching an existing account links that account, unless the
+//     account is already linked to a different subject;
+//   - a verified email with no account self-registers a new one when the instance
+//     registration policy allows it, and otherwise stays a link-only rejection.
 func (s *Server) resolveOAuthOwner(ctx context.Context, ts storage.TenantStore, id oauthlogin.Identity) (string, error) {
 	existing, err := ts.OAuthIdentities().ByProviderSubject(ctx, storage.OAuthProviderGoogle, id.Subject)
 	if err == nil {
@@ -309,7 +310,7 @@ func (s *Server) resolveOAuthOwner(ctx context.Context, ts storage.TenantStore, 
 	owner, err := ts.Users().ByEmail(ctx, id.Email)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
-			return "", errNoOwnerForEmail
+			return s.selfRegisterOAuthUser(ctx, ts, id)
 		}
 		return "", err
 	}
@@ -338,6 +339,60 @@ func (s *Server) resolveOAuthOwner(ctx context.Context, ts storage.TenantStore, 
 		return "", err
 	}
 	return owner.ID, nil
+}
+
+// selfRegisterOAuthUser provisions a new account from a Google-verified identity when
+// the instance registration policy allows it (ADR-0012 cut 2). The account is created
+// with no password (empty hash) and active immediately — the provider already verified
+// the email, so this path mints no verification token and runs no captcha — at the role
+// the policy dictates (giver or owner), and the provider subject is linked so the next
+// login resolves straight through. When self-registration is disabled this returns the
+// same link-only rejection as before cut 2 (errNoOwnerForEmail). A later password is
+// self-servable through the forgot-password flow, whose resettable() guard covers a
+// no-password account.
+func (s *Server) selfRegisterOAuthUser(ctx context.Context, ts storage.TenantStore, id oauthlogin.Identity) (string, error) {
+	role, enabled := registrationRole(s.registrationPolicy)
+	if !enabled {
+		return "", errNoOwnerForEmail
+	}
+
+	username := id.Email // the email doubles as the login handle, matching email register
+	user, err := ts.Users().Create(ctx, storage.User{
+		Name:     id.Email,
+		Email:    id.Email,
+		Username: &username,
+		Role:     role,
+		Status:   storage.UserStatusActive,
+	})
+	if err != nil {
+		// A concurrent OAuth (or email) register for the same email may have created it
+		// first; fall back to that account and link this subject to it.
+		if errors.Is(err, storage.ErrConflict) {
+			if existing, e := ts.Users().ByEmail(ctx, id.Email); e == nil {
+				user = existing
+			} else {
+				return "", err
+			}
+		} else {
+			return "", err
+		}
+	}
+
+	if _, err := ts.OAuthIdentities().Create(ctx, storage.OAuthIdentity{
+		UserID:   user.ID,
+		Provider: storage.OAuthProviderGoogle,
+		Subject:  id.Subject,
+		Email:    id.Email,
+	}); err != nil {
+		// A concurrent login may have linked the same subject first; re-read and use it.
+		if errors.Is(err, storage.ErrConflict) {
+			if e2, e := ts.OAuthIdentities().ByProviderSubject(ctx, storage.OAuthProviderGoogle, id.Subject); e == nil {
+				return e2.UserID, nil
+			}
+		}
+		return "", err
+	}
+	return user.ID, nil
 }
 
 // redirectTenant sends the browser to a local path on the tenant host over https

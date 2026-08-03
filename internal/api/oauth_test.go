@@ -23,6 +23,7 @@ import (
 	"github.com/yaad-index/yaadegar/internal/api"
 	"github.com/yaad-index/yaadegar/internal/auth"
 	"github.com/yaad-index/yaadegar/internal/clock"
+	"github.com/yaad-index/yaadegar/internal/email"
 	"github.com/yaad-index/yaadegar/internal/oauthlogin"
 	"github.com/yaad-index/yaadegar/internal/storage"
 	"github.com/yaad-index/yaadegar/internal/storage/sqlstore"
@@ -158,6 +159,7 @@ type oauthHarness struct {
 	tenant   storage.Tenant
 	owner    storage.User
 	mock     *mockOIDC
+	email    *email.FakeSender
 	fixedURL string // fixed redirect host base (informational)
 }
 
@@ -165,7 +167,15 @@ const oauthClientID = "test-client-id.apps.googleusercontent.com"
 
 // newOAuthHarness builds a handler wired with a mock-OIDC authenticator, one
 // tenant with a known owner email, and Google login enabled for that tenant.
+// Self-registration is disabled (the default), so an unknown email is a link-only
+// rejection.
 func newOAuthHarness(t *testing.T, ownerEmail string, googleEnabled bool) *oauthHarness {
+	return newOAuthHarnessWithPolicy(t, ownerEmail, googleEnabled, "")
+}
+
+// newOAuthHarnessWithPolicy is newOAuthHarness with an explicit instance
+// registration policy, for the OAuth self-register path (ADR-0012 cut 2).
+func newOAuthHarnessWithPolicy(t *testing.T, ownerEmail string, googleEnabled bool, policy storage.RegistrationPolicy) *oauthHarness {
 	t.Helper()
 	ctx := context.Background()
 	mock := newMockOIDC(t, oauthClientID)
@@ -197,14 +207,43 @@ func newOAuthHarness(t *testing.T, ownerEmail string, googleEnabled bool) *oauth
 	})
 	require.NoError(t, err)
 
+	fake := &email.FakeSender{}
 	h := api.NewHandler(store, api.Options{
-		BaseDomain: baseDomain,
-		Logger:     slog.New(slog.DiscardHandler),
-		Clock:      clk,
-		Auth:       authSvc,
-		OAuth:      authn,
+		BaseDomain:         baseDomain,
+		Logger:             slog.New(slog.DiscardHandler),
+		Clock:              clk,
+		Email:              fake,
+		Auth:               authSvc,
+		OAuth:              authn,
+		RegistrationPolicy: policy,
 	})
-	return &oauthHarness{t: t, h: h, store: store, tenant: tenant, owner: owner, mock: mock, fixedURL: "https://fixed.example.test"}
+	return &oauthHarness{t: t, h: h, store: store, tenant: tenant, owner: owner, mock: mock, email: fake, fixedURL: "https://fixed.example.test"}
+}
+
+// getAuth issues a GET with a bearer token on the given host, for exercising the
+// owner surface with an OAuth-minted session.
+func (o *oauthHarness) getAuth(host, path, token string) *httptest.ResponseRecorder {
+	o.t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "https://"+host+path, nil)
+	req.Host = host
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	o.h.ServeHTTP(rec, req)
+	return rec
+}
+
+// postJSON issues a JSON POST on the given host (no auth), for driving the
+// password-reset endpoints from the OAuth harness.
+func (o *oauthHarness) postJSON(host, path string, body any) *httptest.ResponseRecorder {
+	o.t.Helper()
+	b, err := json.Marshal(body)
+	require.NoError(o.t, err)
+	req := httptest.NewRequest(http.MethodPost, "https://"+host+path, strings.NewReader(string(b)))
+	req.Host = host
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	o.h.ServeHTTP(rec, req)
+	return rec
 }
 
 // get issues a GET through the handler, carrying the given cookies, and returns
