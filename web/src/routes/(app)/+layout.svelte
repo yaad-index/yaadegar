@@ -12,6 +12,7 @@
 			<a href={resolve('/')} class="font-bold">Yaadegar</a>
 			<div class="flex items-center gap-3 text-sm">
 				<span class="text-gray-600">{data.user.name}</span>
+				<a href={resolve('/(app)/reservations')} class="text-gray-600 underline">Reserved</a>
 				{#if data.user.is_admin}
 					<a href={resolve('/admin')} class="text-gray-600 underline">Admin</a>
 				{/if}

@@ -157,6 +157,7 @@ func toGenUser(u storage.User, t storage.Tenant) gen.User {
 	return gen.User{
 		Id:      ptr(u.ID),
 		Name:    ptr(u.Name),
+		Role:    ptr(gen.UserRole(u.Role)),
 		IsAdmin: ptr(u.IsAdmin),
 		Tenant: &struct {
 			Id        *string `json:"id,omitempty"`

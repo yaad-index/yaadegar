@@ -737,6 +737,11 @@ export interface components {
         User: {
             id?: string;
             name?: string;
+            /**
+             * @description The account's tenant role (ADR-0009): owner ⊇ giver (an owner may give, a giver owns no lists). The frontend uses it to land a giver on their reserver dashboard rather than the owner "your lists" page (ADR-0012).
+             * @enum {string}
+             */
+            role?: "owner" | "giver";
             /** @description Whether this account holds the instance-admin capability (ADR-0010). The frontend uses it to reveal the admin surface; every /admin call is still authorized server-side. */
             is_admin?: boolean;
             tenant?: {

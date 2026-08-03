@@ -1240,6 +1240,13 @@ components:
       properties:
         id: { type: string }
         name: { type: string }
+        role:
+          type: string
+          enum: [owner, giver]
+          description: >
+            The account's tenant role (ADR-0009): owner ⊇ giver (an owner may give,
+            a giver owns no lists). The frontend uses it to land a giver on their
+            reserver dashboard rather than the owner "your lists" page (ADR-0012).
         is_admin:
           type: boolean
           description: >
