@@ -87,6 +87,7 @@ func toGenList(l storage.List) gen.List {
 		ReserverConfirmWindow: l.ReserverConfirmWindowMinutes, // *int minutes: nil = inherit
 		AllowCobuy:            ptr(l.AllowCobuy),              // the list-level co-buy default (#100)
 		ThankYouTemplate:      ptr(l.ThankYouTemplate),        // list-level thank-you default (#22)
+		Description:           ptr(l.Description),             // owner-editable list description (#143)
 		Active:                ptr(l.Active),
 		ItemCount:             ptr(l.ItemCount),
 		CreatedAt:             ptr(l.CreatedAt),

@@ -161,8 +161,13 @@ type List struct {
 	// A `{item}` token in the body is replaced with the item name; it carries no
 	// giver identity (the owner stays blind to who reserved).
 	ThankYouTemplate string
-	Active           bool
-	CreatedAt        time.Time
+	// Description is the owner-editable list description (#143): a light-markdown
+	// body shown to givers at the top of the public list (and to the owner). "" =
+	// no description. Rendered to sanitized HTML in the frontend load via the same
+	// renderNote path item notes use (ADR-0006); stored raw here.
+	Description string
+	Active      bool
+	CreatedAt   time.Time
 	// ItemCount is a derived read field: the number of items on the list. It is
 	// populated by reads (Get/GetBySlug/List) and left zero by Create.
 	ItemCount int

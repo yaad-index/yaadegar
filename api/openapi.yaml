@@ -1263,6 +1263,13 @@ components:
             List-level default owner→giver thank-you note body (#22), emailed to a
             reserver when their reservation goes active. "" disables it. A `{item}`
             token is replaced with the item name; the note carries no giver identity.
+        description:
+          type: string
+          maxLength: 2000
+          description: >
+            Owner-editable list description (#143): a light-markdown body shown to
+            givers at the top of the public list. "" = none. Rendered to sanitized
+            HTML in the frontend (ADR-0006); the server enforces the length cap.
 
     List:
       type: object
@@ -1287,6 +1294,9 @@ components:
         thank_you_template:
           type: string
           description: The list-level default thank-you note body (#22); "" = no note.
+        description:
+          type: string
+          description: The owner-editable list description (#143); "" = none.
         active: { type: boolean }
         item_count: { type: integer }
         created_at: { type: string, format: date-time }
@@ -1417,6 +1427,9 @@ components:
       type: object
       properties:
         title: { type: string }
+        description:
+          type: [string, "null"]
+          description: The owner-editable list description (#143), if set.
         event_date: { type: [string, "null"], format: date }
         email_required:
           type: boolean
