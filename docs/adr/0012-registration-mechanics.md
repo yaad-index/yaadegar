@@ -102,18 +102,39 @@ handles:
 - The ADR-0011 Cut-2 change-password handler already returns **403 "this account has
   no password set"** for an empty hash, so change-password is naturally unavailable to
   these accounts with no new code.
-- To *establish* a password later, a no-password account uses the **forgot-password /
-  reset flow** (ADR-0011 Cut 3): the reset confirm sets a password and bumps
-  `credential_version` through the shared funnel. "Set a password" and "reset a
-  password" are the same mechanic — no separate "add password" endpoint is needed.
+- To *establish* a password later, a no-password account uses the **same email-token →
+  set-password → auto-login machinery** ADR-0011 Cut 3 built: the confirm sets a
+  password and bumps `credential_version` through the shared funnel. "Set a first
+  password" and "reset a password" are the same mechanic on the storage/token side — no
+  separate password-setting engine is needed.
 
 Using the empty-hash state (rather than a random blob) keeps one meaning for "no
-password," avoids a magic sentinel, and makes the ADR-0011 handlers behave correctly
-for these accounts by construction.
+password," avoids a magic sentinel, and makes the change-password handler behave
+correctly for these accounts by construction (it already 403s on an empty hash).
 
-> **Lean (for sign-off):** reuse the empty-hash state + the ADR-0011 reset flow for
-> password establishment, rather than adding a distinct "set initial password"
-> endpoint.
+**One reconciliation the cut must handle (surfaced in review).** The ADR-0011
+*request* endpoint was deliberately scoped to *reset an existing* password: its
+`resettable()` guard requires a **non-empty** `password_hash` (plus a deliverable
+email, not banned). So a no-password account cannot today receive a link through
+`POST /api/v1/auth/password-reset/request` as written — it would hit the
+enumeration-safe silent 202 and send nothing. Establishing a *first* password
+therefore needs one of two cut-scope choices, both reusing the ADR-0011 hashed
+single-use token store and set-password/auto-login confirm (not a new engine):
+
+- **widen the entry guard** so a no-password-but-emailable account is eligible for an
+  establish/reset link (the request path serves both "set first" and "reset"); or
+- **add a distinct "establish password" / invite entry** (e.g. the admin-invite send of
+  Decision 6, and an account-initiated equivalent) that mints the same token without
+  the has-password precondition, leaving `RequestPasswordReset`'s reset-only guard
+  untouched.
+
+Either keeps the confirm side identical; the split is only about *who is allowed to be
+sent a link*.
+
+> **Lean (for sign-off):** reuse the empty-hash state + the ADR-0011 token/confirm
+> machinery for first-password establishment (rather than a separate password-setting
+> engine); the entry-point choice above — widen the guard vs. a distinct establish/invite
+> entry — is a cut-scope decision.
 
 ### 3. Email-verification token store + pending-account state
 
@@ -207,6 +228,12 @@ OAuth-account onboarding** — into the single email-token → set-password → 
 OAuth-link) mechanism, and it matches ADR-0009's existing "create-by-email without a
 password; the user sets one via reset / magic-link / OAuth" direction (ADR-0009 §4).
 
+Because these invited/onboarding accounts start at the empty-hash no-password state,
+sending them a set-password link runs into the **Decision 2 reconciliation** (the
+ADR-0011 `resettable()` guard requires a non-empty hash): the cut must either widen that
+guard or expose a distinct establish/invite entry that reuses the ADR-0011 token store.
+This onboarding flow is the concrete reason that reconciliation matters.
+
 > **Lean (for sign-off):** this unified invite/set-password flow is the recommendation,
 > **pending the operator's pick** between it and the temp-password route below. The two
 > are presented as a Considered alternative for that choice.
@@ -290,8 +317,10 @@ the one-click path builds on the account model:
    for the low-trust path.
 2. **Cut 2 — OAuth self-register + no-password reconciliation.** Extend the ADR-0008
    Google callback with the create-on-allowed-policy branch (Decision 1a), storing the
-   empty-hash no-password state (Decision 2). No new endpoint; reuses the ADR-0011 reset
-   flow for later password establishment.
+   empty-hash no-password state (Decision 2). No new callback endpoint; **resolves the
+   Decision-2 `resettable()` reconciliation** (widen the guard, or add a distinct
+   establish-password entry) so a no-password account can obtain a first-password link
+   through the reused ADR-0011 token store.
 3. **Cut 3 — registered-tier authenticated reserve + reserver dashboard.** The
    authenticated reserve path bound to `user_id` (no per-reservation email), the
    reserver "things I've reserved" dashboard, and the per-list `registered` option's
