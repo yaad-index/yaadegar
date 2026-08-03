@@ -101,6 +101,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Self-register an account with email and password
+         * @description Starts email self-registration (ADR-0012 cut 1a). Gated by the instance's registration policy: when self-registration is disabled (the default) the endpoint answers 403. When it is enabled, the request is enumeration-safe — the response is ALWAYS 202 with no body whether or not an account already exists for the email, and a single-use, short-lived verification link is emailed off the response path only when a new pending account is created. The captcha_token is checked against the instance captcha provider (a no-op that accepts any value until a real provider is configured). Unauthenticated; the tenant is resolved from the Host.
+         */
+        post: operations["register"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/register/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify a self-registered account with a token
+         * @description Completes email self-registration (ADR-0012 cut 1a): validates the single-use verification token, activates the pending account, and auto-issues a session so the caller lands logged in. An absent, expired, or already-used token is a 400 that does not distinguish which. Unauthenticated; the tenant is resolved from the Host.
+         */
+        post: operations["registerVerify"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/tenants": {
         parameters: {
             query?: never;
@@ -749,6 +789,18 @@ export interface components {
             /** @description The replacement password. Must satisfy the instance password policy (a minimum length); a too-short value is rejected. */
             new_password: string;
         };
+        RegisterRequest: {
+            /** @description The email address to register and verify. */
+            email: string;
+            /** @description The account password. Must satisfy the instance password policy (a minimum length); a too-short value is rejected with a clear reason. */
+            password: string;
+            /** @description The human-verification challenge token. May be empty when the instance captcha is the no-op default (ADR-0012 cut 1a). */
+            captcha_token?: string;
+        };
+        RegisterVerify: {
+            /** @description The raw verification token from the emailed link. */
+            token: string;
+        };
         TenantSettings: {
             /** @description Whether Google login is turned on for this tenant. */
             oauth_google_enabled: boolean;
@@ -1207,6 +1259,55 @@ export interface operations {
             400: components["responses"]["BadRequest"];
         };
     };
+    register: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted. If the email was new, a pending account was created and a verification link emailed. The response is identical when an account already exists (enumeration-safe). */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    registerVerify: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterVerify"];
+            };
+        };
+        responses: {
+            /** @description The account is verified and activated; a session access token is returned (auto-login). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
     adminListTenants: {
         parameters: {
             query?: {
@@ -1482,6 +1583,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     listLists: {
@@ -1532,6 +1634,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     getList: {
@@ -1748,6 +1851,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             /** @description The URL could not be fetched or parsed; fall back to manual entry. */
             422: {
                 headers: {
@@ -1807,6 +1911,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             409: components["responses"]["Conflict"];
         };
     };
@@ -1829,6 +1934,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
         };
     };
@@ -1853,6 +1959,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
         };
     };

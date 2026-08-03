@@ -102,6 +102,33 @@ const (
 	RoleGiver UserRole = "giver"
 )
 
+// RegistrationPolicy is the instance-wide self-registration policy (ADR-0009
+// Decision 2, ADR-0012). It gates the unauthenticated self-registration endpoint
+// server-side. `disabled` is the fail-closed default — an existing instance keeps
+// its unchanged behavior (no self-registration) until the operator opts in.
+type RegistrationPolicy string
+
+const (
+	// RegistrationDisabled turns self-registration off (the default): the register
+	// endpoint answers 403 on every instance that has not opted in.
+	RegistrationDisabled RegistrationPolicy = "disabled"
+	// RegistrationGiversOnly lets anyone self-register a giver account (a first-class
+	// reserver, ADR-0009); they cannot author lists.
+	RegistrationGiversOnly RegistrationPolicy = "givers_only"
+	// RegistrationOwnersAllowed lets anyone self-register a full owner account (can
+	// author lists) — the most open policy.
+	RegistrationOwnersAllowed RegistrationPolicy = "owners_allowed"
+)
+
+// User account lifecycle states (ADR-0012). Existing accounts and operator-created
+// ones are `active`; a self-registered account is `pending` until it verifies its
+// email, at which point it flips to `active`. A pending account cannot hold a
+// session (the login gate rejects it, like a ban).
+const (
+	UserStatusActive  = "active"
+	UserStatusPending = "pending"
+)
+
 // User is an account within a tenant. Email is used server-side (e.g. decay
 // notices) and may be empty. Username/PasswordHash back the password login method
 // (ADR-0005): Username is the per-tenant login handle (nil = none), PasswordHash is
@@ -133,7 +160,13 @@ type User struct {
 	// revokes all prior sessions immediately. Starts at 1 (the migration default);
 	// Create seeds a new account at 1.
 	CredentialVersion int
-	CreatedAt         time.Time
+	// Status is the account lifecycle state (ADR-0012): `active` for existing and
+	// operator-created accounts (the migration default), `pending` for a
+	// self-registered account awaiting email verification. A pending account cannot
+	// log in (the login gate rejects it like a ban); verify flips it to active. Empty
+	// is treated as active at Create.
+	Status    string
+	CreatedAt time.Time
 }
 
 // PasswordResetToken is a single-use, short-TTL credential for the forgot-password
@@ -141,6 +174,21 @@ type User struct {
 // emailed once and never stored (like the reservation capability token, ADR-0003 §3).
 // UsedAt is nil until the token is claimed at confirm — the single-use guard.
 type PasswordResetToken struct {
+	ID        string
+	TenantID  string
+	UserID    string
+	TokenHash string
+	ExpiresAt time.Time
+	UsedAt    *time.Time
+	CreatedAt time.Time
+}
+
+// EmailVerificationToken is a single-use, short-TTL credential for the email
+// self-registration flow (ADR-0012). TokenHash is the sha256 of the raw token; the
+// raw value is emailed once and never stored (like the password-reset token,
+// ADR-0003 §3). UsedAt is nil until the token is claimed at verify — the single-use
+// guard. Verifying it flips the pending account to active.
+type EmailVerificationToken struct {
 	ID        string
 	TenantID  string
 	UserID    string

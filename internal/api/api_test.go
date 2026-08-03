@@ -63,7 +63,17 @@ func newHarnessTrusted(t *testing.T) *harness {
 	return newHarnessBuild(t, nil, true)
 }
 
+// newHarnessRegistration builds a harness with a self-registration policy set
+// (ADR-0012); the default harness leaves it empty (disabled).
+func newHarnessRegistration(t *testing.T, policy storage.RegistrationPolicy) *harness {
+	return newHarnessOpts(t, nil, false, policy)
+}
+
 func newHarnessBuild(t *testing.T, limiter auth.Limiter, trustForwardedHost bool) *harness {
+	return newHarnessOpts(t, limiter, trustForwardedHost, "")
+}
+
+func newHarnessOpts(t *testing.T, limiter auth.Limiter, trustForwardedHost bool, registrationPolicy storage.RegistrationPolicy) *harness {
 	t.Helper()
 	ctx := context.Background()
 	dsn := "file:" + filepath.Join(t.TempDir(), "api.db")
@@ -95,6 +105,7 @@ func newHarnessBuild(t *testing.T, limiter auth.Limiter, trustForwardedHost bool
 		LoginLimiter:       limiter,
 		DomainCNAMETarget:  "cname.yaadegar.test",
 		DomainClaimTTL:     testDomainClaimTTL,
+		RegistrationPolicy: registrationPolicy,
 	})
 	return &harness{t: t, h: h, store: store, tenant: tenant, owner: owner, email: fake, clk: clk, preview: pf, resolver: fr, authSvc: authSvc}
 }

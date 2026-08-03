@@ -158,6 +158,61 @@ paths:
               schema: { $ref: "#/components/schemas/LoginResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
 
+  /api/v1/auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Self-register an account with email and password
+      description: >
+        Starts email self-registration (ADR-0012 cut 1a). Gated by the instance's
+        registration policy: when self-registration is disabled (the default) the
+        endpoint answers 403. When it is enabled, the request is enumeration-safe —
+        the response is ALWAYS 202 with no body whether or not an account already
+        exists for the email, and a single-use, short-lived verification link is
+        emailed off the response path only when a new pending account is created.
+        The captcha_token is checked against the instance captcha provider (a no-op
+        that accepts any value until a real provider is configured). Unauthenticated;
+        the tenant is resolved from the Host.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterRequest" }
+      responses:
+        "202":
+          description: >
+            Accepted. If the email was new, a pending account was created and a
+            verification link emailed. The response is identical when an account
+            already exists (enumeration-safe).
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/auth/register/verify:
+    post:
+      operationId: registerVerify
+      tags: [auth]
+      summary: Verify a self-registered account with a token
+      description: >
+        Completes email self-registration (ADR-0012 cut 1a): validates the single-use
+        verification token, activates the pending account, and auto-issues a session
+        so the caller lands logged in. An absent, expired, or already-used token is a
+        400 that does not distinguish which. Unauthenticated; the tenant is resolved
+        from the Host.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterVerify" }
+      responses:
+        "200":
+          description: The account is verified and activated; a session access token is returned (auto-login).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
   /admin/tenants:
     get:
       operationId: adminListTenants
@@ -385,6 +440,7 @@ paths:
               schema: { $ref: "#/components/schemas/TenantSettings" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   /api/v1/lists:
     get:
@@ -418,6 +474,7 @@ paths:
               schema: { $ref: "#/components/schemas/List" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   /api/v1/lists/{listId}:
     parameters:
@@ -559,6 +616,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ItemDraft" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "422":
           description: The URL could not be fetched or parsed; fall back to manual entry.
           content:
@@ -606,6 +664,7 @@ paths:
               schema: { $ref: "#/components/schemas/Domain" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
 
   /api/v1/domains/{domainId}:
@@ -621,6 +680,7 @@ paths:
       responses:
         "204": { description: Removed. }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
   /api/v1/domains/{domainId}/verify:
@@ -646,6 +706,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Domain" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
   /public/{shareSlug}:
@@ -1245,6 +1306,35 @@ components:
           description: >
             The replacement password. Must satisfy the instance password policy (a
             minimum length); a too-short value is rejected.
+
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          minLength: 1
+          description: The email address to register and verify.
+        password:
+          type: string
+          minLength: 1
+          description: >
+            The account password. Must satisfy the instance password policy (a
+            minimum length); a too-short value is rejected with a clear reason.
+        captcha_token:
+          type: string
+          description: >
+            The human-verification challenge token. May be empty when the instance
+            captcha is the no-op default (ADR-0012 cut 1a).
+
+    RegisterVerify:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          description: The raw verification token from the emailed link.
 
     TenantSettings:
       type: object

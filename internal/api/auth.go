@@ -67,6 +67,12 @@ func (s *Server) Login(ctx context.Context, req gen.LoginRequestObject) (gen.Log
 	if user.Banned {
 		return unauthorizedLogin(), nil
 	}
+	// A pending self-registered account (ADR-0012) cannot hold a session until it
+	// verifies its email. Same generic 401 as a ban — the password was correct, but
+	// the account is not yet activated.
+	if user.Status == storage.UserStatusPending {
+		return unauthorizedLogin(), nil
+	}
 
 	token, err := s.auth.Issuer().Issue(auth.Principal{
 		UserID:            user.ID,

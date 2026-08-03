@@ -650,6 +650,24 @@ type PublicList struct {
 	Title         *string             `json:"title,omitempty"`
 }
 
+// RegisterRequest defines model for RegisterRequest.
+type RegisterRequest struct {
+	// CaptchaToken The human-verification challenge token. May be empty when the instance captcha is the no-op default (ADR-0012 cut 1a).
+	CaptchaToken *string `json:"captcha_token,omitempty"`
+
+	// Email The email address to register and verify.
+	Email string `json:"email"`
+
+	// Password The account password. Must satisfy the instance password policy (a minimum length); a too-short value is rejected with a clear reason.
+	Password string `json:"password"`
+}
+
+// RegisterVerify defines model for RegisterVerify.
+type RegisterVerify struct {
+	// Token The raw verification token from the emailed link.
+	Token string `json:"token"`
+}
+
 // ReservationConfirmed defines model for ReservationConfirmed.
 type ReservationConfirmed struct {
 	// CapabilityToken Returned once, on the confirming request that activates the reservation. Absent on an idempotent re-confirm of an already-active reservation (it cannot be re-issued).
@@ -828,6 +846,12 @@ type ConfirmPasswordResetJSONRequestBody = PasswordResetConfirm
 // RequestPasswordResetJSONRequestBody defines body for RequestPasswordReset for application/json ContentType.
 type RequestPasswordResetJSONRequestBody = PasswordResetRequest
 
+// RegisterJSONRequestBody defines body for Register for application/json ContentType.
+type RegisterJSONRequestBody = RegisterRequest
+
+// RegisterVerifyJSONRequestBody defines body for RegisterVerify for application/json ContentType.
+type RegisterVerifyJSONRequestBody = RegisterVerify
+
 // AddDomainJSONRequestBody defines body for AddDomain for application/json ContentType.
 type AddDomainJSONRequestBody AddDomainJSONBody
 
@@ -902,6 +926,12 @@ type ServerInterface interface {
 	// RequestPasswordReset Request a password-reset email
 	// (POST /api/v1/auth/password-reset/request)
 	RequestPasswordReset(w http.ResponseWriter, r *http.Request)
+	// Register Self-register an account with email and password
+	// (POST /api/v1/auth/register)
+	Register(w http.ResponseWriter, r *http.Request)
+	// RegisterVerify Verify a self-registered account with a token
+	// (POST /api/v1/auth/register/verify)
+	RegisterVerify(w http.ResponseWriter, r *http.Request)
 	// ListDomains List the tenant's custom domains
 	// (GET /api/v1/domains)
 	ListDomains(w http.ResponseWriter, r *http.Request)
@@ -1240,6 +1270,34 @@ func (siw *ServerInterfaceWrapper) RequestPasswordReset(w http.ResponseWriter, r
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RequestPasswordReset(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Register operation middleware
+func (siw *ServerInterfaceWrapper) Register(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Register(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RegisterVerify operation middleware
+func (siw *ServerInterfaceWrapper) RegisterVerify(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RegisterVerify(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2077,6 +2135,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/auth/methods", wrapper.GetAuthMethods)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/password-reset/request", wrapper.RequestPasswordReset)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/password-reset/confirm", wrapper.ConfirmPasswordReset)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/register", wrapper.Register)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/register/verify", wrapper.RegisterVerify)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/admin/tenants", wrapper.AdminListTenants)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/admin/tenants", wrapper.AdminCreateTenant)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/admin/owners", wrapper.AdminCreateOwner)
@@ -2837,6 +2897,92 @@ func (response RequestPasswordReset400ApplicationProblemPlusJSONResponse) VisitR
 	return err
 }
 
+type RegisterRequestObject struct {
+	Body *RegisterJSONRequestBody
+}
+
+type RegisterResponseObject interface {
+	VisitRegisterResponse(w http.ResponseWriter) error
+}
+
+type Register202Response struct {
+}
+
+func (response Register202Response) VisitRegisterResponse(w http.ResponseWriter) error {
+	w.WriteHeader(202)
+	return nil
+}
+
+type Register400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response Register400ApplicationProblemPlusJSONResponse) VisitRegisterResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Register403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response Register403ApplicationProblemPlusJSONResponse) VisitRegisterResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegisterVerifyRequestObject struct {
+	Body *RegisterVerifyJSONRequestBody
+}
+
+type RegisterVerifyResponseObject interface {
+	VisitRegisterVerifyResponse(w http.ResponseWriter) error
+}
+
+type RegisterVerify200JSONResponse LoginResponse
+
+func (response RegisterVerify200JSONResponse) VisitRegisterVerifyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegisterVerify400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response RegisterVerify400ApplicationProblemPlusJSONResponse) VisitRegisterVerifyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListDomainsRequestObject struct {
 }
 
@@ -2928,6 +3074,22 @@ func (response AddDomain401ApplicationProblemPlusJSONResponse) VisitAddDomainRes
 	return err
 }
 
+type AddDomain403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response AddDomain403ApplicationProblemPlusJSONResponse) VisitAddDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type AddDomain409ApplicationProblemPlusJSONResponse struct {
 	ConflictApplicationProblemPlusJSONResponse
 }
@@ -2972,6 +3134,22 @@ func (response DeleteDomain401ApplicationProblemPlusJSONResponse) VisitDeleteDom
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDomain403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteDomain403ApplicationProblemPlusJSONResponse) VisitDeleteDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3030,6 +3208,22 @@ func (response VerifyDomain401ApplicationProblemPlusJSONResponse) VisitVerifyDom
 	return err
 }
 
+type VerifyDomain403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response VerifyDomain403ApplicationProblemPlusJSONResponse) VisitVerifyDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type VerifyDomain404ApplicationProblemPlusJSONResponse struct {
 	NotFoundApplicationProblemPlusJSONResponse
 }
@@ -3080,6 +3274,22 @@ func (response PreviewItem401ApplicationProblemPlusJSONResponse) VisitPreviewIte
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewItem403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response PreviewItem403ApplicationProblemPlusJSONResponse) VisitPreviewItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3321,6 +3531,22 @@ func (response CreateList401ApplicationProblemPlusJSONResponse) VisitCreateListR
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateList403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response CreateList403ApplicationProblemPlusJSONResponse) VisitCreateListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3898,6 +4124,22 @@ func (response UpdateTenantSettings401ApplicationProblemPlusJSONResponse) VisitU
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTenantSettings403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateTenantSettings403ApplicationProblemPlusJSONResponse) VisitUpdateTenantSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4661,6 +4903,12 @@ type StrictServerInterface interface {
 	// RequestPasswordReset Request a password-reset email
 	// (POST /api/v1/auth/password-reset/request)
 	RequestPasswordReset(ctx context.Context, request RequestPasswordResetRequestObject) (RequestPasswordResetResponseObject, error)
+	// Register Self-register an account with email and password
+	// (POST /api/v1/auth/register)
+	Register(ctx context.Context, request RegisterRequestObject) (RegisterResponseObject, error)
+	// RegisterVerify Verify a self-registered account with a token
+	// (POST /api/v1/auth/register/verify)
+	RegisterVerify(ctx context.Context, request RegisterVerifyRequestObject) (RegisterVerifyResponseObject, error)
 	// ListDomains List the tenant's custom domains
 	// (GET /api/v1/domains)
 	ListDomains(ctx context.Context, request ListDomainsRequestObject) (ListDomainsResponseObject, error)
@@ -5084,6 +5332,68 @@ func (sh *strictHandler) RequestPasswordReset(w http.ResponseWriter, r *http.Req
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RequestPasswordResetResponseObject); ok {
 		if err := validResponse.VisitRequestPasswordResetResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// Register operation middleware
+func (sh *strictHandler) Register(w http.ResponseWriter, r *http.Request) {
+	var request RegisterRequestObject
+
+	var body RegisterJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.Register(ctx, request.(RegisterRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Register")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RegisterResponseObject); ok {
+		if err := validResponse.VisitRegisterResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RegisterVerify operation middleware
+func (sh *strictHandler) RegisterVerify(w http.ResponseWriter, r *http.Request) {
+	var request RegisterVerifyRequestObject
+
+	var body RegisterVerifyJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RegisterVerify(ctx, request.(RegisterVerifyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RegisterVerify")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RegisterVerifyResponseObject); ok {
+		if err := validResponse.VisitRegisterVerifyResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
