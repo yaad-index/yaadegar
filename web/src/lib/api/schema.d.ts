@@ -61,6 +61,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/password-reset/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request a password-reset email
+         * @description Starts the forgot-password flow (ADR-0011). When the identifier resolves to an account that has a password credential and a deliverable email, a single-use, short-lived reset link is emailed. The response is ALWAYS 202 and identical whether or not the account exists — status, body, and timing never reveal account existence (enumeration-safe). Unauthenticated; the tenant is resolved from the Host.
+         */
+        post: operations["requestPasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/password-reset/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete a password reset with a token
+         * @description Completes the forgot-password flow (ADR-0011): validates the single-use reset token, applies the shared password policy to the new password, sets it — which bumps the credential version and so invalidates every existing session — and auto-issues a session so the caller lands logged in. An invalid, expired, or already-used token is a 400 that does not distinguish which. Unauthenticated; the tenant is resolved from the Host.
+         */
+        post: operations["confirmPasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/tenants": {
         parameters: {
             query?: never;
@@ -699,6 +739,16 @@ export interface components {
             /** @description The replacement password. Must satisfy the instance password policy (a minimum length); a too-short value is rejected with a clear reason. */
             new_password: string;
         };
+        PasswordResetRequest: {
+            /** @description The account's email address or username. */
+            identifier: string;
+        };
+        PasswordResetConfirm: {
+            /** @description The raw reset token from the emailed link. */
+            token: string;
+            /** @description The replacement password. Must satisfy the instance password policy (a minimum length); a too-short value is rejected. */
+            new_password: string;
+        };
         TenantSettings: {
             /** @description Whether Google login is turned on for this tenant. */
             oauth_google_enabled: boolean;
@@ -1107,6 +1157,54 @@ export interface operations {
                     "application/json": components["schemas"]["LoginMethods"];
                 };
             };
+        };
+    };
+    requestPasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted. If a matching account exists, a reset link has been emailed. The response is identical when no account matches. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    confirmPasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetConfirm"];
+            };
+        };
+        responses: {
+            /** @description The reset succeeded; a session access token is returned (auto-login). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
         };
     };
     adminListTenants: {
