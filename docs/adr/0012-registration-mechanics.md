@@ -1,6 +1,6 @@
 # ADR-0012: Registration mechanics
 
-**Status:** Proposed
+**Status:** Accepted (2026-08-03)
 
 **Refines** [ADR-0009](0009-identity-roles-and-registration.md) (unified identity,
 roles, and registration): it fills in ADR-0009's deferred **Cut 2**

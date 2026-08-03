@@ -74,4 +74,4 @@ supersedes the old one (and mark the old one `Superseded by ADR-XXXX`).
   mirroring `password_reset_tokens`, one unified invite/set-password onboarding flow
   for admin-created and no-password accounts (rejecting emailed temp-passwords), and
   the authenticated `registered`-tier reserve with a reserver dashboard and no
-  per-reservation email (anonymity to the owner preserved). **Status: Proposed.**
+  per-reservation email (anonymity to the owner preserved). **Status: Accepted.**
