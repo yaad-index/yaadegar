@@ -403,6 +403,83 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /api/v1/me/reservations:
+    get:
+      operationId: listMyReservations
+      tags: [lists]
+      summary: List the authenticated account's own reservations
+      description: >
+        The reserver "things I've reserved" dashboard (ADR-0012 Decision 4 / #20):
+        the reservations the authenticated account made across lists, keyed on its
+        account. This is the account's OWN view — it discloses nothing to any list
+        owner, who never learns who reserved (ADR-0002 §5).
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: The account's reservations.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MyReservationPage" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      operationId: createMyReservation
+      tags: [lists]
+      summary: Reserve an item as the authenticated account
+      description: >
+        Reserves an item as the authenticated account (ADR-0012 Decision 4). The
+        reservation is bound to the caller's account server-side and appears in the
+        account's own dashboard; no per-reservation confirmation email fires (the
+        account's email was already verified at registration). This is the required
+        path for a `registered`-tier list, and is also available on lower tiers (a
+        registered account may reserve on any list — the tier is a floor,
+        ADR-0009 Decision 5). Anonymity to the owner is preserved — the binding is
+        server-side only and never surfaces on any owner view.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MyReservationCreate" }
+      responses:
+        "201":
+          description: Reservation active, bound to the account.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReservationCreated" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The item is already fully reserved, or is being co-bought.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "410":
+          description: The list is no longer active (past its event date or disabled).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /api/v1/me/reservations/{reservationId}:
+    parameters:
+      - name: reservationId
+        in: path
+        required: true
+        schema: { type: string }
+    delete:
+      operationId: deleteMyReservation
+      tags: [lists]
+      summary: Release one of the authenticated account's own reservations
+      description: >
+        Releases a reservation the authenticated account holds (ADR-0012 Decision
+        4). Ownership is by the account binding; a reservation the caller does not
+        own is reported as not found (it discloses nothing about others).
+      responses:
+        "204": { description: Released. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /api/v1/settings:
     get:
       operationId: getTenantSettings
@@ -755,6 +832,11 @@ paths:
         pending_confirmation and no token — the giver must confirm (see
         /public/reservations/confirm) before the reservation activates and the
         token is issued. An email_confirmed reserve requires giver_email.
+
+        On a `registered`-tier list the anonymous path is refused (401): a
+        registered account must reserve through the authenticated
+        POST /api/v1/me/reservations, which binds the reservation to the account
+        (ADR-0012 Decision 4).
       requestBody:
         content:
           application/json:
@@ -765,6 +847,13 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ReservationCreated" }
+        "401":
+          description: >
+            This list requires a registered account to reserve; use the
+            authenticated reserve path.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
         "202":
           description: >
             Reservation held pending email confirmation (email_confirmed); a
@@ -1360,8 +1449,15 @@ components:
 
     LoginMethods:
       type: object
-      required: [password, google, login_url]
+      required: [password, google, login_url, registration_enabled]
       properties:
+        registration_enabled:
+          type: boolean
+          description: >
+            Whether this instance allows self-registration (the ADR-0009 policy is
+            not `disabled`). The frontend uses it to show/hide the register
+            affordance and to warn when a per-list `registered` reserve tier is set
+            on a closed-registration instance (ADR-0012 Decision 5).
         password:
           type: boolean
           description: >
@@ -1677,6 +1773,50 @@ components:
           description: >
             The release handle, returned once. Present only for an active
             reservation; absent while pending_confirmation (issued at confirm).
+
+    MyReservationCreate:
+      type: object
+      required: [share_slug, item_id]
+      properties:
+        share_slug:
+          type: string
+          description: The share slug of the list holding the item.
+        item_id: { type: string }
+        quantity: { type: integer, minimum: 1, default: 1 }
+
+    MyReservation:
+      type: object
+      required: [reservation_id, item_id, item_name, list_title, share_slug, quantity, state, created_at]
+      description: >
+        One row of the reserver's own dashboard: a reservation the account made,
+        with just enough list/item context to display and manage it. Carries no
+        other reserver's identity.
+      properties:
+        reservation_id: { type: string }
+        item_id: { type: string }
+        item_name: { type: string }
+        list_title: { type: string }
+        share_slug:
+          type: string
+          description: The list's share slug, so the dashboard can link back to it.
+        quantity: { type: integer }
+        state:
+          type: string
+          enum: [active, reserver_notified]
+          description: >
+            The reservation's lifecycle state as it appears on the dashboard —
+            active, or reserver_notified while a decay reminder is outstanding.
+            Released/expired reservations are omitted from the dashboard.
+        created_at: { type: string, format: date-time }
+
+    MyReservationPage:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/MyReservation" }
+        total: { type: integer }
 
     ReservationConfirmed:
       type: object

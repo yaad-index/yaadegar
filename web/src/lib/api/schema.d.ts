@@ -259,6 +259,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/reservations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the authenticated account's own reservations
+         * @description The reserver "things I've reserved" dashboard (ADR-0012 Decision 4 / #20): the reservations the authenticated account made across lists, keyed on its account. This is the account's OWN view — it discloses nothing to any list owner, who never learns who reserved (ADR-0002 §5).
+         */
+        get: operations["listMyReservations"];
+        put?: never;
+        /**
+         * Reserve an item as the authenticated account
+         * @description Reserves an item as the authenticated account (ADR-0012 Decision 4). The reservation is bound to the caller's account server-side and appears in the account's own dashboard; no per-reservation confirmation email fires (the account's email was already verified at registration). This is the required path for a `registered`-tier list, and is also available on lower tiers (a registered account may reserve on any list — the tier is a floor, ADR-0009 Decision 5). Anonymity to the owner is preserved — the binding is server-side only and never surfaces on any owner view.
+         */
+        post: operations["createMyReservation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/reservations/{reservationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reservationId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Release one of the authenticated account's own reservations
+         * @description Releases a reservation the authenticated account holds (ADR-0012 Decision 4). Ownership is by the account binding; a reservation the caller does not own is reported as not found (it discloses nothing about others).
+         */
+        delete: operations["deleteMyReservation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings": {
         parameters: {
             query?: never;
@@ -484,6 +530,7 @@ export interface paths {
          * Reserve an item (anonymous giver)
          * @description Claims an item so nobody duplicates the gift. Optional name/email are used only server-side (e.g. decay reminders) and are never shown to others.
          *     On a full_guest list the reservation is active immediately and a one-time capability token is returned (201). On an email_confirmed list the reservation is held provisionally as pending_confirmation and a confirmation link is emailed; the response is 202 with status pending_confirmation and no token — the giver must confirm (see /public/reservations/confirm) before the reservation activates and the token is issued. An email_confirmed reserve requires giver_email.
+         *     On a `registered`-tier list the anonymous path is refused (401): a registered account must reserve through the authenticated POST /api/v1/me/reservations, which binds the reservation to the account (ADR-0012 Decision 4).
          */
         post: operations["createReservation"];
         delete?: never;
@@ -812,6 +859,8 @@ export interface components {
             oauth_google_enabled: boolean;
         };
         LoginMethods: {
+            /** @description Whether this instance allows self-registration (the ADR-0009 policy is not `disabled`). The frontend uses it to show/hide the register affordance and to warn when a per-list `registered` reserve tier is set on a closed-registration instance (ADR-0012 Decision 5). */
+            registration_enabled: boolean;
             /** @description Whether to render the username+password form on this host (the instance has password login enabled AND this is not a custom domain). */
             password: boolean;
             /** @description Whether to render the "Sign in with Google" button on this host (a Google client is configured, the tenant toggle is on, AND this is not a custom domain). */
@@ -997,6 +1046,34 @@ export interface components {
             status: "active" | "pending_confirmation";
             /** @description The release handle, returned once. Present only for an active reservation; absent while pending_confirmation (issued at confirm). */
             capability_token?: string;
+        };
+        MyReservationCreate: {
+            /** @description The share slug of the list holding the item. */
+            share_slug: string;
+            item_id: string;
+            /** @default 1 */
+            quantity: number;
+        };
+        /** @description One row of the reserver's own dashboard: a reservation the account made, with just enough list/item context to display and manage it. Carries no other reserver's identity. */
+        MyReservation: {
+            reservation_id: string;
+            item_id: string;
+            item_name: string;
+            list_title: string;
+            /** @description The list's share slug, so the dashboard can link back to it. */
+            share_slug: string;
+            quantity: number;
+            /**
+             * @description The reservation's lifecycle state as it appears on the dashboard — active, or reserver_notified while a decay reminder is outstanding. Released/expired reservations are omitted from the dashboard.
+             * @enum {string}
+             */
+            state: "active" | "reserver_notified";
+            /** Format: date-time */
+            created_at: string;
+        };
+        MyReservationPage: {
+            items: components["schemas"]["MyReservation"][];
+            total: number;
         };
         ReservationConfirmed: {
             reservation_id: string;
@@ -1538,6 +1615,97 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
+    listMyReservations: {
+        parameters: {
+            query?: {
+                limit?: components["parameters"]["Limit"];
+                offset?: components["parameters"]["Offset"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The account's reservations. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyReservationPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createMyReservation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MyReservationCreate"];
+            };
+        };
+        responses: {
+            /** @description Reservation active, bound to the account. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReservationCreated"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description The item is already fully reserved, or is being co-bought. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The list is no longer active (past its event date or disabled). */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deleteMyReservation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reservationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Released. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     getTenantSettings: {
         parameters: {
             query?: never;
@@ -2032,6 +2200,15 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            /** @description This list requires a registered account to reserve; use the authenticated reserve path. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             404: components["responses"]["NotFound"];
             /** @description The item is already fully reserved. */
             409: {

@@ -331,6 +331,27 @@ type Reservation struct {
 	// tokens are emailed once and never stored (like the capability token).
 	DecayReleaseTokenHash string
 	DecayKeepTokenHash    string
+	// ReserverUserID binds a reservation to the authenticated account that made it
+	// (ADR-0012 Decision 4 / cut 3), for the reserver's own "things I've reserved"
+	// dashboard (#20). nil for an anonymous (full_guest / email_confirmed) reserve.
+	// System-only: it gates the `registered` tier and powers the reserver's own view,
+	// and never surfaces on any owner-facing response (ADR-0002 §5).
+	ReserverUserID *string
+}
+
+// ReserverReservation is a read-model row for the reserver's "things I've reserved"
+// dashboard (ADR-0012 Decision 4 / #20): a reservation the account made, joined to
+// its item and list for display. It is only ever returned on the reserver's own
+// surface, keyed on reserver_user_id, and carries no other reserver's identity.
+type ReserverReservation struct {
+	ReservationID string
+	ItemID        string
+	ItemName      string
+	ListTitle     string
+	ShareSlug     string
+	Quantity      int
+	State         ReservationState
+	CreatedAt     time.Time
 }
 
 // DecayCandidate is a reservation that the decay sweep may need to advance, with
