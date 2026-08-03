@@ -120,6 +120,7 @@ type TenantStore interface {
 	Domains() DomainRepo
 	OAuthIdentities() OAuthIdentityRepo
 	PasswordResetTokens() PasswordResetTokenRepo
+	EmailVerificationTokens() EmailVerificationTokenRepo
 }
 
 // UserRepo persists owners within the bound tenant.
@@ -151,6 +152,10 @@ type UserRepo interface {
 	// prior sessions atomically. The caller supplies an already-hashed value.
 	// ErrNotFound if the user is absent.
 	SetPasswordHash(ctx context.Context, userID, passwordHash string) error
+	// SetStatus updates a user's account lifecycle status (ADR-0012), e.g. flipping a
+	// self-registered account from pending to active once it verifies its email.
+	// ErrNotFound if the user is absent.
+	SetStatus(ctx context.Context, userID, status string) error
 }
 
 // ListRepo persists lists within the bound tenant. Ownership lives in a join table
@@ -361,6 +366,25 @@ type PasswordResetTokenRepo interface {
 	ByHash(ctx context.Context, tokenHash string) (PasswordResetToken, error)
 	// MarkUsed atomically claims the token: it sets used_at only while it is still
 	// NULL, so exactly one concurrent confirm can win. It reports whether this call
+	// claimed the token (false = already used, the single-use guard). ErrNotFound if
+	// the token id is absent in the tenant.
+	MarkUsed(ctx context.Context, id string, usedAt time.Time) (claimed bool, err error)
+}
+
+// EmailVerificationTokenRepo persists email self-registration verification tokens
+// (ADR-0012), tenant-scoped like every other repo. Separate table from the
+// password-reset tokens: same shape, distinct lifecycle (activate a pending
+// account rather than reset a password).
+type EmailVerificationTokenRepo interface {
+	// Create persists a minted verification token (hash + expiry). The raw token is
+	// never stored — only its hash reaches here.
+	Create(ctx context.Context, t EmailVerificationToken) (EmailVerificationToken, error)
+	// ByHash resolves a token by its stored hash within the tenant. ErrNotFound if no
+	// token has that hash. Expiry and used state are for the caller to check (in Go,
+	// so the RFC3339Nano string column is never compared lexicographically).
+	ByHash(ctx context.Context, tokenHash string) (EmailVerificationToken, error)
+	// MarkUsed atomically claims the token: it sets used_at only while it is still
+	// NULL, so exactly one concurrent verify can win. It reports whether this call
 	// claimed the token (false = already used, the single-use guard). ErrNotFound if
 	// the token id is absent in the tenant.
 	MarkUsed(ctx context.Context, id string, usedAt time.Time) (claimed bool, err error)

@@ -85,6 +85,12 @@ func (s *Server) handleListExport(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	// Owner-role gate (ADR-0009): export is an owner-only surface. A giver is refused
+	// BEFORE the not-found lookup, so a giver hitting a nonexistent list still gets 403.
+	if !hasOwnerRole(ctx) {
+		writeProblem(w, http.StatusForbidden, ownerRoleRequiredDetail)
+		return
+	}
 	listID := r.PathValue("listId")
 	list, err := ts.Lists().Get(ctx, listID)
 	if err != nil {

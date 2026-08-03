@@ -9,6 +9,7 @@ import (
 
 	"github.com/yaad-index/yaadegar/internal/api/gen"
 	"github.com/yaad-index/yaadegar/internal/auth"
+	"github.com/yaad-index/yaadegar/internal/captcha"
 	"github.com/yaad-index/yaadegar/internal/clock"
 	"github.com/yaad-index/yaadegar/internal/email"
 	"github.com/yaad-index/yaadegar/internal/oauthlogin"
@@ -45,7 +46,14 @@ type Server struct {
 	oauth *oauthlogin.Authenticator
 	// ticketGuard enforces one-time use of the cross-host handoff ticket.
 	ticketGuard oauthlogin.TicketGuard
-	logger      *slog.Logger
+	// registrationPolicy gates the unauthenticated self-registration endpoint
+	// (ADR-0012). Empty behaves as RegistrationDisabled (fail-closed): the register
+	// endpoint answers 403 until the operator opts in.
+	registrationPolicy storage.RegistrationPolicy
+	// captcha verifies the human-challenge token on the register path (ADR-0012). It
+	// defaults to a no-op verifier (accepts every token) when nil.
+	captcha captcha.Verifier
+	logger  *slog.Logger
 }
 
 var _ gen.StrictServerInterface = (*Server)(nil)
@@ -107,6 +115,14 @@ type Options struct {
 	// TicketGuard enforces one-time use of the OAuth cross-host ticket. Defaults to
 	// an in-memory guard when nil.
 	TicketGuard oauthlogin.TicketGuard
+	// RegistrationPolicy gates unauthenticated self-registration (ADR-0012 Decision
+	// 2). Empty behaves as RegistrationDisabled (fail-closed): existing instances keep
+	// their unchanged no-self-registration behavior until the operator opts in.
+	RegistrationPolicy storage.RegistrationPolicy
+	// Captcha verifies the human-challenge token on the self-registration path
+	// (ADR-0012). Defaults to a no-op verifier (accepts every token) when nil, so the
+	// path is wired and testable before a real provider ships.
+	Captcha captcha.Verifier
 }
 
 // NewHandler builds the full HTTP handler: the generated strict router wrapped in
@@ -133,7 +149,12 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 		cobuyConfirmWindow:  opts.CobuyConfirmWindow,
 		oauth:               opts.OAuth,
 		ticketGuard:         opts.TicketGuard,
+		registrationPolicy:  opts.RegistrationPolicy,
+		captcha:             opts.Captcha,
 		logger:              opts.Logger,
+	}
+	if s.captcha == nil {
+		s.captcha = captcha.NoopVerifier{}
 	}
 	if s.logger == nil {
 		s.logger = slog.Default()

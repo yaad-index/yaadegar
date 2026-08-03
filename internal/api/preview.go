@@ -13,6 +13,15 @@ import (
 // Any fetch/parse failure or empty result is a 422 so the client falls back to a
 // manual form. The fetch itself is SSRF-guarded in internal/preview.
 func (s *Server) PreviewItem(ctx context.Context, req gen.PreviewItemRequestObject) (gen.PreviewItemResponseObject, error) {
+	// Owner-only: previewing a URL is the add-item helper (only owners add items) and
+	// it drives a server-side fetch — keep that capability off the giver surface
+	// (ADR-0012 cut 1a role gate). Checked before anything else so a giver never
+	// reaches the fetcher.
+	if !hasOwnerRole(ctx) {
+		return gen.PreviewItem403ApplicationProblemPlusJSONResponse{
+			ForbiddenApplicationProblemPlusJSONResponse: forbidden(ownerRoleRequiredDetail),
+		}, nil
+	}
 	if req.Body == nil || strings.TrimSpace(req.Body.Url) == "" {
 		return previewUnfetchable(), nil
 	}

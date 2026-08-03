@@ -52,6 +52,13 @@ func (s *Server) AddDomain(ctx context.Context, req gen.AddDomainRequestObject) 
 	if !ok {
 		return nil, errMissingContext
 	}
+	// Owner-role gate (ADR-0009): custom domains are an owner-only surface; a giver
+	// self-registered account is refused before any body/store work.
+	if !hasOwnerRole(ctx) {
+		return gen.AddDomain403ApplicationProblemPlusJSONResponse{
+			ForbiddenApplicationProblemPlusJSONResponse: forbidden(ownerRoleRequiredDetail),
+		}, nil
+	}
 	hostname := strings.ToLower(strings.TrimSpace(deref(req.Body).Hostname))
 	if !hostnameRE.MatchString(hostname) {
 		return gen.AddDomain400ApplicationProblemPlusJSONResponse{
@@ -93,6 +100,13 @@ func (s *Server) DeleteDomain(ctx context.Context, req gen.DeleteDomainRequestOb
 	if !ok {
 		return nil, errMissingContext
 	}
+	// Owner-role gate (ADR-0009): a giver is refused BEFORE the not-found lookup, so a
+	// giver hitting a nonexistent domain id still gets 403, not 404.
+	if !hasOwnerRole(ctx) {
+		return gen.DeleteDomain403ApplicationProblemPlusJSONResponse{
+			ForbiddenApplicationProblemPlusJSONResponse: forbidden(ownerRoleRequiredDetail),
+		}, nil
+	}
 	if err := ts.Domains().Delete(ctx, req.DomainId); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			return gen.DeleteDomain404ApplicationProblemPlusJSONResponse{
@@ -112,6 +126,13 @@ func (s *Server) VerifyDomain(ctx context.Context, req gen.VerifyDomainRequestOb
 	ts, _, ok := s.tenantStore(ctx)
 	if !ok {
 		return nil, errMissingContext
+	}
+	// Owner-role gate (ADR-0009): a giver is refused BEFORE the not-found lookup, so a
+	// giver hitting a nonexistent domain id still gets 403, not 404.
+	if !hasOwnerRole(ctx) {
+		return gen.VerifyDomain403ApplicationProblemPlusJSONResponse{
+			ForbiddenApplicationProblemPlusJSONResponse: forbidden(ownerRoleRequiredDetail),
+		}, nil
 	}
 	d, err := ts.Domains().Get(ctx, req.DomainId)
 	if err != nil {

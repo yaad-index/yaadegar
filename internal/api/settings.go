@@ -30,6 +30,13 @@ func (s *Server) UpdateTenantSettings(ctx context.Context, req gen.UpdateTenantS
 	if !ok {
 		return nil, errMissingContext
 	}
+	// Owner-role gate (ADR-0009): tenant settings are an owner-only surface; a giver
+	// self-registered account is refused before any body/store work.
+	if !hasOwnerRole(ctx) {
+		return gen.UpdateTenantSettings403ApplicationProblemPlusJSONResponse{
+			ForbiddenApplicationProblemPlusJSONResponse: forbidden(ownerRoleRequiredDetail),
+		}, nil
+	}
 	if req.Body == nil {
 		return gen.UpdateTenantSettings400ApplicationProblemPlusJSONResponse{
 			BadRequestApplicationProblemPlusJSONResponse: badRequest("a request body is required"),

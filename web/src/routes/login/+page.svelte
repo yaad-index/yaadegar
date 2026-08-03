@@ -75,5 +75,10 @@
 				>Forgot your password?</a
 			>
 		</p>
+		<p class="mt-1 text-sm">
+			<a class="text-gray-600 underline hover:text-gray-900" href={resolve('/register')}
+				>Create an account</a
+			>
+		</p>
 	{/if}
 </main>

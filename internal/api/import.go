@@ -41,6 +41,12 @@ func (s *Server) handleListImport(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	// Owner-role gate (ADR-0009): import is an owner-only surface. A giver is refused
+	// BEFORE the not-found lookup, so a giver hitting a nonexistent list still gets 403.
+	if !hasOwnerRole(ctx) {
+		writeProblem(w, http.StatusForbidden, ownerRoleRequiredDetail)
+		return
+	}
 	listID := r.PathValue("listId")
 	if _, err := ts.Lists().Get(ctx, listID); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {

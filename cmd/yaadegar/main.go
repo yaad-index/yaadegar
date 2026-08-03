@@ -82,6 +82,11 @@ type ServeCmd struct {
 	ReserverConfirmWindow time.Duration `name:"reserver-confirm-window" default:"30m" env:"YAADEGAR_RESERVER_CONFIRM_WINDOW" help:"How long an email_confirmed reservation may sit unconfirmed before it auto-expires and frees the item (ADR-0007). 0 disables the confirm-window sweep."`
 	ReserverDefaultTier   string        `name:"reserver-default-tier" default:"full_guest" env:"YAADEGAR_RESERVER_DEFAULT_TIER" help:"Instance-default reserver tier for lists that set no override (ADR-0007): full_guest | email_confirmed | registered."`
 
+	// RegistrationPolicy gates unauthenticated self-registration (ADR-0009 Decision 2,
+	// ADR-0012). Defaults to disabled — an existing instance keeps its unchanged
+	// no-self-registration behavior until the operator opts in.
+	RegistrationPolicy string `name:"registration-policy" default:"disabled" enum:"disabled,givers_only,owners_allowed" env:"YAADEGAR_REGISTRATION_POLICY" help:"Self-registration policy (ADR-0012): disabled (default, no self-registration) | givers_only (self-registered accounts are givers) | owners_allowed (self-registered accounts are owners)."`
+
 	CobuyConfirmWindow time.Duration `name:"cobuy-confirm-window" default:"168h" env:"YAADEGAR_COBUY_CONFIRM_WINDOW" help:"How long a co-buying match's emailed confirm/decline link stays valid after the match is proposed (#96). 0 means it never expires."`
 
 	DomainCNAMETarget string `name:"domain-cname-target" env:"YAADEGAR_DOMAIN_CNAME_TARGET" help:"Hostname that owners point a custom domain's CNAME at (returned by add-domain)."`
@@ -183,6 +188,15 @@ func (c *ServeCmd) Run(cli *CLI) error {
 		return fmt.Errorf("invalid --reserver-default-tier %q (want full_guest, email_confirmed, or registered)", c.ReserverDefaultTier)
 	}
 
+	// Fail closed on a bogus registration policy rather than silently disabling
+	// self-registration (ADR-0012).
+	registrationPolicy := storage.RegistrationPolicy(c.RegistrationPolicy)
+	switch registrationPolicy {
+	case storage.RegistrationDisabled, storage.RegistrationGiversOnly, storage.RegistrationOwnersAllowed:
+	default:
+		return fmt.Errorf("invalid --registration-policy %q (want disabled, givers_only, or owners_allowed)", c.RegistrationPolicy)
+	}
+
 	handler := api.NewHandler(store, api.Options{
 		BaseDomain:          c.BaseDomain,
 		Logger:              logger,
@@ -196,6 +210,7 @@ func (c *ServeCmd) Run(cli *CLI) error {
 		PublicLinkBase:      linkBase,
 		CobuyConfirmWindow:  c.CobuyConfirmWindow,
 		OAuth:               oauthAuth,
+		RegistrationPolicy:  registrationPolicy,
 	})
 
 	// Run the reservation-decay sweeper on a ticker alongside the server.

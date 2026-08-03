@@ -21,6 +21,13 @@ func (s *Server) CreateList(ctx context.Context, req gen.CreateListRequestObject
 	if !ok || !ok2 {
 		return nil, errMissingContext
 	}
+	// Owner-role gate (ADR-0009): only an owner account may author lists; a giver
+	// self-registered account is refused before any body/store work.
+	if !hasOwnerRole(ctx) {
+		return gen.CreateList403ApplicationProblemPlusJSONResponse{
+			ForbiddenApplicationProblemPlusJSONResponse: forbidden(ownerRoleRequiredDetail),
+		}, nil
+	}
 	if req.Body == nil {
 		return gen.CreateList400ApplicationProblemPlusJSONResponse{
 			BadRequestApplicationProblemPlusJSONResponse: badRequest("missing request body"),
