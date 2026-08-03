@@ -80,6 +80,13 @@ push to `main` (a rolling `main` tag plus a short-sha tag for bleeding-edge
 testing). To use one with the local compose setup, set the `app` service's `image:`
 to the tag you want instead of `build: .`.
 
+## Self-hosting
+
+Standing up a real instance — production config, PostgreSQL, TLS and reverse-proxy
+wiring, multi-tenant subdomains and custom domains, bootstrapping the first
+tenant/owner/admin, Google sign-in, and health checks — is covered end to end in
+the [self-hosting guide](docs/self-hosting.md).
+
 ## Import / export
 
 Owners can export a list's **item catalog** for backup or portability, and (soon)
