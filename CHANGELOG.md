@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.7.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.6.0...yaadegar-v0.7.0) (2026-08-03)
+
+
+### Features
+
+* **auth:** authenticated change-password endpoint + Settings form (ADR-0011 cut 2) ([2110fb9](https://github.com/yaad-index/yaadegar/commit/2110fb9ca20a55d28f372df2cf3adb5f920496b9))
+* **auth:** credential-version session invalidation + password funnel (ADR-0011 cut 1) ([5b600c8](https://github.com/yaad-index/yaadegar/commit/5b600c82895e98ad6df776011e4858117d5acbe3))
+* **auth:** enumeration-safe forgot-password reset (ADR-0011 cut 3) ([#155](https://github.com/yaad-index/yaadegar/issues/155)) ([6e33448](https://github.com/yaad-index/yaadegar/commit/6e33448b70ed72aeae4f414ab4ed5c94e634c685)), closes [#142](https://github.com/yaad-index/yaadegar/issues/142) [#148](https://github.com/yaad-index/yaadegar/issues/148)
+* **cli:** add set-password command for owner/admin password recovery ([#141](https://github.com/yaad-index/yaadegar/issues/141)) ([fa01752](https://github.com/yaad-index/yaadegar/commit/fa01752cd58829093debf97972d659bb3c69dcfb))
+* **web:** list-level description with sanitized light-markdown ([#143](https://github.com/yaad-index/yaadegar/issues/143)) ([38f4122](https://github.com/yaad-index/yaadegar/commit/38f4122ab4f9a5cf9b43ec10440943e569329be7))
+* **web:** make item price editable in add + edit forms ([#140](https://github.com/yaad-index/yaadegar/issues/140)) ([66d68e9](https://github.com/yaad-index/yaadegar/commit/66d68e92b0fcfa8e212520b246fb052c99654d67))
+* **web:** split list detail into List and Settings tabs ([#128](https://github.com/yaad-index/yaadegar/issues/128)) ([#136](https://github.com/yaad-index/yaadegar/issues/136)) ([7085b18](https://github.com/yaad-index/yaadegar/commit/7085b18202a72665b1d5bb8d6fcf4c75e44543c6))
+* **web:** transparent /api/v1 passthrough for external clients ([#145](https://github.com/yaad-index/yaadegar/issues/145)) ([ebd62d4](https://github.com/yaad-index/yaadegar/commit/ebd62d497499c94db4492b6653b5aafc7d56b504))
+
+
+### Bug Fixes
+
+* surface backend reason on failed reserve/chip-in; flag email-required lists ([#144](https://github.com/yaad-index/yaadegar/issues/144)) ([59fe54e](https://github.com/yaad-index/yaadegar/commit/59fe54e47af1c3c48193ba888c12294655084517))
+* **web:** keep scraped prefill + pasted url on Fetch details (add-item form reset) ([#139](https://github.com/yaad-index/yaadegar/issues/139)) ([5dcaefb](https://github.com/yaad-index/yaadegar/commit/5dcaefb1dea9fa92495c123a2683b59d61dcabbb))
+* **web:** make list-detail tab clicks switch the panel ([#128](https://github.com/yaad-index/yaadegar/issues/128)) ([#138](https://github.com/yaad-index/yaadegar/issues/138)) ([76f6f30](https://github.com/yaad-index/yaadegar/commit/76f6f30bf4260eadec7250c4b94a985831eb36d3))
+
 ## [0.6.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.5.0...yaadegar-v0.6.0) (2026-08-01)
 
 
