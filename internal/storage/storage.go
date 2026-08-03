@@ -119,6 +119,7 @@ type TenantStore interface {
 	Matches() MatchRepo
 	Domains() DomainRepo
 	OAuthIdentities() OAuthIdentityRepo
+	PasswordResetTokens() PasswordResetTokenRepo
 }
 
 // UserRepo persists owners within the bound tenant.
@@ -346,4 +347,21 @@ type OAuthIdentityRepo interface {
 	// is already linked to a different subject (ADR-0008 §5). ErrNotFound if the
 	// owner has no link for the provider.
 	ByUserProvider(ctx context.Context, userID string, provider OAuthProvider) (OAuthIdentity, error)
+}
+
+// PasswordResetTokenRepo persists forgot-password reset tokens (ADR-0011 cut 3),
+// tenant-scoped like every other repo.
+type PasswordResetTokenRepo interface {
+	// Create persists a minted reset token (hash + expiry). The raw token is never
+	// stored — only its hash reaches here.
+	Create(ctx context.Context, t PasswordResetToken) (PasswordResetToken, error)
+	// ByHash resolves a token by its stored hash within the tenant. ErrNotFound if no
+	// token has that hash. Expiry and used state are for the caller to check (in Go,
+	// so the RFC3339Nano string column is never compared lexicographically).
+	ByHash(ctx context.Context, tokenHash string) (PasswordResetToken, error)
+	// MarkUsed atomically claims the token: it sets used_at only while it is still
+	// NULL, so exactly one concurrent confirm can win. It reports whether this call
+	// claimed the token (false = already used, the single-use guard). ErrNotFound if
+	// the token id is absent in the tenant.
+	MarkUsed(ctx context.Context, id string, usedAt time.Time) (claimed bool, err error)
 }

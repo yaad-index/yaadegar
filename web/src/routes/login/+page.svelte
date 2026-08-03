@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { superForm } from 'sveltekit-superforms';
+	import { resolve } from '$app/paths';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -69,5 +70,10 @@
 				disabled={$submitting}>Log in</button
 			>
 		</form>
+		<p class="mt-4 text-sm">
+			<a class="text-gray-600 underline hover:text-gray-900" href={resolve('/forgot')}
+				>Forgot your password?</a
+			>
+		</p>
 	{/if}
 </main>

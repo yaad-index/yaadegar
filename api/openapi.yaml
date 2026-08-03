@@ -107,6 +107,57 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/LoginMethods" }
 
+  /api/v1/auth/password-reset/request:
+    post:
+      operationId: requestPasswordReset
+      tags: [auth]
+      summary: Request a password-reset email
+      description: >
+        Starts the forgot-password flow (ADR-0011). When the identifier resolves to an
+        account that has a password credential and a deliverable email, a single-use,
+        short-lived reset link is emailed. The response is ALWAYS 202 and identical
+        whether or not the account exists — status, body, and timing never reveal
+        account existence (enumeration-safe). Unauthenticated; the tenant is resolved
+        from the Host.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PasswordResetRequest" }
+      responses:
+        "202":
+          description: >
+            Accepted. If a matching account exists, a reset link has been emailed. The
+            response is identical when no account matches.
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/auth/password-reset/confirm:
+    post:
+      operationId: confirmPasswordReset
+      tags: [auth]
+      summary: Complete a password reset with a token
+      description: >
+        Completes the forgot-password flow (ADR-0011): validates the single-use reset
+        token, applies the shared password policy to the new password, sets it — which
+        bumps the credential version and so invalidates every existing session — and
+        auto-issues a session so the caller lands logged in. An invalid, expired, or
+        already-used token is a 400 that does not distinguish which. Unauthenticated;
+        the tenant is resolved from the Host.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PasswordResetConfirm" }
+      responses:
+        "200":
+          description: The reset succeeded; a session access token is returned (auto-login).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
   /admin/tenants:
     get:
       operationId: adminListTenants
@@ -1170,6 +1221,30 @@ components:
           description: >
             The replacement password. Must satisfy the instance password policy (a
             minimum length); a too-short value is rejected with a clear reason.
+
+    PasswordResetRequest:
+      type: object
+      required: [identifier]
+      properties:
+        identifier:
+          type: string
+          minLength: 1
+          description: The account's email address or username.
+
+    PasswordResetConfirm:
+      type: object
+      required: [token, new_password]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          description: The raw reset token from the emailed link.
+        new_password:
+          type: string
+          minLength: 1
+          description: >
+            The replacement password. Must satisfy the instance password policy (a
+            minimum length); a too-short value is rejected.
 
     TenantSettings:
       type: object
