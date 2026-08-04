@@ -27,11 +27,14 @@ const setPasswordInviteTTL = 72 * time.Hour
 
 // RequestPasswordReset starts the forgot-password flow (ADR-0011 cut 3). It is
 // enumeration-safe: the response is ALWAYS a 202 with no body, whether or not the
-// identifier resolves to an account. Two things keep existence from leaking:
+// identifier resolves to an account. Three things keep existence from leaking:
 //   - the token mint (crypto/rand + hash) runs on every request, found or not, so
 //     that constant work is not a tell;
-//   - the email is sent off the response path (a goroutine), so response latency
-//     never depends on whether — or how slowly — an email went out.
+//   - the token persist AND the email send both run off the response path (one
+//     goroutine, ordered persist→send), so a found identifier does no extra
+//     synchronous DB work than an unknown one (#159) — the request path does the
+//     same work either way: mint, look up, maybe enqueue, return 202;
+//   - failures inside the goroutine are logged, never surfaced.
 func (s *Server) RequestPasswordReset(ctx context.Context, req gen.RequestPasswordResetRequestObject) (gen.RequestPasswordResetResponseObject, error) {
 	ts, tenant, ok := s.tenantStore(ctx)
 	if !ok {
@@ -51,15 +54,7 @@ func (s *Server) RequestPasswordReset(ctx context.Context, req gen.RequestPasswo
 
 	if user, found := s.lookupResettable(ctx, ts, req.Body.Identifier); found {
 		expires := s.clock.Now().Add(passwordResetTTL)
-		if _, err := ts.PasswordResetTokens().Create(ctx, storage.PasswordResetToken{
-			UserID: user.ID, TokenHash: hash, ExpiresAt: expires,
-		}); err != nil {
-			// Log, but still return the identical 202 — a server-side hiccup must not be
-			// an observable difference either.
-			s.logger.ErrorContext(ctx, "password reset: persist token failed", "error", err)
-		} else {
-			s.sendResetEmailAsync(tenant, user.Email, raw)
-		}
+		s.sendResetEmailAsync(tenant, user.ID, user.Email, raw, hash, expires)
 	}
 
 	// Always the same: 202, no body, no hint about what happened.
@@ -89,13 +84,24 @@ func resettable(u storage.User) bool {
 	return u.Email != "" && !u.Banned
 }
 
-// sendResetEmailAsync emails the reset link off the request path so response timing
-// never depends on delivery. Failures are logged, never surfaced (that would leak
-// existence).
-func (s *Server) sendResetEmailAsync(tenant storage.Tenant, to, rawToken string) {
+// sendResetEmailAsync persists the reset token and emails the link, both off the
+// request path (#159) so a found identifier costs no more synchronous work than an
+// unknown one. The order is persist→send: the emailed token must exist before the
+// link goes out, so a persist failure aborts the send (a link whose token was never
+// stored would be dead on arrival). Failures are logged, never surfaced (that would
+// leak existence). The tenant store is re-derived here rather than captured from the
+// request, so it is not tied to the request's lifecycle.
+func (s *Server) sendResetEmailAsync(tenant storage.Tenant, userID, to, rawToken, tokenHash string, expires time.Time) {
 	link := s.resetLink(tenant, rawToken)
 	go func() {
 		ctx := context.Background()
+		ts := s.store.ForTenant(tenant)
+		if _, err := ts.PasswordResetTokens().Create(ctx, storage.PasswordResetToken{
+			UserID: userID, TokenHash: tokenHash, ExpiresAt: expires,
+		}); err != nil {
+			s.logger.ErrorContext(ctx, "password reset: persist token failed", "error", err)
+			return
+		}
 		if err := s.email.Send(ctx, email.Message{
 			To:      to,
 			Subject: "Reset your password",
