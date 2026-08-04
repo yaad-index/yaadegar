@@ -18,21 +18,30 @@
 	interface ProviderConfig {
 		src: string;
 		global: string;
+		// Whether to gate render() behind the SDK's ready() callback. Only reCAPTCHA
+		// needs it. Turnstile explicitly FORBIDS ready() when its api.js is loaded
+		// async/defer (it logs "Remove async/defer ... before using turnstile.ready()"
+		// and never fires the callback), so for Turnstile/hCaptcha we render directly on
+		// the script's onload, when the global is already usable.
+		usesReady: boolean;
 	}
 
-	// Exported so tests can assert the URL/global mapping without a live network.
+	// Exported so tests can assert the URL/global/ready mapping without a live network.
 	export const captchaProviders: Record<string, ProviderConfig> = {
 		turnstile: {
 			src: 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit',
-			global: 'turnstile'
+			global: 'turnstile',
+			usesReady: false
 		},
 		hcaptcha: {
 			src: 'https://js.hcaptcha.com/1/api.js?render=explicit',
-			global: 'hcaptcha'
+			global: 'hcaptcha',
+			usesReady: false
 		},
 		recaptcha: {
 			src: 'https://www.google.com/recaptcha/api.js?render=explicit',
-			global: 'grecaptcha'
+			global: 'grecaptcha',
+			usesReady: true
 		}
 	};
 </script>
@@ -57,8 +66,9 @@
 	}
 
 	// Load the provider SDK once (deduped by a stable id), then explicit-render into
-	// our container with a callback that stores the token. reCAPTCHA needs grecaptcha
-	// .ready(); the others are ready as soon as the global exists.
+	// our container with a callback that stores the token. Only reCAPTCHA gates render
+	// on grecaptcha.ready(); Turnstile/hCaptcha render directly on onload (Turnstile
+	// forbids ready() under async/defer — see ProviderConfig.usesReady).
 	function renderWidget(cfg: ProviderConfig, el: HTMLElement) {
 		const doRender = () => {
 			const api = apiFor(cfg.global);
@@ -70,15 +80,15 @@
 				'error-callback': () => (token = '')
 			});
 		};
-		const ready = () => {
+		const start = () => {
 			const api = apiFor(cfg.global);
-			if (api?.ready) api.ready(doRender);
+			if (cfg.usesReady && api?.ready) api.ready(doRender);
 			else doRender();
 		};
 
 		const id = `captcha-sdk-${cfg.global}`;
 		if (document.getElementById(id)) {
-			ready();
+			start();
 			return;
 		}
 		const script = document.createElement('script');
@@ -86,7 +96,7 @@
 		script.src = cfg.src;
 		script.async = true;
 		script.defer = true;
-		script.onload = ready;
+		script.onload = start;
 		document.head.appendChild(script);
 	}
 

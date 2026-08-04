@@ -74,12 +74,17 @@ describe('CaptchaWidget', () => {
 		expect(screen.queryByTestId('captcha-widget')).not.toBeInTheDocument();
 	});
 
-	it('maps each managed provider to its SDK URL and global', () => {
+	it('maps each managed provider to its SDK URL, global, and ready policy', () => {
+		// Only reCAPTCHA gates render on ready(); Turnstile forbids ready() under
+		// async/defer, so it (and hCaptcha) must render directly on onload.
 		expect(captchaProviders.turnstile.global).toBe('turnstile');
 		expect(captchaProviders.turnstile.src).toContain('challenges.cloudflare.com');
+		expect(captchaProviders.turnstile.usesReady).toBe(false);
 		expect(captchaProviders.hcaptcha.global).toBe('hcaptcha');
 		expect(captchaProviders.hcaptcha.src).toContain('hcaptcha.com');
+		expect(captchaProviders.hcaptcha.usesReady).toBe(false);
 		expect(captchaProviders.recaptcha.global).toBe('grecaptcha');
 		expect(captchaProviders.recaptcha.src).toContain('recaptcha');
+		expect(captchaProviders.recaptcha.usesReady).toBe(true);
 	});
 });
