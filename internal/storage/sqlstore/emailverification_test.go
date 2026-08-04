@@ -59,6 +59,51 @@ func TestEmailVerificationTokens(t *testing.T) {
 	assert.ErrorIs(t, err, storage.ErrNotFound)
 }
 
+// TestEmailVerificationLatestAndDelete covers the resend-verification helpers (#162):
+// LatestByUser returns the newest token (for the anti-flood CreatedAt), and
+// DeleteByUser clears the user's tokens so a re-mint fully replaces the prior one.
+func TestEmailVerificationLatestAndDelete(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+	ten := mkTenant(t, st, "alice")
+	ts := st.ForTenant(ten)
+	user, err := ts.Users().Create(ctx, storage.User{Name: "Alice"})
+	require.NoError(t, err)
+	repo := ts.EmailVerificationTokens()
+
+	// No tokens yet → ErrNotFound.
+	_, err = repo.LatestByUser(ctx, user.ID)
+	assert.ErrorIs(t, err, storage.ErrNotFound)
+
+	exp := time.Date(2027, 6, 15, 13, 0, 0, 0, time.UTC)
+	older := time.Date(2027, 6, 15, 12, 0, 0, 0, time.UTC)
+	newer := time.Date(2027, 6, 15, 12, 30, 0, 0, time.UTC)
+	_, err = repo.Create(ctx, storage.EmailVerificationToken{
+		UserID: user.ID, TokenHash: "hash-old", ExpiresAt: exp, CreatedAt: older,
+	})
+	require.NoError(t, err)
+	_, err = repo.Create(ctx, storage.EmailVerificationToken{
+		UserID: user.ID, TokenHash: "hash-new", ExpiresAt: exp, CreatedAt: newer,
+	})
+	require.NoError(t, err)
+
+	// LatestByUser returns the most recently created token.
+	latest, err := repo.LatestByUser(ctx, user.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "hash-new", latest.TokenHash)
+	assert.True(t, latest.CreatedAt.Equal(newer))
+
+	// DeleteByUser clears every token; both lookups then miss.
+	require.NoError(t, repo.DeleteByUser(ctx, user.ID))
+	_, err = repo.ByHash(ctx, "hash-old")
+	assert.ErrorIs(t, err, storage.ErrNotFound)
+	_, err = repo.LatestByUser(ctx, user.ID)
+	assert.ErrorIs(t, err, storage.ErrNotFound)
+
+	// DeleteByUser on a user with no tokens is a no-op, not an error.
+	require.NoError(t, repo.DeleteByUser(ctx, user.ID))
+}
+
 // TestUserStatusDefaultAndSetStatus: Create defaults an account to active, and
 // SetStatus flips it (the pending → active activation, ADR-0012).
 func TestUserStatusDefaultAndSetStatus(t *testing.T) {
