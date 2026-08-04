@@ -30,9 +30,31 @@ func (r emailVerificationRepo) Create(ctx context.Context, t storage.EmailVerifi
 }
 
 func (r emailVerificationRepo) ByHash(ctx context.Context, tokenHash string) (storage.EmailVerificationToken, error) {
-	row := r.db.QueryRowContext(ctx, r.rb(
+	return scanEmailVerification(r.db.QueryRowContext(ctx, r.rb(
 		`SELECT id, tenant_id, user_id, token_hash, expires_at, used_at, created_at
-		   FROM email_verification_tokens WHERE tenant_id = ? AND token_hash = ?`), r.tenantID, tokenHash)
+		   FROM email_verification_tokens WHERE tenant_id = ? AND token_hash = ?`), r.tenantID, tokenHash))
+}
+
+// LatestByUser returns the newest token for the user (any state), for the
+// resend-verification anti-flood guard, which reads its CreatedAt.
+func (r emailVerificationRepo) LatestByUser(ctx context.Context, userID string) (storage.EmailVerificationToken, error) {
+	return scanEmailVerification(r.db.QueryRowContext(ctx, r.rb(
+		`SELECT id, tenant_id, user_id, token_hash, expires_at, used_at, created_at
+		   FROM email_verification_tokens WHERE tenant_id = ? AND user_id = ?
+		   ORDER BY created_at DESC LIMIT 1`), r.tenantID, userID))
+}
+
+// DeleteByUser drops every verification token for the user so a re-minted token
+// fully replaces any prior outstanding one.
+func (r emailVerificationRepo) DeleteByUser(ctx context.Context, userID string) error {
+	_, err := r.db.ExecContext(ctx, r.rb(
+		`DELETE FROM email_verification_tokens WHERE tenant_id = ? AND user_id = ?`), r.tenantID, userID)
+	return err
+}
+
+// scanEmailVerification reads one token row (used by ByHash and LatestByUser),
+// mapping no-rows to ErrNotFound and parsing the RFC3339Nano string columns in Go.
+func scanEmailVerification(row *sql.Row) (storage.EmailVerificationToken, error) {
 	var (
 		t         storage.EmailVerificationToken
 		expiresAt string

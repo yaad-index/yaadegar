@@ -17,6 +17,12 @@ import (
 // (ADR-0012 cut 1a): short, single-use, so a leaked-then-expired link is inert.
 const emailVerificationTTL = time.Hour
 
+// resendMinInterval is the anti-flood floor for resend-verification (#162): if a
+// verification token was issued within this window, a repeated re-register does not
+// resend, so re-submitting the form cannot spam a pending address. The check runs
+// off the response path, so the throttle is not an observable timing tell.
+const resendMinInterval = time.Minute
+
 // Register starts email self-registration (ADR-0012 cut 1a). It is gated by the
 // instance registration policy (disabled → 403) and, when enabled, is
 // enumeration-safe: the response is ALWAYS a 202 with no body, whether or not the
@@ -78,10 +84,14 @@ func (s *Server) Register(ctx context.Context, req gen.RegisterRequestObject) (g
 		return nil, err
 	}
 
-	// Enumeration-safe: only create a pending account + send the email when the email
-	// is genuinely new. An already-registered email produces the identical 202 with no
-	// second account and no email.
-	if _, err := ts.Users().ByEmail(ctx, req.Body.Email); errors.Is(err, storage.ErrNotFound) {
+	// Enumeration-safe branching on the email's current state. New → create a pending
+	// account + send. Still-pending → re-mint + resend so a lost/expired link can be
+	// recovered (#162). Already-active → nothing. All three return the identical 202,
+	// and every account/token write plus the send stays off the response path (async),
+	// so response timing never distinguishes new / pending / active.
+	existing, lookupErr := ts.Users().ByEmail(ctx, req.Body.Email)
+	switch {
+	case errors.Is(lookupErr, storage.ErrNotFound):
 		// The email doubles as the login handle so the account can log in by email
 		// once verified (Username backs ByUsername; there is no separate handle here).
 		username := req.Body.Email
@@ -98,16 +108,21 @@ func (s *Server) Register(ctx context.Context, req gen.RegisterRequestObject) (g
 			// insert; treat every persist hiccup the same — log and still return 202.
 			s.logger.ErrorContext(ctx, "register: create pending account failed", "error", cerr)
 		} else if _, terr := ts.EmailVerificationTokens().Create(ctx, storage.EmailVerificationToken{
-			UserID: user.ID, TokenHash: tokenHash, ExpiresAt: s.clock.Now().Add(emailVerificationTTL),
+			UserID: user.ID, TokenHash: tokenHash,
+			ExpiresAt: s.clock.Now().Add(emailVerificationTTL), CreatedAt: s.clock.Now(),
 		}); terr != nil {
 			s.logger.ErrorContext(ctx, "register: persist verification token failed", "error", terr)
 		} else {
 			s.sendVerificationEmailAsync(tenant, req.Body.Email, raw)
 		}
-	} else if err != nil {
+	case lookupErr != nil:
 		// A real lookup error (not ErrNotFound) is a server-side problem; still keep the
 		// response uniform by logging rather than surfacing it.
-		s.logger.ErrorContext(ctx, "register: lookup existing account failed", "error", err)
+		s.logger.ErrorContext(ctx, "register: lookup existing account failed", "error", lookupErr)
+	case existing.Status == storage.UserStatusPending:
+		// Re-registering a still-unverified email resends a fresh link (#162). Everything
+		// — the anti-flood check, token replace, and send — happens off the response path.
+		s.resendVerificationEmailAsync(tenant, existing.ID, req.Body.Email, raw, tokenHash)
 	}
 
 	// Always the same: 202, no body, no hint about what happened.
@@ -132,18 +147,66 @@ func registrationRole(p storage.RegistrationPolicy) (storage.UserRole, bool) {
 // response timing never depends on delivery. Failures are logged, never surfaced
 // (that would leak existence).
 func (s *Server) sendVerificationEmailAsync(tenant storage.Tenant, to, rawToken string) {
-	link := s.verifyLink(tenant, rawToken)
 	go func() {
 		ctx := context.Background()
-		if err := s.email.Send(ctx, email.Message{
-			To:      to,
-			Subject: "Verify your email",
-			Body: "Verify your email to finish creating your account: " + link +
-				"\n\nThis link can be used once and expires soon. If you didn't request it, you can ignore this email.",
-		}); err != nil {
+		if err := s.email.Send(ctx, s.verificationEmail(tenant, to, rawToken)); err != nil {
 			s.logger.ErrorContext(ctx, "register: send verification email failed", "error", err)
 		}
 	}()
+}
+
+// resendVerificationEmailAsync re-mints a fresh single-use verification token for a
+// still-pending account and resends the link (#162), entirely off the request path so
+// response timing never reveals that the email was pending (vs active or new). It
+// replaces any outstanding token — the prior link stops working the moment the new one
+// is minted (single-use replace) — and applies a minimal anti-flood guard: if a token
+// was already issued within resendMinInterval, it does nothing, so a rapid re-register
+// cannot spam a pending address.
+func (s *Server) resendVerificationEmailAsync(tenant storage.Tenant, userID, to, rawToken, tokenHash string) {
+	go func() {
+		ctx := context.Background()
+		ts := s.store.ForTenant(tenant)
+		now := s.clock.Now()
+
+		// Anti-flood: skip when the current token is younger than the floor.
+		latest, err := ts.EmailVerificationTokens().LatestByUser(ctx, userID)
+		switch {
+		case err == nil:
+			if now.Sub(latest.CreatedAt) < resendMinInterval {
+				return
+			}
+		case !errors.Is(err, storage.ErrNotFound):
+			s.logger.ErrorContext(ctx, "resend verification: lookup latest token failed", "error", err)
+			return
+		}
+
+		// Replace any outstanding token so only the freshly minted one verifies.
+		if err := ts.EmailVerificationTokens().DeleteByUser(ctx, userID); err != nil {
+			s.logger.ErrorContext(ctx, "resend verification: clear prior tokens failed", "error", err)
+			return
+		}
+		if _, err := ts.EmailVerificationTokens().Create(ctx, storage.EmailVerificationToken{
+			UserID: userID, TokenHash: tokenHash,
+			ExpiresAt: now.Add(emailVerificationTTL), CreatedAt: now,
+		}); err != nil {
+			s.logger.ErrorContext(ctx, "resend verification: persist token failed", "error", err)
+			return
+		}
+		if err := s.email.Send(ctx, s.verificationEmail(tenant, to, rawToken)); err != nil {
+			s.logger.ErrorContext(ctx, "resend verification: send email failed", "error", err)
+		}
+	}()
+}
+
+// verificationEmail builds the verification message shared by the first send and the
+// resend, so their subject and body never drift.
+func (s *Server) verificationEmail(tenant storage.Tenant, to, rawToken string) email.Message {
+	return email.Message{
+		To:      to,
+		Subject: "Verify your email",
+		Body: "Verify your email to finish creating your account: " + s.verifyLink(tenant, rawToken) +
+			"\n\nThis link can be used once and expires soon. If you didn't request it, you can ignore this email.",
+	}
 }
 
 // verifyLink builds the tenant-correct verification URL. It mirrors resetLink: when a

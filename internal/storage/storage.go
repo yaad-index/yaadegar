@@ -393,4 +393,13 @@ type EmailVerificationTokenRepo interface {
 	// claimed the token (false = already used, the single-use guard). ErrNotFound if
 	// the token id is absent in the tenant.
 	MarkUsed(ctx context.Context, id string, usedAt time.Time) (claimed bool, err error)
+	// LatestByUser returns the most recently created verification token for the user
+	// within the tenant (regardless of used/expired state). ErrNotFound if the user
+	// has none. The resend-verification flow reads its CreatedAt for the anti-flood
+	// guard.
+	LatestByUser(ctx context.Context, userID string) (EmailVerificationToken, error)
+	// DeleteByUser removes every verification token for the user within the tenant, so
+	// a re-minted token fully replaces any prior outstanding one (single-use replace).
+	// It is not an error if the user has no tokens.
+	DeleteByUser(ctx context.Context, userID string) error
 }

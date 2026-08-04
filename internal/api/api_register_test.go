@@ -120,6 +120,83 @@ func TestRegisterEnumerationSafe(t *testing.T) {
 	assert.Equal(t, 1, count, "no second account for the existing email (total users %d)", total)
 }
 
+// registerReq POSTs the register form for email; a thin wrapper for the resend tests.
+func (h *harness) registerReq(email string) (*http.Response, []byte) {
+	h.t.Helper()
+	return h.req(http.MethodPost, "/api/v1/auth/register", h.ownerHost(), "",
+		map[string]any{"email": email, "password": "long-enough-pass", "captcha_token": ""})
+}
+
+// TestRegisterResendForPendingRemints: re-registering a still-pending email past the
+// anti-flood floor re-mints a fresh usable token and resends the link, while the prior
+// token stops working (single-use replace). Both requests are the same 202 (#162).
+func TestRegisterResendForPendingRemints(t *testing.T) {
+	h := newHarnessRegistration(t, storage.RegistrationGiversOnly)
+
+	resp, _ := h.registerReq("newbie@example.com")
+	require.Equal(t, http.StatusAccepted, resp.StatusCode)
+	require.Eventually(t, func() bool { return len(h.email.Sent()) == 1 }, time.Second, 10*time.Millisecond)
+	token1 := resetTokenFromEmail(t, h.email.Sent()[0].Body)
+
+	// Move past the anti-flood floor, then re-register the still-pending email.
+	h.clk.Advance(time.Minute + time.Second)
+	resp, body := h.registerReq("newbie@example.com")
+	require.Equal(t, http.StatusAccepted, resp.StatusCode, "resend is the same enum-safe 202: %s", body)
+	require.Eventually(t, func() bool { return len(h.email.Sent()) == 2 }, time.Second, 10*time.Millisecond)
+	token2 := resetTokenFromEmail(t, h.email.Sent()[1].Body)
+	require.NotEqual(t, token1, token2, "the resend mints a fresh token")
+
+	// The prior token no longer verifies (it was replaced).
+	resp, _ = h.req(http.MethodPost, "/api/v1/auth/register/verify", h.ownerHost(), "",
+		map[string]any{"token": token1})
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, "the old link is dead after re-mint")
+
+	// The fresh token verifies and auto-logs-in.
+	resp, body = h.req(http.MethodPost, "/api/v1/auth/register/verify", h.ownerHost(), "",
+		map[string]any{"token": token2})
+	require.Equal(t, http.StatusOK, resp.StatusCode, "body: %s", body)
+	assert.NotEmpty(t, decode[gen.LoginResponse](t, body).AccessToken)
+	activated, err := h.userByEmail("newbie@example.com")
+	require.NoError(t, err)
+	assert.Equal(t, storage.UserStatusActive, activated.Status)
+}
+
+// TestRegisterResendAntiFlood: a rapid re-register (within the floor) does not resend,
+// so repeated submits cannot spam a pending address. Still an identical 202.
+func TestRegisterResendAntiFlood(t *testing.T) {
+	h := newHarnessRegistration(t, storage.RegistrationGiversOnly)
+
+	resp, _ := h.registerReq("newbie@example.com")
+	require.Equal(t, http.StatusAccepted, resp.StatusCode)
+	require.Eventually(t, func() bool { return len(h.email.Sent()) == 1 }, time.Second, 10*time.Millisecond)
+
+	// Re-register well within the floor: no second email goes out.
+	h.clk.Advance(30 * time.Second)
+	resp, _ = h.registerReq("newbie@example.com")
+	require.Equal(t, http.StatusAccepted, resp.StatusCode)
+	assert.Never(t, func() bool { return len(h.email.Sent()) > 1 }, 200*time.Millisecond, 20*time.Millisecond)
+}
+
+// TestRegisterResendActiveSendsNothing: once the account is verified (active),
+// re-registering it sends nothing, even past the anti-flood floor.
+func TestRegisterResendActiveSendsNothing(t *testing.T) {
+	h := newHarnessRegistration(t, storage.RegistrationGiversOnly)
+
+	resp, _ := h.registerReq("newbie@example.com")
+	require.Equal(t, http.StatusAccepted, resp.StatusCode)
+	require.Eventually(t, func() bool { return len(h.email.Sent()) == 1 }, time.Second, 10*time.Millisecond)
+	raw := resetTokenFromEmail(t, h.email.Sent()[0].Body)
+	resp, _ = h.req(http.MethodPost, "/api/v1/auth/register/verify", h.ownerHost(), "",
+		map[string]any{"token": raw})
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// Re-register the now-active email past the floor: identical 202, no new email.
+	h.clk.Advance(time.Minute + time.Second)
+	resp, _ = h.registerReq("newbie@example.com")
+	require.Equal(t, http.StatusAccepted, resp.StatusCode)
+	assert.Never(t, func() bool { return len(h.email.Sent()) > 1 }, 200*time.Millisecond, 20*time.Millisecond)
+}
+
 // TestRegisterTooShortPassword: a too-short password is a 400 and creates nothing.
 func TestRegisterTooShortPassword(t *testing.T) {
 	h := newHarnessRegistration(t, storage.RegistrationGiversOnly)
