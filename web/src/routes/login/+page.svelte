@@ -27,7 +27,7 @@
 		passthrough endpoint (a server route, not a page), so resolve() does not apply; must
 		be a full top-level navigation so the provider redirect works. -->
 		<a
-			href={`/api/v1/auth/oauth/google/start?tenant=${encodeURIComponent(data.host)}&return_to=%2F`}
+			href={`/api/v1/auth/oauth/google/start?tenant=${encodeURIComponent(data.host)}&return_to=${encodeURIComponent(data.returnTo || '/')}`}
 			class="mt-6 flex w-full items-center justify-center rounded border px-3 py-2 font-medium hover:bg-gray-50"
 			data-testid="google-signin"
 		>
@@ -43,7 +43,12 @@
 	{/if}
 
 	{#if data.methods.password}
-		<form method="post" use:enhance class="mt-6 space-y-4">
+		<form
+			method="post"
+			action={data.returnTo ? `?return_to=${encodeURIComponent(data.returnTo)}` : undefined}
+			use:enhance
+			class="mt-6 space-y-4"
+		>
 			<label class="block">
 				<span class="text-sm font-medium">Username</span>
 				<input
@@ -77,9 +82,15 @@
 		</p>
 		{#if data.methods.registration_enabled}
 			<p class="mt-1 text-sm">
-				<a class="text-gray-600 underline hover:text-gray-900" href={resolve('/register')}
-					>Create an account</a
+				<!-- eslint-disable svelte/no-navigation-without-resolve -- resolve() cannot express the
+				?return_to= query; the path is resolve()'d and the value is a validated local path. -->
+				<a
+					class="text-gray-600 underline hover:text-gray-900"
+					href={data.returnTo
+						? `${resolve('/register')}?return_to=${encodeURIComponent(data.returnTo)}`
+						: resolve('/register')}>Create an account</a
 				>
+				<!-- eslint-enable svelte/no-navigation-without-resolve -->
 			</p>
 		{/if}
 	{/if}

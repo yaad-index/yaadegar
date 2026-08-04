@@ -4,6 +4,7 @@ import { zod4 } from 'sveltekit-superforms/adapters';
 import { z } from 'zod';
 import { backendClient } from '$lib/server/api';
 import { setSession } from '$lib/server/session';
+import { safeReturnTo } from '$lib/server/returnTo';
 import type { Actions, PageServerLoad } from './$types';
 
 const loginSchema = z.object({
@@ -29,8 +30,9 @@ const oauthErrorMessages: Record<string, string> = {
 };
 
 export const load: PageServerLoad = async ({ locals, url }) => {
-	// Already signed in → straight to the dashboard.
-	if (locals.token) redirect(303, '/');
+	// Already signed in → honor a return path (#170, e.g. back to a registered-tier
+	// list) or fall through to the dashboard.
+	if (locals.token) redirect(303, safeReturnTo(url.searchParams.get('return_to')) ?? '/');
 
 	// Which login affordances to render for this host (ADR-0008 Cut 2). Defaults to
 	// password-only if the backend can't be reached, so login still works.
@@ -57,7 +59,10 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			registration_enabled: false
 		},
 		host: locals.host,
-		oauthError
+		oauthError,
+		// A validated local return path (#170) the login form echoes back so it survives
+		// the POST; the action redirects here on success.
+		returnTo: safeReturnTo(url.searchParams.get('return_to')) ?? ''
 	};
 };
 
@@ -80,6 +85,8 @@ export const actions: Actions = {
 		}
 
 		setSession(cookies, data.access_token, data.expires_in, url.protocol === 'https:');
-		redirect(303, '/');
+		// Return to where the visitor came from (#170) — the reserve view for a
+		// registered-tier list — or the dashboard. Validated to a local path.
+		redirect(303, safeReturnTo(url.searchParams.get('return_to')) ?? '/');
 	}
 };

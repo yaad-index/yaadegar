@@ -1,6 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { backendClient } from '$lib/server/api';
 import { setSession } from '$lib/server/session';
+import { safeReturnTo } from '$lib/server/returnTo';
 import type { Actions, PageServerLoad } from './$types';
 
 // The verification token arrives in the emailed link's ?token=. We deliberately do
@@ -29,8 +30,13 @@ export const actions: Actions = {
 		}
 
 		// Auto-login (ADR-0012): the verify response carries a fresh session, so set the
-		// cookie and land the owner in the app.
+		// cookie and land the account in the app.
 		setSession(cookies, data.access_token, data.expires_in, url.protocol === 'https:');
-		redirect(303, '/');
+		// If registration started from a list that needs an account (#170), the register
+		// step stashed a return path; consume it once and land back there. Validated to a
+		// local path, so a tampered cookie can't become an open redirect.
+		const returnTo = safeReturnTo(cookies.get('return_to'));
+		cookies.delete('return_to', { path: '/' });
+		redirect(303, returnTo ?? '/');
 	}
 };

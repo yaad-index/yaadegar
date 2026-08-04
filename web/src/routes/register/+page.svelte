@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
-	import type { ActionData } from './$types';
+	import type { PageData, ActionData } from './$types';
 
-	let { form }: { form: ActionData } = $props();
+	let { data, form }: { data: PageData; form: ActionData } = $props();
 </script>
 
 <svelte:head><title>Create an account · Yaadegar</title></svelte:head>
@@ -26,7 +26,12 @@
 		{#if form?.error}
 			<p class="mt-3 rounded bg-red-50 p-2 text-sm text-red-700" role="alert">{form.error}</p>
 		{/if}
-		<form method="post" use:enhance class="mt-4 space-y-3">
+		<form
+			method="post"
+			action={data.returnTo ? `?return_to=${encodeURIComponent(data.returnTo)}` : undefined}
+			use:enhance
+			class="mt-4 space-y-3"
+		>
 			<label class="block">
 				<span class="text-sm font-medium">Email</span>
 				<input
@@ -66,8 +71,14 @@
 	{/if}
 
 	<p class="mt-4 text-sm">
-		<a class="text-gray-600 underline hover:text-gray-900" href={resolve('/login')}
-			>Back to sign in</a
+		<!-- eslint-disable svelte/no-navigation-without-resolve -- resolve() cannot express the
+		?return_to= query; the path is resolve()'d and the value is a validated local path. -->
+		<a
+			class="text-gray-600 underline hover:text-gray-900"
+			href={data.returnTo
+				? `${resolve('/login')}?return_to=${encodeURIComponent(data.returnTo)}`
+				: resolve('/login')}>Back to sign in</a
 		>
+		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 	</p>
 </main>

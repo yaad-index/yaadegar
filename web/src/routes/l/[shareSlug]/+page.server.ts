@@ -1,4 +1,4 @@
-import { error, fail } from '@sveltejs/kit';
+import { error, fail, redirect } from '@sveltejs/kit';
 import type { NumericRange } from '@sveltejs/kit';
 import { superValidate, message } from 'sveltekit-superforms';
 import { zod4 } from 'sveltekit-superforms/adapters';
@@ -85,11 +85,32 @@ export const load: PageServerLoad = async ({ params, locals, cookies, url }) => 
 				pledged: {} as Record<string, PledgeState>,
 				noteHtml: {} as Record<string, string>,
 				descriptionHtml: '',
+				accountRequired: false,
+				loggedIn: !!locals.token,
+				registrationEnabled: false,
+				reservePath: '',
 				form,
 				pledgeForm
 			};
 		}
 		error(response.status === 404 ? 404 : response.status || 502, 'This list is not available.');
+	}
+
+	// A registered-tier list (#170) can only be reserved from an account: the anonymous
+	// reserve path 401s. Route a signed-in visitor straight to the account-bound reserve
+	// view; an anonymous visitor gets an account-required state (sign in / register)
+	// instead of a reserve form that would fail. The reserve path is also offered as an
+	// optional switch to a signed-in visitor on a normal list.
+	const accountRequired = !!data.account_required;
+	const loggedIn = !!locals.token;
+	const reservePath = `/reserve/${params.shareSlug}`;
+	if (accountRequired && loggedIn) {
+		redirect(303, reservePath);
+	}
+	let registrationEnabled = false;
+	if (accountRequired) {
+		const { data: methods } = await client.GET('/api/v1/auth/methods');
+		registrationEnabled = !!methods?.registration_enabled;
 	}
 
 	// This browser's own pledges: refresh each on load (the approved model is manual
@@ -148,6 +169,15 @@ export const load: PageServerLoad = async ({ params, locals, cookies, url }) => 
 		// The list description (#143) rides the same renderNote sanitize path; {@html}
 		// only ever touches this pre-sanitized string (ADR-0006 security boundary).
 		descriptionHtml: renderNote(data.description),
+		// #170: whether this list needs an account to reserve (only reached here while
+		// anonymous — a signed-in visitor was redirected above), whether a signed-in
+		// visitor can switch to the account-bound view, that view's path, and the slug
+		// so the switch link can resolve() it.
+		accountRequired,
+		loggedIn,
+		registrationEnabled,
+		reservePath,
+		shareSlug: params.shareSlug,
 		form,
 		pledgeForm
 	};
