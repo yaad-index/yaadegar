@@ -374,6 +374,14 @@ type PasswordResetTokenRepo interface {
 	// claimed the token (false = already used, the single-use guard). ErrNotFound if
 	// the token id is absent in the tenant.
 	MarkUsed(ctx context.Context, id string, usedAt time.Time) (claimed bool, err error)
+	// ConfirmReset applies a confirmed password reset/establish atomically (#166): in
+	// one transaction it sets the user's password hash (bumping credential_version, so
+	// every existing session drops), activates the account if it is still pending, and
+	// claims the token as the commit gate. If the token was already used (a concurrent
+	// confirm won), nothing is written and it reports claimed=false — so the account
+	// can never land in a partial state (password set + token consumed but still
+	// pending). The caller reads the post-commit user state to issue the session.
+	ConfirmReset(ctx context.Context, tokenID, userID, passwordHash string, usedAt time.Time) (claimed bool, err error)
 }
 
 // EmailVerificationTokenRepo persists email self-registration verification tokens

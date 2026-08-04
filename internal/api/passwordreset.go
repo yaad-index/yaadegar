@@ -179,39 +179,27 @@ func (s *Server) ConfirmPasswordReset(ctx context.Context, req gen.ConfirmPasswo
 		return nil, err
 	}
 
-	// Claim the token atomically: only the winner of a concurrent confirm proceeds.
-	claimed, err := ts.PasswordResetTokens().MarkUsed(ctx, prt.ID, now)
+	// Apply the confirm mutation set atomically (#166): claim the token, set the new
+	// password (bumping credential_version → drops every session), and activate a
+	// still-pending account — all in one transaction, so the account never lands in a
+	// partial state. Establishing a password through an emailed link proves email
+	// ownership, which is why it also completes activation (ADR-0012 cut 1b); without
+	// it a pending account would auto-login once then be unable to log in again (the
+	// login gate rejects pending). claimed=false = a concurrent confirm already won.
+	claimed, err := ts.PasswordResetTokens().ConfirmReset(ctx, prt.ID, prt.UserID, hash, now)
 	if err != nil {
-		if errors.Is(err, storage.ErrNotFound) {
-			return invalidResetToken(), nil
-		}
 		return nil, err
 	}
 	if !claimed {
 		return invalidResetToken(), nil
 	}
 
-	// Set the new password — bumps credential_version, invalidating every session.
-	if err := ts.Users().SetPasswordHash(ctx, prt.UserID, hash); err != nil {
-		return nil, err
-	}
-
-	// Auto-login (ADR-0011): issue a session at the post-bump version so the caller
-	// lands logged in on the device that completed the reset.
+	// Auto-login (ADR-0011): read the post-commit state and issue a session at the
+	// post-bump version, only after the transaction committed — a tx failure above
+	// returns the error with no session, leaving the account consistent.
 	user, err := ts.Users().Get(ctx, prt.UserID)
 	if err != nil {
 		return nil, err
-	}
-	// Establishing a password through an emailed link proves email ownership, so it
-	// also completes activation for a still-pending account (ADR-0012 cut 1b) — the
-	// same proof the verification link would give. Without this, a pending account that
-	// set its password here would auto-login once but then be unable to log in again
-	// (the login gate rejects pending). A no-op for an already-active account.
-	if user.Status == storage.UserStatusPending {
-		if err := ts.Users().SetStatus(ctx, user.ID, storage.UserStatusActive); err != nil {
-			return nil, err
-		}
-		user.Status = storage.UserStatusActive
 	}
 	tok, err := s.auth.Issuer().Issue(auth.Principal{
 		UserID:            user.ID,
