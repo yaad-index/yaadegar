@@ -75,3 +75,12 @@ supersedes the old one (and mark the old one `Superseded by ADR-XXXX`).
   for admin-created and no-password accounts (rejecting emailed temp-passwords), and
   the authenticated `registered`-tier reserve with a reserver dashboard and no
   per-reservation email (anonymity to the owner preserved). **Status: Accepted.**
+- [ADR-0013: Anti-bot CAPTCHA on low-trust reserve](0013-anti-bot-captcha.md) — a
+  pluggable `captcha.Verifier` (nil-default `NoopVerifier`, so disabled instances are
+  unchanged) with managed-provider impls (Turnstile default, hCaptcha, reCAPTCHA)
+  gating the two low-trust reserve tiers server-side before create; an optional
+  `captcha_token` on the reserve request, absent-token → 400 before `Verify`;
+  operator-supplied env config that fails closed on an unknown provider; a
+  frontend widget shown only when enabled and the tier is low-trust; and a bounded
+  fail-closed 5s verify timeout. Fills the `captchaGate` seam, depends on ADR-0007,
+  closes #45's design (Altcha PoW deferred to a follow-up cut). **Status: Accepted.**
