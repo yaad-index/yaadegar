@@ -64,3 +64,34 @@ func TestListOwnership(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, owners)
 }
+
+// TestAddOwnerTenantScoped: AddOwner cannot create an ownership row for a list in
+// another tenant (#60). The insert is scoped to the bound tenant (mirroring
+// RemoveOwner), so tenant A's store cannot own tenant B's list even with B's list id.
+func TestAddOwnerTenantScoped(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+	tsA := st.ForTenant(mkTenant(t, st, "alice"))
+	tsB := st.ForTenant(mkTenant(t, st, "bob"))
+
+	// Tenant B owns a list; tenant A has a user that will try to claim it.
+	bOwner, err := tsB.Users().Create(ctx, storage.User{Name: "B Owner"})
+	require.NoError(t, err)
+	bList, err := tsB.Lists().Create(ctx, storage.List{Title: "B's list"}, bOwner.ID)
+	require.NoError(t, err)
+	aUser, err := tsA.Users().Create(ctx, storage.User{Name: "A User"})
+	require.NoError(t, err)
+
+	// AddOwner through tenant A's store with tenant B's list id creates nothing (no
+	// row, no error — mirrors RemoveOwner's tenant-scoped no-op).
+	require.NoError(t, tsA.Lists().AddOwner(ctx, bList.ID, aUser.ID))
+
+	// B's ownership is untouched: still exactly its original owner, and A's user is
+	// not an owner from either tenant's view.
+	owners, err := tsB.Lists().Owners(ctx, bList.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []string{bOwner.ID}, owners)
+	owns, err := tsA.Lists().IsOwner(ctx, bList.ID, aUser.ID)
+	require.NoError(t, err)
+	assert.False(t, owns)
+}
