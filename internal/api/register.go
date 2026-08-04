@@ -274,7 +274,7 @@ func (s *Server) RegisterVerify(ctx context.Context, req gen.RegisterVerifyReque
 	tok, err := s.auth.Issuer().Issue(auth.Principal{
 		UserID:            user.ID,
 		TenantID:          tenant.ID,
-		Role:              auth.RoleOwner,
+		Role:              sessionRole(user.Role),
 		CredentialVersion: user.CredentialVersion,
 	})
 	if err != nil {

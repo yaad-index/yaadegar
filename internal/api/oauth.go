@@ -271,7 +271,7 @@ func (s *Server) handleOAuthComplete(w http.ResponseWriter, r *http.Request) {
 	token, err := s.auth.Issuer().Issue(auth.Principal{
 		UserID:            t.UserID,
 		TenantID:          t.TenantID,
-		Role:              auth.RoleOwner,
+		Role:              sessionRole(user.Role),
 		CredentialVersion: user.CredentialVersion,
 	})
 	if err != nil {
