@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.8.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.7.0...yaadegar-v0.8.0) (2026-08-04)
+
+
+### Features
+
+* **api:** expose account_required on the public list ([#170](https://github.com/yaad-index/yaadegar/issues/170)) ([#174](https://github.com/yaad-index/yaadegar/issues/174)) ([c4b4b09](https://github.com/yaad-index/yaadegar/commit/c4b4b09de08d93ca7d289b24e90e7dd149680336))
+* **api:** resend verification on re-register of a pending email ([#162](https://github.com/yaad-index/yaadegar/issues/162)) ([#171](https://github.com/yaad-index/yaadegar/issues/171)) ([1cff95d](https://github.com/yaad-index/yaadegar/commit/1cff95d0f3b64079ed163c156517a6f7e52dcc8a))
+* **auth:** email+password self-registration + owner-role gate (ADR-0012 cut 1a) ([#161](https://github.com/yaad-index/yaadegar/issues/161)) ([485144d](https://github.com/yaad-index/yaadegar/commit/485144dd3d162b91c8cee5624bf285ec6947fa7f))
+* **auth:** OAuth self-register + no-password reconciliation (ADR-0012 cut 2) ([#167](https://github.com/yaad-index/yaadegar/issues/167)) ([1a1a243](https://github.com/yaad-index/yaadegar/commit/1a1a243811cf5d35056a2811355eec78890cf78b))
+* **auth:** unified invite onboarding + establish-password reconciliation (ADR-0012 cut 1b) ([#165](https://github.com/yaad-index/yaadegar/issues/165)) ([5ffe4e6](https://github.com/yaad-index/yaadegar/commit/5ffe4e6e5d7cded7ab0ec015ec9915a59186fb77))
+* **reserve:** registered-tier authenticated reserve + reserver dashboard (ADR-0012 cut 3a) ([#168](https://github.com/yaad-index/yaadegar/issues/168)) ([348a9fa](https://github.com/yaad-index/yaadegar/commit/348a9faa7fa13ce1e8e712bbd950a0e526bbbf29))
+* **web:** reserve a registered-tier list from the browser ([#170](https://github.com/yaad-index/yaadegar/issues/170)) ([#175](https://github.com/yaad-index/yaadegar/issues/175)) ([5ad3b37](https://github.com/yaad-index/yaadegar/commit/5ad3b37702c2dcf2c1dad518bfc490a464bf706d))
+* **web:** reserver dashboard + giver landing + registered-tier option/warning (ADR-0012 cut 3b) ([#169](https://github.com/yaad-index/yaadegar/issues/169)) ([02cab31](https://github.com/yaad-index/yaadegar/commit/02cab31b9e335d8eb77a471bef84e13ba930b42d)), closes [#20](https://github.com/yaad-index/yaadegar/issues/20)
+
+
+### Bug Fixes
+
+* **auth:** issue JWT with the account's real tenant role ([#163](https://github.com/yaad-index/yaadegar/issues/163)) ([#173](https://github.com/yaad-index/yaadegar/issues/173)) ([cc95acb](https://github.com/yaad-index/yaadegar/commit/cc95acb689466e6f027252bb4005a4f4cdc71cb9))
+* **storage:** make password-reset/invite confirm transactional ([#166](https://github.com/yaad-index/yaadegar/issues/166)) ([#172](https://github.com/yaad-index/yaadegar/issues/172)) ([941507d](https://github.com/yaad-index/yaadegar/commit/941507dc10d83a3a692f1d9e472421b79dd4f03b))
+
 ## [0.7.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.6.0...yaadegar-v0.7.0) (2026-08-03)
 
 
