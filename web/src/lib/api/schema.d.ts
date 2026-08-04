@@ -864,6 +864,10 @@ export interface components {
             oauth_google_enabled: boolean;
         };
         LoginMethods: {
+            /** @description The configured anti-bot captcha provider (ADR-0013), one of `turnstile`, `hcaptcha`, `recaptcha`, or `none`/absent when captcha is disabled. Instance-level and public-safe; the giver page uses it to load the matching widget SDK on the low-trust reserve flow. */
+            captcha_provider?: string;
+            /** @description The public captcha site key (ADR-0013) the giver widget renders with. Public-safe (never the verify secret); empty when captcha is disabled. */
+            captcha_site_key?: string;
             /** @description Whether this instance allows self-registration (the ADR-0009 policy is not `disabled`). The frontend uses it to show/hide the register affordance and to warn when a per-list `registered` reserve tier is set on a closed-registration instance (ADR-0012 Decision 5). */
             registration_enabled: boolean;
             /** @description Whether to render the username+password form on this host (the instance has password login enabled AND this is not a custom domain). */
@@ -1043,6 +1047,8 @@ export interface components {
             giver_email?: string | null;
             /** @default 1 */
             quantity: number;
+            /** @description The anti-bot challenge token from the reserve widget (ADR-0013). Optional at the schema level; enforced server-side only when the list's effective tier is low-trust (full_guest or email_confirmed) AND the instance has a captcha verifier configured. Ignored on a registered-tier list and on an instance with captcha disabled. */
+            captcha_token?: string;
         };
         ReservationCreated: {
             reservation_id: string;

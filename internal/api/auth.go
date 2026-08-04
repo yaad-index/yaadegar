@@ -110,12 +110,21 @@ func (s *Server) GetAuthMethods(ctx context.Context, _ gen.GetAuthMethodsRequest
 	// The frontend uses it to show the register affordance and to warn when a
 	// per-list `registered` reserve tier is set on a closed-registration instance.
 	_, registrationEnabled := registrationRole(s.registrationPolicy)
-	return gen.GetAuthMethods200JSONResponse{
+	resp := gen.GetAuthMethods200JSONResponse{
 		Password:            s.auth.Enabled(auth.MethodPassword) && !custom,
 		Google:              s.oauth != nil && tenant.OAuthGoogleEnabled && !custom,
 		LoginUrl:            loginURL,
 		RegistrationEnabled: registrationEnabled,
-	}, nil
+	}
+	// Anti-bot captcha config (ADR-0013): instance-level and public-safe. Surfaced
+	// only when a verifier is configured, so the giver page loads the widget SDK on
+	// the low-trust reserve flow. Absent when captcha is disabled (the field stays
+	// unset, which the frontend reads as "no widget").
+	if s.captchaEnabled {
+		resp.CaptchaProvider = ptr(s.captchaProvider)
+		resp.CaptchaSiteKey = ptr(s.captchaSiteKey)
+	}
+	return resp, nil
 }
 
 // loginKeys returns the (ip, identity) rate-limit keys for a login attempt. The IP

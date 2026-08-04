@@ -568,6 +568,12 @@ type ListVisibility string
 
 // LoginMethods defines model for LoginMethods.
 type LoginMethods struct {
+	// CaptchaProvider The configured anti-bot captcha provider (ADR-0013), one of `turnstile`, `hcaptcha`, `recaptcha`, or `none`/absent when captcha is disabled. Instance-level and public-safe; the giver page uses it to load the matching widget SDK on the low-trust reserve flow.
+	CaptchaProvider *string `json:"captcha_provider,omitempty"`
+
+	// CaptchaSiteKey The public captcha site key (ADR-0013) the giver widget renders with. Public-safe (never the verify secret); empty when captcha is disabled.
+	CaptchaSiteKey *string `json:"captcha_site_key,omitempty"`
+
 	// Google Whether to render the "Sign in with Google" button on this host (a Google client is configured, the tenant toggle is on, AND this is not a custom domain).
 	Google bool `json:"google"`
 
@@ -759,9 +765,11 @@ type ReservationConfirmedStatus string
 
 // ReservationCreate defines model for ReservationCreate.
 type ReservationCreate struct {
-	GiverEmail *openapi_types.Email `json:"giver_email,omitempty"`
-	GiverName  *string              `json:"giver_name,omitempty"`
-	Quantity   *int                 `json:"quantity,omitempty"`
+	// CaptchaToken The anti-bot challenge token from the reserve widget (ADR-0013). Optional at the schema level; enforced server-side only when the list's effective tier is low-trust (full_guest or email_confirmed) AND the instance has a captcha verifier configured. Ignored on a registered-tier list and on an instance with captcha disabled.
+	CaptchaToken *string              `json:"captcha_token,omitempty"`
+	GiverEmail   *openapi_types.Email `json:"giver_email,omitempty"`
+	GiverName    *string              `json:"giver_name,omitempty"`
+	Quantity     *int                 `json:"quantity,omitempty"`
 }
 
 // ReservationCreated defines model for ReservationCreated.

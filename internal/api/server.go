@@ -50,10 +50,20 @@ type Server struct {
 	// (ADR-0012). Empty behaves as RegistrationDisabled (fail-closed): the register
 	// endpoint answers 403 until the operator opts in.
 	registrationPolicy storage.RegistrationPolicy
-	// captcha verifies the human-challenge token on the register path (ADR-0012). It
+	// captcha verifies the human-challenge token on the low-trust surfaces — the
+	// register path (ADR-0012) and the low-trust reserve tiers (ADR-0013). It
 	// defaults to a no-op verifier (accepts every token) when nil.
 	captcha captcha.Verifier
-	logger  *slog.Logger
+	// captchaEnabled is true when a real verifier was configured (Options.Captcha
+	// non-nil), so the reserve gate knows to require a token; false leaves the
+	// low-trust reserve paths untouched (ADR-0013 §2).
+	captchaEnabled bool
+	// captchaProvider and captchaSiteKey are the public-safe identifiers surfaced to
+	// the giver page so it can load the right provider SDK and render the widget
+	// (ADR-0013 §5). Empty/"none" when captcha is disabled.
+	captchaProvider string
+	captchaSiteKey  string
+	logger          *slog.Logger
 }
 
 var _ gen.StrictServerInterface = (*Server)(nil)
@@ -119,10 +129,17 @@ type Options struct {
 	// 2). Empty behaves as RegistrationDisabled (fail-closed): existing instances keep
 	// their unchanged no-self-registration behavior until the operator opts in.
 	RegistrationPolicy storage.RegistrationPolicy
-	// Captcha verifies the human-challenge token on the self-registration path
-	// (ADR-0012). Defaults to a no-op verifier (accepts every token) when nil, so the
-	// path is wired and testable before a real provider ships.
+	// Captcha verifies the human-challenge token on the low-trust surfaces — the
+	// self-registration path (ADR-0012) and the low-trust reserve tiers (ADR-0013).
+	// Defaults to a no-op verifier (accepts every token) when nil, so those paths are
+	// wired and testable and disabled instances are unchanged. A non-nil verifier
+	// turns the reserve-path gate on.
 	Captcha captcha.Verifier
+	// CaptchaProvider and CaptchaSiteKey are the public-safe captcha identifiers
+	// surfaced to the giver page (ADR-0013 §5): the provider name selects the widget
+	// SDK and the site key renders it. Empty when captcha is disabled.
+	CaptchaProvider string
+	CaptchaSiteKey  string
 }
 
 // NewHandler builds the full HTTP handler: the generated strict router wrapped in
@@ -151,6 +168,9 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 		ticketGuard:         opts.TicketGuard,
 		registrationPolicy:  opts.RegistrationPolicy,
 		captcha:             opts.Captcha,
+		captchaEnabled:      opts.Captcha != nil,
+		captchaProvider:     opts.CaptchaProvider,
+		captchaSiteKey:      opts.CaptchaSiteKey,
 		logger:              opts.Logger,
 	}
 	if s.captcha == nil {

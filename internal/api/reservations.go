@@ -67,6 +67,22 @@ func (s *Server) CreateReservation(ctx context.Context, req gen.CreateReservatio
 	// every other tier (full_guest today; registered is deferred) reserves
 	// immediately as before.
 	tier := settings.Resolve(list.ReserverTier, s.defaultReserverTier)
+
+	// Low-trust CAPTCHA gate (ADR-0013): the two low-trust tiers (full_guest — incl.
+	// the empty instance default — and email_confirmed) verify a human-challenge
+	// token before any reserve work. registered is not low-trust and is refused just
+	// below (no captcha); a disabled instance skips the gate entirely. The token
+	// rides on the reserve body and is enforced server-side regardless of the client.
+	if tier != storage.TierRegistered {
+		captchaToken := ""
+		if req.Body != nil && req.Body.CaptchaToken != nil {
+			captchaToken = *req.Body.CaptchaToken
+		}
+		if resp := s.captchaGate(ctx, captchaToken); resp != nil {
+			return resp, nil
+		}
+	}
+
 	if tier == storage.TierEmailConfirmed {
 		return s.reserveEmailConfirmed(ctx, ts, item, qty, giverName, giverEmail)
 	}
@@ -169,7 +185,8 @@ func (s *Server) sendThankYou(ctx context.Context, ts storage.TenantStore, res s
 func (s *Server) reserveEmailConfirmed(ctx context.Context, ts storage.TenantStore, item storage.Item, qty int, giverName, giverEmail *string) (gen.CreateReservationResponseObject, error) {
 	// A confirmable reservation needs a deliverable address; a light
 	// well-formedness check keeps an obviously-bad address from taking a slot only
-	// to expire unconfirmed (#45's CAPTCHA seam also guards this pre-confirm path).
+	// to expire unconfirmed. The low-trust CAPTCHA (ADR-0013) already ran in
+	// CreateReservation before dispatch, so this pre-confirm path is captcha-gated.
 	if giverEmail == nil || *giverEmail == "" {
 		return gen.CreateReservation400ApplicationProblemPlusJSONResponse{
 			BadRequestApplicationProblemPlusJSONResponse: badRequest("an email address is required to reserve on this list"),
@@ -179,9 +196,6 @@ func (s *Server) reserveEmailConfirmed(ctx context.Context, ts storage.TenantSto
 		return gen.CreateReservation400ApplicationProblemPlusJSONResponse{
 			BadRequestApplicationProblemPlusJSONResponse: badRequest("that email address is not valid"),
 		}, nil
-	}
-	if err := s.captchaGate(ctx); err != nil {
-		return nil, err
 	}
 
 	confirmRaw, confirmHash, err := token.New()
@@ -347,10 +361,31 @@ func (s *Server) confirmRaced(ctx context.Context, ts storage.TenantStore, id st
 // capability-release path can never match a still-pending reservation.
 func pendingTokenHash(reservationID string) string { return "pending:" + reservationID }
 
-// captchaGate is the seam for the #45 low-trust pre-confirm CAPTCHA. It is a
-// deliberate no-op today (no CAPTCHA is built); the email_confirmed reserve path
-// calls it so the check has a single, obvious place to land later.
-func (s *Server) captchaGate(_ context.Context) error { return nil }
+// captchaGate enforces the low-trust reserve CAPTCHA (ADR-0013). It runs only when a
+// verifier is configured — a disabled instance returns nil immediately, so the
+// low-trust paths are byte-for-byte unchanged. An absent/empty token is refused with
+// a 400 BEFORE the provider is called (an empty token is never sent upstream). A
+// verification failure, or a provider outage (bounded by captcha.VerifyTimeout inside
+// the verifier), is likewise a 400 — fail-closed, so an outage never silently opens
+// the path. It returns nil to let the reserve proceed, or a ready 400 response to
+// refuse it.
+func (s *Server) captchaGate(ctx context.Context, token string) gen.CreateReservationResponseObject {
+	if !s.captchaEnabled {
+		return nil
+	}
+	if token == "" {
+		return gen.CreateReservation400ApplicationProblemPlusJSONResponse{
+			BadRequestApplicationProblemPlusJSONResponse: badRequest("captcha verification is required to reserve on this list"),
+		}
+	}
+	if err := s.captcha.Verify(ctx, token, clientIPFromContext(ctx)); err != nil {
+		s.logger.WarnContext(ctx, "reserve captcha verification failed", "error", err)
+		return gen.CreateReservation400ApplicationProblemPlusJSONResponse{
+			BadRequestApplicationProblemPlusJSONResponse: badRequest("captcha verification failed"),
+		}
+	}
+	return nil
+}
 
 // ReleaseReservation releases a reservation the giver holds the token for. The
 // token (X-Capability-Token) is hashed and matched to the stored hash, and must
