@@ -10,10 +10,11 @@ import (
 	"github.com/yaad-index/yaadegar/internal/api/gen"
 )
 
-// TestPublicListEmailRequired: the public list response advertises whether a giver
-// email is required (#144), derived from the effective reserver tier, so the giver UI
-// can require the field up front instead of failing at submit.
-func TestPublicListEmailRequired(t *testing.T) {
+// TestPublicListTierFlags: the public list response advertises whether a giver email
+// (#144) or a signed-in account (#170) is required to reserve, each derived from the
+// effective reserver tier, so the giver UI can adapt up front instead of failing at
+// submit. At most one flag is true.
+func TestPublicListTierFlags(t *testing.T) {
 	h := newHarness(t)
 
 	newList := func(title string, tier *string) gen.List {
@@ -26,15 +27,24 @@ func TestPublicListEmailRequired(t *testing.T) {
 		return decode[gen.PublicList](t, body)
 	}
 
-	// email_confirmed tier → email required.
-	confirm := newList("Confirm", sptr("email_confirmed"))
-	pub := publicList(*confirm.ShareSlug)
-	require.NotNil(t, pub.EmailRequired)
-	assert.True(t, *pub.EmailRequired)
+	// email_confirmed tier → email required, account not.
+	confirm := publicList(*newList("Confirm", sptr("email_confirmed")).ShareSlug)
+	require.NotNil(t, confirm.EmailRequired)
+	require.NotNil(t, confirm.AccountRequired)
+	assert.True(t, *confirm.EmailRequired)
+	assert.False(t, *confirm.AccountRequired)
 
-	// full_guest tier → email not required.
-	guest := newList("Guest", sptr("full_guest"))
-	pubGuest := publicList(*guest.ShareSlug)
-	require.NotNil(t, pubGuest.EmailRequired)
-	assert.False(t, *pubGuest.EmailRequired)
+	// registered tier → account required, email not (the reserve is account-bound).
+	registered := publicList(*newList("Registered", sptr("registered")).ShareSlug)
+	require.NotNil(t, registered.AccountRequired)
+	require.NotNil(t, registered.EmailRequired)
+	assert.True(t, *registered.AccountRequired)
+	assert.False(t, *registered.EmailRequired)
+
+	// full_guest tier → neither flag set.
+	guest := publicList(*newList("Guest", sptr("full_guest")).ShareSlug)
+	require.NotNil(t, guest.EmailRequired)
+	require.NotNil(t, guest.AccountRequired)
+	assert.False(t, *guest.EmailRequired)
+	assert.False(t, *guest.AccountRequired)
 }

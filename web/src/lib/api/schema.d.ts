@@ -1033,6 +1033,8 @@ export interface components {
             event_date?: string | null;
             /** @description Whether a giver must supply an email to reserve on this list (#144), derived from the effective reserver tier (per-list override resolved against the instance default). The giver UI uses this to require the email field up front instead of failing at submit. */
             email_required?: boolean;
+            /** @description Whether reserving on this list requires a signed-in account (#170) — true iff the effective reserver tier is `registered`. The anonymous reserve path is rejected on such a list, so the public share page uses this to show an account-required state (sign in / register) and route the reserve through the account instead. Distinct from email_required, which is the email_confirmed tier; at most one is true. */
+            account_required?: boolean;
             items?: components["schemas"]["PublicItem"][];
         };
         ReservationCreate: {

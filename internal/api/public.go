@@ -53,18 +53,21 @@ func (s *Server) GetPublicList(ctx context.Context, req gen.GetPublicListRequest
 		out = append(out, toGenPublicItem(it, avail, funded[it.ID], resolveAllowCobuy(it, list)))
 	}
 
-	// email_required (#144): mirror the tier the reserve path enforces so the giver UI
-	// can require the email up front instead of failing at submit. Only the
-	// email-confirmed tier rejects a missing giver email (reserveEmailConfirmed); the
-	// full-guest tier does not, so the flag is false there.
+	// email_required (#144) / account_required (#170): mirror the tier the reserve path
+	// enforces so the giver UI can adapt up front instead of failing at submit. The
+	// email-confirmed tier rejects a missing giver email; the registered tier rejects
+	// the anonymous reserve entirely (it needs a signed-in account). At most one is
+	// true; the full-guest tier leaves both false.
 	tier := settings.Resolve(list.ReserverTier, s.defaultReserverTier)
 	emailRequired := tier == storage.TierEmailConfirmed
+	accountRequired := tier == storage.TierRegistered
 	return gen.GetPublicList200JSONResponse(gen.PublicList{
-		Title:         ptr(list.Title),
-		Description:   ptr(list.Description),
-		EventDate:     toGenDate(list.EventDate),
-		EmailRequired: &emailRequired,
-		Items:         &out,
+		Title:           ptr(list.Title),
+		Description:     ptr(list.Description),
+		EventDate:       toGenDate(list.EventDate),
+		EmailRequired:   &emailRequired,
+		AccountRequired: &accountRequired,
+		Items:           &out,
 	}), nil
 }
 

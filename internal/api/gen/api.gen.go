@@ -713,6 +713,9 @@ type PublicItem struct {
 
 // PublicList defines model for PublicList.
 type PublicList struct {
+	// AccountRequired Whether reserving on this list requires a signed-in account (#170) — true iff the effective reserver tier is `registered`. The anonymous reserve path is rejected on such a list, so the public share page uses this to show an account-required state (sign in / register) and route the reserve through the account instead. Distinct from email_required, which is the email_confirmed tier; at most one is true.
+	AccountRequired *bool `json:"account_required,omitempty"`
+
 	// Description The owner-editable list description (#143), if set.
 	Description *string `json:"description,omitempty"`
 
