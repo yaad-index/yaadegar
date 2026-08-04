@@ -15,9 +15,14 @@ import (
 type Role string
 
 const (
-	// RoleOwner is a tenant-bound list owner. Every issued session token carries it;
-	// the instance-admin capability is a per-user flag (ADR-0010), not a token role.
+	// RoleOwner is a tenant-bound list owner. The instance-admin capability is a
+	// per-user flag (ADR-0010), not a token role.
 	RoleOwner Role = "owner"
+	// RoleGiver is a tenant-bound registered giver (ADR-0012). A session token now
+	// carries the account's real role (#163); the token role is accurate-but-
+	// informational — the owner-only authorization gate reads the STORED role, so the
+	// token claim never grants access on its own.
+	RoleGiver Role = "giver"
 )
 
 // signingMethod is the one algorithm this service signs and accepts. Pinning it

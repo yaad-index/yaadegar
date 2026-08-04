@@ -76,7 +76,7 @@ func (s *Server) ChangePassword(ctx context.Context, req gen.ChangePasswordReque
 	token, err := s.auth.Issuer().Issue(auth.Principal{
 		UserID:            updated.ID,
 		TenantID:          tenant.ID,
-		Role:              auth.RoleOwner,
+		Role:              sessionRole(updated.Role),
 		CredentialVersion: updated.CredentialVersion,
 	})
 	if err != nil {

@@ -86,17 +86,20 @@ func (s *Server) tenantForHost(ctx context.Context, host string) (storage.Tenant
 	return s.store.TenantByCustomDomain(ctx, host)
 }
 
-// requireOwner enforces owner authentication on the owner surface (/api/v1/*),
-// resolving the principal from a validated JWT (ADR-0005). The public surface,
-// /healthz, and the unauthenticated auth endpoints (/api/v1/auth/*, e.g. login)
-// pass through untouched.
+// requireOwner is the authenticated gate on the owner surface (/api/v1/*): it
+// resolves the principal from a validated JWT (ADR-0005) and admits any signed-in
+// tenant account — owner or giver (#163) — so a giver reaches its own endpoints
+// (/me, own-password, reserve dashboard). The owner-only distinction is enforced
+// per-endpoint by hasOwnerRole against the STORED tenant role, not the token, so a
+// giver's token never reaches an owner-only handler. The public surface, /healthz,
+// and the unauthenticated auth endpoints (/api/v1/auth/*, e.g. login) pass through.
 //
 // Two load-bearing checks: the token is validated with the algorithm pinned to
 // HS256 (auth.Issuer rejects alg:none / any mismatch), and the token's tenant
 // claim must equal the Host-resolved tenant — a token minted for one tenant is
-// rejected on another tenant's host (no cross-tenant replay). Every issued token is
-// an owner token; the instance-admin capability is a per-user flag checked only on
-// the /admin surface (ADR-0010), so it grants nothing here.
+// rejected on another tenant's host (no cross-tenant replay). The instance-admin
+// capability is a per-user flag checked only on the /admin surface (ADR-0010), so
+// it grants nothing here.
 func (s *Server) requireOwner(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/api/v1/") || strings.HasPrefix(r.URL.Path, "/api/v1/auth/") {
@@ -118,12 +121,14 @@ func (s *Server) requireOwner(next http.Handler) http.Handler {
 			writeProblem(w, http.StatusUnauthorized, "invalid or expired token")
 			return
 		}
-		// Positive role assertion: only an owner token is accepted here. Combined with
-		// the tenant-match invariant below (the token's tenant must equal the
-		// Host-resolved tenant), a token minted for one tenant cannot reach another's
-		// owner surface (ADR-0005 §5).
-		if principal.Role != auth.RoleOwner {
-			writeProblem(w, http.StatusUnauthorized, "owner authentication required")
+		// Positive role assertion: the token must carry a recognized tenant role — owner
+		// or giver (#163). This is an authentication gate, not authorization: the
+		// owner-only endpoints re-check the STORED role via hasOwnerRole, so a giver
+		// token admitted here still cannot act as an owner. Combined with the
+		// tenant-match invariant below, a token minted for one tenant cannot reach
+		// another's surface (ADR-0005 §5). An unrecognized role fails closed.
+		if principal.Role != auth.RoleOwner && principal.Role != auth.RoleGiver {
+			writeProblem(w, http.StatusUnauthorized, "authentication required")
 			return
 		}
 		if principal.TenantID != tenant.ID {

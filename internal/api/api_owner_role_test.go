@@ -27,10 +27,10 @@ func (h *harness) seedGiver(username, password string) storage.User {
 	return u
 }
 
-// TestGiverRefusedOwnerOnlyEndpoints: a giver's valid session (it passes requireOwner
-// — every issued token carries the owner JWT role) is refused with 403 on each
-// owner-only endpoint. The role gate fires before any not-found handling, so even a
-// nonexistent id yields 403 (ADR-0009).
+// TestGiverRefusedOwnerOnlyEndpoints: a giver's valid session (its token honestly
+// carries the giver role, #163, and is admitted by requireOwner) is refused with 403
+// on each owner-only endpoint via the stored-role gate. The role gate fires before
+// any not-found handling, so even a nonexistent id yields 403 (ADR-0009).
 func TestGiverRefusedOwnerOnlyEndpoints(t *testing.T) {
 	h := newHarness(t)
 	giver := h.seedGiver("giver", "long-enough-pass")
