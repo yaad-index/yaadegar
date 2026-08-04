@@ -347,9 +347,15 @@ func (r listRepo) AddOwner(ctx context.Context, listID, userID string) error {
 	if len(owners) > 0 {
 		return storage.ErrConflict // v1: exactly one owner (co-ownership is #25)
 	}
+	// Tenant-scope the insert (mirrors RemoveOwner): the row is created only when the
+	// list belongs to the bound tenant, so a foreign-tenant listID inserts nothing —
+	// closing a latent cross-tenant ownership hole before #25 wires AddOwner to a
+	// handler. The read-then-insert single-owner race is deferred to #25 (which relaxes
+	// the single-owner rule anyway).
 	_, err = r.db.ExecContext(ctx, r.rb(
-		`INSERT INTO list_owners (list_id, user_id, added_at) VALUES (?, ?, ?)`),
-		listID, userID, fmtTime(nowTime()))
+		`INSERT INTO list_owners (list_id, user_id, added_at)
+		 SELECT id, ?, ? FROM lists WHERE tenant_id = ? AND id = ?`),
+		userID, fmtTime(nowTime()), r.tenantID, listID)
 	return err
 }
 
