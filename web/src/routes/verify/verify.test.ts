@@ -9,23 +9,35 @@ vi.mock('$lib/server/api', () => ({ backendClient: () => ({ POST: post }) }));
 
 const setSession = vi.fn();
 vi.mock('$lib/server/session', () => ({ setSession: (...args: unknown[]) => setSession(...args) }));
+vi.mock('$lib/server/returnTo', () => ({
+	safeReturnTo: (raw?: string | null) =>
+		raw && raw.startsWith('/') && !raw.startsWith('//') && !raw.startsWith('/\\') ? raw : null
+}));
 
 import { actions } from './+page.server';
 
+interface Cookies {
+	get: (name: string) => string | undefined;
+	delete: ReturnType<typeof vi.fn>;
+}
 type Fn = (e: {
 	request: Request;
-	cookies: Record<string, unknown>;
+	cookies: Cookies;
 	locals: { host: string };
 	url: URL;
 }) => Promise<unknown>;
 const verify = (actions as unknown as { default: Fn }).default;
 
-function ev(fields: Record<string, string>) {
+// returnTo, when given, is the stashed post-verify redirect cookie (#170).
+function ev(fields: Record<string, string>, returnTo?: string) {
 	const fd = new FormData();
 	for (const [k, v] of Object.entries(fields)) fd.set(k, v);
 	return {
 		request: { formData: async () => fd } as unknown as Request,
-		cookies: {},
+		cookies: {
+			get: (name: string) => (name === 'return_to' ? returnTo : undefined),
+			delete: vi.fn()
+		},
 		locals: { host: 't.example' },
 		url: new URL('https://t.example/verify')
 	};
@@ -43,7 +55,23 @@ describe('verify action (ADR-0012 cut 1a)', () => {
 			status: 303,
 			location: '/'
 		});
-		expect(setSession).toHaveBeenCalledWith({}, 'jwt', 3600, true);
+		expect(setSession).toHaveBeenCalledWith(expect.anything(), 'jwt', 3600, true);
+	});
+
+	it('lands back on a stashed valid return path after auto-login (#170)', async () => {
+		post.mockResolvedValue({ data: { access_token: 'jwt', expires_in: 3600 }, error: undefined });
+		await expect(verify(ev({ token: 'tok' }, '/reserve/abc'))).rejects.toMatchObject({
+			status: 303,
+			location: '/reserve/abc'
+		});
+	});
+
+	it('ignores an off-site return cookie, landing on the app (#170)', async () => {
+		post.mockResolvedValue({ data: { access_token: 'jwt', expires_in: 3600 }, error: undefined });
+		await expect(verify(ev({ token: 'tok' }, 'https://evil.example'))).rejects.toMatchObject({
+			status: 303,
+			location: '/'
+		});
 	});
 
 	it('surfaces the backend reason on an invalid/expired/used token', async () => {

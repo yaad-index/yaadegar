@@ -7,18 +7,36 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const post = vi.fn();
 vi.mock('$lib/server/api', () => ({ backendClient: () => ({ POST: post }) }));
+vi.mock('$lib/server/returnTo', () => ({
+	safeReturnTo: (raw?: string | null) =>
+		raw && raw.startsWith('/') && !raw.startsWith('//') && !raw.startsWith('/\\') ? raw : null
+}));
 
 import { actions } from './+page.server';
 
-type Fn = (e: { request: Request; locals: { host: string } }) => Promise<unknown>;
+interface Cookies {
+	set: ReturnType<typeof vi.fn>;
+}
+type Fn = (e: {
+	request: Request;
+	locals: { host: string };
+	cookies: Cookies;
+	url: URL;
+}) => Promise<unknown>;
 const register = (actions as unknown as { default: Fn }).default;
 
-function ev(fields: Record<string, string>) {
+// url carries the ?return_to= the register form echoes back (#170); cookies.set
+// captures the return-path stash for the post-verify redirect.
+function ev(fields: Record<string, string>, returnTo?: string) {
 	const fd = new FormData();
 	for (const [k, v] of Object.entries(fields)) fd.set(k, v);
+	const url = new URL('http://t.example/register');
+	if (returnTo) url.searchParams.set('return_to', returnTo);
 	return {
 		request: { formData: async () => fd } as unknown as Request,
-		locals: { host: 't.example' }
+		locals: { host: 't.example' },
+		cookies: { set: vi.fn() },
+		url
 	};
 }
 
@@ -78,5 +96,34 @@ describe('register action (ADR-0012 cut 1a)', () => {
 		)) as { data: { error: string } };
 		expect(post).not.toHaveBeenCalled();
 		expect(res.data.error).toContain('do not match');
+	});
+
+	it('stashes a valid return path in a cookie on success (#170)', async () => {
+		post.mockResolvedValue({ data: undefined, error: undefined, response: { status: 202 } });
+		const e = ev(
+			{
+				email: 'newbie@example.com',
+				password: 'long-enough-pass',
+				confirm_password: 'long-enough-pass'
+			},
+			'/reserve/abc'
+		);
+		const res = (await register(e)) as { sent: boolean };
+		expect(res).toEqual({ sent: true });
+		expect(e.cookies.set).toHaveBeenCalledWith('return_to', '/reserve/abc', expect.anything());
+	});
+
+	it('does not stash an off-site return path (#170)', async () => {
+		post.mockResolvedValue({ data: undefined, error: undefined, response: { status: 202 } });
+		const e = ev(
+			{
+				email: 'newbie@example.com',
+				password: 'long-enough-pass',
+				confirm_password: 'long-enough-pass'
+			},
+			'//evil.example/phish'
+		);
+		await register(e);
+		expect(e.cookies.set).not.toHaveBeenCalled();
 	});
 });

@@ -142,252 +142,296 @@
 			<p class="mt-4 rounded bg-red-50 p-2 text-sm text-red-700" role="alert">{withdrawError}</p>
 		{/if}
 
-		<!-- One form drives reserve/release/pledge/withdraw: each button carries its own
-		     item_id and targets its action via formaction. The optional giver identity
-		     for a full reserve is entered once and applies to whichever item is reserved. -->
-		<form method="post" use:enhance={guardReserve} class="mt-6">
-			<fieldset class="rounded border p-4">
-				<legend class="px-1 text-sm font-medium text-gray-700">
-					{emailRequired ? 'Your details' : 'Your details (optional)'}
-				</legend>
-				<div class="grid gap-3 sm:grid-cols-2">
-					<label class="block">
-						<span class="text-sm">Name</span>
-						<input
-							class="mt-1 w-full rounded border p-2"
-							name="giver_name"
-							autocomplete="name"
-							placeholder="Shown to no one"
-						/>
-					</label>
-					<label class="block">
-						<span class="text-sm">{emailRequired ? 'Email (required)' : 'Email'}</span>
-						<input
-							class="mt-1 w-full rounded border p-2"
-							name="giver_email"
-							type="email"
-							autocomplete="email"
-							bind:value={giverEmail}
-							aria-required={emailRequired}
-							placeholder={emailRequired
-								? 'Required to reserve on this list'
-								: 'For reminders only'}
-						/>
-					</label>
-				</div>
-				<p class="mt-2 text-xs text-gray-500">
-					{#if emailRequired}
-						This list needs your email to confirm your reservation — never shown to the list owner
-						or other givers. Your name is optional.
-					{:else}
-						Used only to remind you — never shown to the list owner or other givers.
-					{/if}
+		{#if data.accountRequired}
+			<!-- Registered tier (#170): the anonymous reserve path is rejected, so instead of
+			     a reserve form show an account-required state. Log in (or register, when the
+			     instance allows it) and return to the account-bound reserve view. -->
+			<div class="mt-6 rounded border bg-amber-50 p-4">
+				<p class="font-medium text-amber-900">This list needs an account to reserve</p>
+				<p class="mt-1 text-sm text-amber-800">
+					The owner asked that gifts here be reserved from an account, so your reservations stay in
+					one place. The owner still never sees who reserved.
 				</p>
-			</fieldset>
+				<div class="mt-3 flex flex-wrap gap-3">
+					<!-- eslint-disable svelte/no-navigation-without-resolve -- resolve() cannot express
+					     the ?return_to= query; the path is resolve()'d and the value is a validated
+					     local path (safeReturnTo on the server). -->
+					<a
+						class="rounded bg-black px-3 py-2 text-sm text-white"
+						href={`${resolve('/login')}?return_to=${encodeURIComponent(data.reservePath)}`}
+						>Log in to reserve</a
+					>
+					{#if data.registrationEnabled}
+						<a
+							class="rounded border px-3 py-2 text-sm"
+							href={`${resolve('/register')}?return_to=${encodeURIComponent(data.reservePath)}`}
+							>Create an account</a
+						>
+					{/if}
+					<!-- eslint-enable svelte/no-navigation-without-resolve -->
+				</div>
+			</div>
+		{:else}
+			{#if data.loggedIn}
+				<!-- A signed-in visitor on a normal list can reserve as their account instead,
+				     so it lands in their dashboard (#170). The anonymous flow below still works. -->
+				<div class="mt-6 rounded border bg-gray-50 p-3 text-sm">
+					<a
+						class="text-blue-700 underline"
+						href={resolve('/(app)/reserve/[shareSlug]', { shareSlug: data.shareSlug })}
+						>Reserve as your account instead →</a
+					>
+					<span class="ml-1 text-gray-500">so it shows up in your reservations.</span>
+				</div>
+			{/if}
+			<!-- One form drives reserve/release/pledge/withdraw: each button carries its own
+			     item_id and targets its action via formaction. The optional giver identity
+			     for a full reserve is entered once and applies to whichever item is reserved. -->
+			<form method="post" use:enhance={guardReserve} class="mt-6">
+				<fieldset class="rounded border p-4">
+					<legend class="px-1 text-sm font-medium text-gray-700">
+						{emailRequired ? 'Your details' : 'Your details (optional)'}
+					</legend>
+					<div class="grid gap-3 sm:grid-cols-2">
+						<label class="block">
+							<span class="text-sm">Name</span>
+							<input
+								class="mt-1 w-full rounded border p-2"
+								name="giver_name"
+								autocomplete="name"
+								placeholder="Shown to no one"
+							/>
+						</label>
+						<label class="block">
+							<span class="text-sm">{emailRequired ? 'Email (required)' : 'Email'}</span>
+							<input
+								class="mt-1 w-full rounded border p-2"
+								name="giver_email"
+								type="email"
+								autocomplete="email"
+								bind:value={giverEmail}
+								aria-required={emailRequired}
+								placeholder={emailRequired
+									? 'Required to reserve on this list'
+									: 'For reminders only'}
+							/>
+						</label>
+					</div>
+					<p class="mt-2 text-xs text-gray-500">
+						{#if emailRequired}
+							This list needs your email to confirm your reservation — never shown to the list owner
+							or other givers. Your name is optional.
+						{:else}
+							Used only to remind you — never shown to the list owner or other givers.
+						{/if}
+					</p>
+				</fieldset>
 
-			<ul class="mt-6 divide-y rounded border">
-				{#each data.list.items ?? [] as item (item.id)}
-					{@const reservedByYou = !!item.id && data.reservedItemIds.includes(item.id)}
-					{@const pledge = item.id ? data.pledged[item.id] : undefined}
-					{@const priceMajor = major(item.price)}
-					{@const fundedMajor = major(item.amount_funded)}
-					{@const remaining = Math.max(priceMajor - fundedMajor, 0)}
-					<li class="p-4">
-						<div class="flex items-start justify-between gap-4">
-							<div class="flex min-w-0 gap-3">
-								{#if item.image_url}
-									<img
-										src={item.image_url}
-										alt={item.name}
-										class="h-14 w-14 shrink-0 rounded border object-cover"
-									/>
-								{/if}
-								<div class="min-w-0">
-									<p class="font-medium">{item.name}</p>
-									{#if item.id && data.noteHtml[item.id]}
-										<!-- data.noteHtml is sanitized server-side (marked → sanitize-html tight
+				<ul class="mt-6 divide-y rounded border">
+					{#each data.list.items ?? [] as item (item.id)}
+						{@const reservedByYou = !!item.id && data.reservedItemIds.includes(item.id)}
+						{@const pledge = item.id ? data.pledged[item.id] : undefined}
+						{@const priceMajor = major(item.price)}
+						{@const fundedMajor = major(item.amount_funded)}
+						{@const remaining = Math.max(priceMajor - fundedMajor, 0)}
+						<li class="p-4">
+							<div class="flex items-start justify-between gap-4">
+								<div class="flex min-w-0 gap-3">
+									{#if item.image_url}
+										<img
+											src={item.image_url}
+											alt={item.name}
+											class="h-14 w-14 shrink-0 rounded border object-cover"
+										/>
+									{/if}
+									<div class="min-w-0">
+										<p class="font-medium">{item.name}</p>
+										{#if item.id && data.noteHtml[item.id]}
+											<!-- data.noteHtml is sanitized server-side (marked → sanitize-html tight
 										     allowlist); {@html} only ever touches this pre-sanitized field. -->
-										<!-- eslint-disable svelte/no-at-html-tags -->
-										<div class="prose prose-sm mt-0.5 max-w-none text-sm text-gray-600">
-											{@html data.noteHtml[item.id]}
-										</div>
-										<!-- eslint-enable svelte/no-at-html-tags -->
-									{/if}
-									<p class="mt-1 flex flex-wrap gap-x-3 text-sm text-gray-500">
-										{#if fmt(item.price)}<span>{fmt(item.price)}</span>{/if}
-										<span>{availabilityLabel[item.availability ?? ''] ?? 'Available'}</span>
-										{#if item.url}
-											<!-- eslint-disable svelte/no-navigation-without-resolve -- external, user-provided product URL -->
-											<a
-												href={item.url}
-												class="text-blue-700 underline"
-												rel="noreferrer"
-												target="_blank">View item</a
-											>
-											<!-- eslint-enable svelte/no-navigation-without-resolve -->
-										{/if}
-									</p>
-
-									{#if item.availability === 'co_buying'}
-										<!-- Co-buy progress: a state + a funded amount only, never who chipped in. -->
-										<div class="mt-2 max-w-xs">
-											<div class="h-2 overflow-hidden rounded bg-gray-200">
-												<div
-													class="h-full bg-green-500"
-													style="width: {priceMajor > 0
-														? Math.min(100, Math.round((fundedMajor / priceMajor) * 100))
-														: 0}%"
-												></div>
+											<!-- eslint-disable svelte/no-at-html-tags -->
+											<div class="prose prose-sm mt-0.5 max-w-none text-sm text-gray-600">
+												{@html data.noteHtml[item.id]}
 											</div>
-											<p class="mt-1 text-xs text-gray-500">
-												{fmt(item.amount_funded)} of {fmt(item.price)} chipped in
-											</p>
-										</div>
-									{/if}
-								</div>
-							</div>
+											<!-- eslint-enable svelte/no-at-html-tags -->
+										{/if}
+										<p class="mt-1 flex flex-wrap gap-x-3 text-sm text-gray-500">
+											{#if fmt(item.price)}<span>{fmt(item.price)}</span>{/if}
+											<span>{availabilityLabel[item.availability ?? ''] ?? 'Available'}</span>
+											{#if item.url}
+												<!-- eslint-disable svelte/no-navigation-without-resolve -- external, user-provided product URL -->
+												<a
+													href={item.url}
+													class="text-blue-700 underline"
+													rel="noreferrer"
+													target="_blank">View item</a
+												>
+												<!-- eslint-enable svelte/no-navigation-without-resolve -->
+											{/if}
+										</p>
 
-							<div class="shrink-0 text-right">
-								{#if reservedByYou}
-									<p class="text-sm font-medium text-green-700">✓ You reserved this</p>
-									<button
-										class="mt-1 text-sm text-gray-600 underline"
-										formaction="?/release"
-										name="item_id"
-										value={item.id}>Release</button
-									>
-								{:else if pledge}
-									<p class="text-sm font-medium text-green-700">✓ You're chipping in</p>
-									{#if pledge.matched && pledge.match_id}
-										<a
-											class="mt-1 block text-sm text-blue-700 underline"
-											href={resolve('/cobuy/[matchId]', { matchId: pledge.match_id })}
-											>Confirm the group buy →</a
-										>
-									{:else}
+										{#if item.availability === 'co_buying'}
+											<!-- Co-buy progress: a state + a funded amount only, never who chipped in. -->
+											<div class="mt-2 max-w-xs">
+												<div class="h-2 overflow-hidden rounded bg-gray-200">
+													<div
+														class="h-full bg-green-500"
+														style="width: {priceMajor > 0
+															? Math.min(100, Math.round((fundedMajor / priceMajor) * 100))
+															: 0}%"
+													></div>
+												</div>
+												<p class="mt-1 text-xs text-gray-500">
+													{fmt(item.amount_funded)} of {fmt(item.price)} chipped in
+												</p>
+											</div>
+										{/if}
+									</div>
+								</div>
+
+								<div class="shrink-0 text-right">
+									{#if reservedByYou}
+										<p class="text-sm font-medium text-green-700">✓ You reserved this</p>
 										<button
-											class="mt-1 block text-sm text-gray-600 underline"
-											formaction="?/withdraw"
+											class="mt-1 text-sm text-gray-600 underline"
+											formaction="?/release"
 											name="item_id"
-											value={item.id}>Withdraw pledge</button
+											value={item.id}>Release</button
 										>
-									{/if}
-									<button class="mt-1 block text-xs text-gray-500 underline" formaction="?/refresh"
-										>Check for updates</button
-									>
-								{:else if item.availability === 'available'}
-									<button
-										class="rounded bg-black px-3 py-2 text-sm text-white"
-										formaction="?/reserve"
-										name="item_id"
-										value={item.id}>Reserve it</button
-									>
-									{#if chipInAllowed(item)}
+									{:else if pledge}
+										<p class="text-sm font-medium text-green-700">✓ You're chipping in</p>
+										{#if pledge.matched && pledge.match_id}
+											<a
+												class="mt-1 block text-sm text-blue-700 underline"
+												href={resolve('/cobuy/[matchId]', { matchId: pledge.match_id })}
+												>Confirm the group buy →</a
+											>
+										{:else}
+											<button
+												class="mt-1 block text-sm text-gray-600 underline"
+												formaction="?/withdraw"
+												name="item_id"
+												value={item.id}>Withdraw pledge</button
+											>
+										{/if}
+										<button
+											class="mt-1 block text-xs text-gray-500 underline"
+											formaction="?/refresh">Check for updates</button
+										>
+									{:else if item.availability === 'available'}
+										<button
+											class="rounded bg-black px-3 py-2 text-sm text-white"
+											formaction="?/reserve"
+											name="item_id"
+											value={item.id}>Reserve it</button
+										>
+										{#if chipInAllowed(item)}
+											<button
+												type="button"
+												class="mt-1 block text-sm text-blue-700 underline"
+												onclick={() => item.id && openChipIn(item.id)}>Chip in instead</button
+											>
+										{/if}
+									{:else if item.availability === 'co_buying' && chipInAllowed(item)}
 										<button
 											type="button"
-											class="mt-1 block text-sm text-blue-700 underline"
-											onclick={() => item.id && openChipIn(item.id)}>Chip in instead</button
+											class="rounded bg-black px-3 py-2 text-sm text-white"
+											onclick={() => item.id && openChipIn(item.id)}>Chip in the rest</button
+										>
+									{:else}
+										<span class="text-sm text-gray-400"
+											>{availabilityLabel[item.availability ?? ''] ?? 'Taken'}</span
 										>
 									{/if}
-								{:else if item.availability === 'co_buying' && chipInAllowed(item)}
-									<button
-										type="button"
-										class="rounded bg-black px-3 py-2 text-sm text-white"
-										onclick={() => item.id && openChipIn(item.id)}>Chip in the rest</button
-									>
-								{:else}
-									<span class="text-sm text-gray-400"
-										>{availabilityLabel[item.availability ?? ''] ?? 'Taken'}</span
-									>
-								{/if}
+								</div>
 							</div>
-						</div>
 
-						{#if openPledge === item.id && item.price && chipInAllowed(item)}
-							<!-- Inline chip-in form for this item. Amount is in the item's currency
+							{#if openPledge === item.id && item.price && chipInAllowed(item)}
+								<!-- Inline chip-in form for this item. Amount is in the item's currency
 							     (hidden field); the backend rejects a currency mismatch. -->
-							<div class="mt-3 rounded border bg-gray-50 p-3">
-								<input type="hidden" name="item_id" value={item.id} />
-								<input type="hidden" name="currency" value={item.price.currency} />
-								<p class="text-sm font-medium">Chip in toward {item.name}</p>
-								{#if remaining > 0}
-									<p class="text-xs text-gray-500">
-										{remaining.toFixed(2)}
-										{item.price.currency} still needed
-									</p>
-								{/if}
-								<div class="mt-2 flex flex-wrap items-center gap-2">
-									<button
-										type="button"
-										class="rounded border px-2 py-1 text-xs"
-										onclick={() => setShare(priceMajor, 1 / 2)}>½</button
-									>
-									<button
-										type="button"
-										class="rounded border px-2 py-1 text-xs"
-										onclick={() => setShare(priceMajor, 1 / 3)}>⅓</button
-									>
-									<button
-										type="button"
-										class="rounded border px-2 py-1 text-xs"
-										onclick={() => setShare(priceMajor, 1 / 4)}>¼</button
-									>
-									<label class="flex items-center gap-1 text-sm">
-										<span>Amount</span>
+								<div class="mt-3 rounded border bg-gray-50 p-3">
+									<input type="hidden" name="item_id" value={item.id} />
+									<input type="hidden" name="currency" value={item.price.currency} />
+									<p class="text-sm font-medium">Chip in toward {item.name}</p>
+									{#if remaining > 0}
+										<p class="text-xs text-gray-500">
+											{remaining.toFixed(2)}
+											{item.price.currency} still needed
+										</p>
+									{/if}
+									<div class="mt-2 flex flex-wrap items-center gap-2">
+										<button
+											type="button"
+											class="rounded border px-2 py-1 text-xs"
+											onclick={() => setShare(priceMajor, 1 / 2)}>½</button
+										>
+										<button
+											type="button"
+											class="rounded border px-2 py-1 text-xs"
+											onclick={() => setShare(priceMajor, 1 / 3)}>⅓</button
+										>
+										<button
+											type="button"
+											class="rounded border px-2 py-1 text-xs"
+											onclick={() => setShare(priceMajor, 1 / 4)}>¼</button
+										>
+										<label class="flex items-center gap-1 text-sm">
+											<span>Amount</span>
+											<input
+												class="w-28 rounded border p-1"
+												name="amount"
+												type="number"
+												min="0"
+												step="0.01"
+												bind:value={pledgeAmount}
+											/>
+											<span class="text-xs text-gray-500">{item.price.currency}</span>
+										</label>
+									</div>
+									{#if amountError}<p class="mt-1 text-xs text-red-700" role="alert">
+											{amountError}
+										</p>{/if}
+									<label class="mt-2 block">
+										<span class="text-sm">Your email</span>
 										<input
-											class="w-28 rounded border p-1"
-											name="amount"
-											type="number"
-											min="0"
-											step="0.01"
-											bind:value={pledgeAmount}
+											class="mt-1 w-full rounded border p-2"
+											name="contact_email"
+											type="email"
+											autocomplete="email"
+											placeholder="Revealed only if the group buy is confirmed by everyone"
 										/>
-										<span class="text-xs text-gray-500">{item.price.currency}</span>
 									</label>
+									{#if contactError}<p class="mt-1 text-xs text-red-700" role="alert">
+											{contactError}
+										</p>{/if}
+									{#if pledgeError}<p class="mt-1 text-xs text-red-700" role="alert">
+											{pledgeError}
+										</p>{/if}
+									<p class="mt-1 text-xs text-gray-500">
+										Your email is shown to your co-buyers only after everyone confirms — never to
+										the owner.
+									</p>
+									<div class="mt-2 flex gap-2">
+										<button
+											class="rounded bg-black px-3 py-1.5 text-sm text-white"
+											formaction="?/pledge">Pledge</button
+										>
+										<button
+											type="button"
+											class="text-sm text-gray-600 underline"
+											onclick={() => (openPledge = null)}>Cancel</button
+										>
+									</div>
 								</div>
-								{#if amountError}<p class="mt-1 text-xs text-red-700" role="alert">
-										{amountError}
-									</p>{/if}
-								<label class="mt-2 block">
-									<span class="text-sm">Your email</span>
-									<input
-										class="mt-1 w-full rounded border p-2"
-										name="contact_email"
-										type="email"
-										autocomplete="email"
-										placeholder="Revealed only if the group buy is confirmed by everyone"
-									/>
-								</label>
-								{#if contactError}<p class="mt-1 text-xs text-red-700" role="alert">
-										{contactError}
-									</p>{/if}
-								{#if pledgeError}<p class="mt-1 text-xs text-red-700" role="alert">
-										{pledgeError}
-									</p>{/if}
-								<p class="mt-1 text-xs text-gray-500">
-									Your email is shown to your co-buyers only after everyone confirms — never to the
-									owner.
-								</p>
-								<div class="mt-2 flex gap-2">
-									<button
-										class="rounded bg-black px-3 py-1.5 text-sm text-white"
-										formaction="?/pledge">Pledge</button
-									>
-									<button
-										type="button"
-										class="text-sm text-gray-600 underline"
-										onclick={() => (openPledge = null)}>Cancel</button
-									>
-								</div>
-							</div>
-						{/if}
-					</li>
-				{/each}
-			</ul>
-		</form>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+			</form>
 
-		<p class="mt-6 text-xs text-gray-500">
-			Reserving or chipping in keeps the surprise: the owner never sees who did either.
-		</p>
+			<p class="mt-6 text-xs text-gray-500">
+				Reserving or chipping in keeps the surprise: the owner never sees who did either.
+			</p>
+		{/if}
 	{/if}
 </main>
