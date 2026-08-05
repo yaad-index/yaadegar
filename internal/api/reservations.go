@@ -158,6 +158,20 @@ func (s *Server) sendThankYou(ctx context.Context, ts storage.TenantStore, res s
 		s.logger.ErrorContext(ctx, "thank-you: list load failed (ignored)", "reservation_id", res.ID, "error", err)
 		return
 	}
+	s.deliverThankYou(ctx, item, list, *res.GiverEmail, "reservation_id", res.ID)
+}
+
+// deliverThankYou renders and sends the owner→giver thank-you note for item to
+// recipient, best-effort. It is the shared core of the single-reserve (#22) and
+// co-buy (#113) paths: same two-level template resolution and {item}-only token,
+// no giver identity, so the owner stays blind to who gave (ADR-0002 §5). A no-op
+// when the resolved template is empty (an explicit "" item override opts the item
+// out). A send failure is logged and swallowed — the caller's transition stands
+// regardless. logKV labels the send-failure log line for the calling context.
+func (s *Server) deliverThankYou(ctx context.Context, item storage.Item, list storage.List, recipient string, logKV ...any) {
+	if recipient == "" {
+		return
+	}
 	tmpl := resolveThankYou(item, list)
 	if tmpl == "" {
 		return // no note configured for this item
@@ -167,11 +181,11 @@ func (s *Server) sendThankYou(ctx context.Context, ts storage.TenantStore, res s
 		subject = renderThankYou("Thank you for reserving {item}", item.Name)
 	}
 	if err := s.email.Send(ctx, email.Message{
-		To:      *res.GiverEmail,
+		To:      recipient,
 		Subject: subject,
 		Body:    renderThankYou(tmpl, item.Name),
 	}); err != nil {
-		s.logger.ErrorContext(ctx, "thank-you email send failed (ignored)", "reservation_id", res.ID, "error", err)
+		s.logger.ErrorContext(ctx, "thank-you email send failed (ignored)", append(logKV, "error", err)...)
 	}
 }
 

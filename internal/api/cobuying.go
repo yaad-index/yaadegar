@@ -342,7 +342,35 @@ func (s *Server) ConfirmMatch(ctx context.Context, req gen.ConfirmMatchRequestOb
 		}
 	}
 	s.emailReveal(ctx, contribs)
+	s.sendCobuyThankYou(ctx, ts, m.ItemID, contribs)
 	return gen.ConfirmMatch200JSONResponse(toGenMatch(m, contacts)), nil
+}
+
+// sendCobuyThankYou fires the owner→giver thank-you note (#22) to each co-buy
+// contributor once their match reaches both_confirmed — the reveal point (#113).
+// It runs exactly once per completed match (the caller reaches here only on the
+// single completing confirm, #36), sending once per participating contributor —
+// not per pledge. The note reuses the single-reserve resolution and rendering
+// (deliverThankYou): the two-level template, {item}-only token, and no giver
+// identity, so anonymity is unchanged. Best-effort throughout: a load or send
+// failure is logged and swallowed so the completed match stands regardless.
+func (s *Server) sendCobuyThankYou(ctx context.Context, ts storage.TenantStore, itemID string, contribs []storage.Contribution) {
+	if len(contribs) == 0 {
+		return
+	}
+	item, err := ts.Items().Get(ctx, itemID)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "co-buy thank-you: item load failed (ignored)", "item_id", itemID, "error", err)
+		return
+	}
+	list, err := ts.Lists().Get(ctx, item.ListID)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "co-buy thank-you: list load failed (ignored)", "item_id", item.ID, "error", err)
+		return
+	}
+	for _, c := range contribs {
+		s.deliverThankYou(ctx, item, list, c.ContactEmail, "contribution_id", c.ID)
+	}
 }
 
 // resolveMatchActor authenticates a match action from the token in the capability
