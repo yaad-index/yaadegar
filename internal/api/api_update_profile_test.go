@@ -76,10 +76,25 @@ func TestUpdateProfileTooLongRejected(t *testing.T) {
 	h.seedNamedUser("ivan", "ivan@example.com", "pw-ivan")
 	token := h.login("ivan", "pw-ivan")
 
-	// 201 chars exceeds the 200-char display-name cap.
+	// 201 characters exceeds the 200-character display-name cap.
 	resp, body := h.req(http.MethodPut, "/api/v1/me/profile", h.ownerHost(), token,
 		map[string]any{"name": strings.Repeat("x", 201)})
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, "over-long name rejected: %s", body)
+}
+
+// The cap counts characters, not UTF-8 bytes, so a multibyte name (e.g. Persian)
+// is judged by the same budget as the input's maxlength — 200 such characters is
+// accepted even though it is well over 200 bytes.
+func TestUpdateProfileMultibyteNameWithinCap(t *testing.T) {
+	h := newHarness(t)
+	h.seedNamedUser("jamal", "jamal@example.com", "pw-jamal")
+	token := h.login("jamal", "pw-jamal")
+
+	name := strings.Repeat("ن", 200) // 200 runes, 400 bytes
+	resp, body := h.req(http.MethodPut, "/api/v1/me/profile", h.ownerHost(), token,
+		map[string]any{"name": name})
+	require.Equal(t, http.StatusOK, resp.StatusCode, "200-rune name accepted: %s", body)
+	assert.Equal(t, name, *decode[gen.User](t, body).Name)
 }
 
 func TestUpdateProfileRequiresAuth(t *testing.T) {

@@ -3,13 +3,16 @@ package api
 import (
 	"context"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/yaad-index/yaadegar/internal/api/gen"
 )
 
 // maxDisplayNameLen bounds a self-set display name, matching the request schema's
 // maxLength so an over-long value is refused with a clear reason rather than
-// truncated or pushed at the database.
+// truncated or pushed at the database. Counted in runes (matching the input's
+// character maxlength), so a multibyte name — e.g. Persian — is judged by the
+// same 200-character budget on both sides rather than by UTF-8 byte length.
 const maxDisplayNameLen = 200
 
 // UpdateProfile updates the signed-in account's own editable profile — currently
@@ -30,7 +33,7 @@ func (s *Server) UpdateProfile(ctx context.Context, req gen.UpdateProfileRequest
 	}
 
 	name := strings.TrimSpace(req.Body.Name)
-	if len(name) > maxDisplayNameLen {
+	if utf8.RuneCountInString(name) > maxDisplayNameLen {
 		return gen.UpdateProfile400ApplicationProblemPlusJSONResponse{
 			BadRequestApplicationProblemPlusJSONResponse: badRequest("the display name is too long"),
 		}, nil
