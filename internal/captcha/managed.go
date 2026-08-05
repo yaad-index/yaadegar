@@ -50,9 +50,16 @@ func New(provider, secret string) (Verifier, error) {
 			secret:   secret,
 			client:   &http.Client{Timeout: VerifyTimeout},
 		}, nil
+	case ProviderAltcha:
+		// Self-hosted proof-of-work (ADR-0013 cut 2): the secret is the HMAC key that
+		// signs challenges and authenticates solutions. No site key, no outbound call.
+		if secret == "" {
+			return nil, fmt.Errorf("captcha: provider %q requires a secret (used as the HMAC key)", provider)
+		}
+		return &altchaVerifier{hmacKey: secret, now: time.Now}, nil
 	default:
-		return nil, fmt.Errorf("captcha: unknown provider %q (want %s|%s|%s|%s)",
-			provider, ProviderTurnstile, ProviderHCaptcha, ProviderRecaptcha, ProviderNone)
+		return nil, fmt.Errorf("captcha: unknown provider %q (want %s|%s|%s|%s|%s)",
+			provider, ProviderTurnstile, ProviderHCaptcha, ProviderRecaptcha, ProviderAltcha, ProviderNone)
 	}
 }
 

@@ -345,6 +345,24 @@ type AdminUserUpdate struct {
 	Role *AdminUserRole `json:"role,omitempty"`
 }
 
+// AltchaChallenge A signed Altcha proof-of-work challenge (ADR-0013 cut 2). The widget solves for the secret number whose hash matches `challenge`, then submits the solution as the reserve `captcha_token`; the server re-derives and HMAC-checks it locally. Field names match the Altcha widget's wire format exactly (lowercase `maxnumber`).
+type AltchaChallenge struct {
+	// Algorithm The hash used for the proof-of-work (e.g. `SHA-256`).
+	Algorithm string `json:"algorithm"`
+
+	// Challenge The target hash the widget searches for the solving number.
+	Challenge string `json:"challenge"`
+
+	// Maxnumber The upper bound of the proof-of-work search space.
+	Maxnumber int64 `json:"maxnumber"`
+
+	// Salt The per-challenge salt (also carries the signed expiry parameter), hashed together with the secret number to form `challenge`.
+	Salt string `json:"salt"`
+
+	// Signature The HMAC signature over `challenge`, keyed by the instance secret.
+	Signature string `json:"signature"`
+}
+
 // ChangePasswordRequest defines model for ChangePasswordRequest.
 type ChangePasswordRequest struct {
 	// CurrentPassword The caller's current password, re-verified before the change.
@@ -568,7 +586,7 @@ type ListVisibility string
 
 // LoginMethods defines model for LoginMethods.
 type LoginMethods struct {
-	// CaptchaProvider The configured anti-bot captcha provider (ADR-0013), one of `turnstile`, `hcaptcha`, `recaptcha`, or `none`/absent when captcha is disabled. Instance-level and public-safe; the giver page uses it to load the matching widget SDK on the low-trust reserve flow.
+	// CaptchaProvider The configured anti-bot captcha provider (ADR-0013), one of `turnstile`, `hcaptcha`, `recaptcha`, `altcha`, or `none`/absent when captcha is disabled. Instance-level and public-safe; the giver page uses it to load the matching widget on the low-trust reserve flow. `altcha` is self-hosted proof-of-work and needs no site key — the widget pulls its challenge from GET /api/v1/public/captcha/challenge instead.
 	CaptchaProvider *string `json:"captcha_provider,omitempty"`
 
 	// CaptchaSiteKey The public captcha site key (ADR-0013) the giver widget renders with. Public-safe (never the verify secret); empty when captcha is disabled.
@@ -1088,6 +1106,9 @@ type ServerInterface interface {
 	// DeleteMyReservation Release one of the authenticated account's own reservations
 	// (DELETE /api/v1/me/reservations/{reservationId})
 	DeleteMyReservation(w http.ResponseWriter, r *http.Request, reservationId string)
+	// GetCaptchaChallenge Issue a signed Altcha proof-of-work challenge (anonymous)
+	// (GET /api/v1/public/captcha/challenge)
+	GetCaptchaChallenge(w http.ResponseWriter, r *http.Request)
 	// GetTenantSettings Get the owner's tenant settings
 	// (GET /api/v1/settings)
 	GetTenantSettings(w http.ResponseWriter, r *http.Request)
@@ -1894,6 +1915,20 @@ func (siw *ServerInterfaceWrapper) DeleteMyReservation(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// GetCaptchaChallenge operation middleware
+func (siw *ServerInterfaceWrapper) GetCaptchaChallenge(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetCaptchaChallenge(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetTenantSettings operation middleware
 func (siw *ServerInterfaceWrapper) GetTenantSettings(w http.ResponseWriter, r *http.Request) {
 
@@ -2327,6 +2362,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/healthz", wrapper.GetHealthz)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/login", wrapper.Login)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/auth/methods", wrapper.GetAuthMethods)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/public/captcha/challenge", wrapper.GetCaptchaChallenge)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/password-reset/request", wrapper.RequestPasswordReset)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/password-reset/confirm", wrapper.ConfirmPasswordReset)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/register", wrapper.Register)
@@ -4418,6 +4454,41 @@ func (response DeleteMyReservation404ApplicationProblemPlusJSONResponse) VisitDe
 	return err
 }
 
+type GetCaptchaChallengeRequestObject struct {
+}
+
+type GetCaptchaChallengeResponseObject interface {
+	VisitGetCaptchaChallengeResponse(w http.ResponseWriter) error
+}
+
+type GetCaptchaChallenge200JSONResponse AltchaChallenge
+
+func (response GetCaptchaChallenge200JSONResponse) VisitGetCaptchaChallengeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCaptchaChallenge404ApplicationProblemPlusJSONResponse Problem
+
+func (response GetCaptchaChallenge404ApplicationProblemPlusJSONResponse) VisitGetCaptchaChallengeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetTenantSettingsRequestObject struct {
 }
 
@@ -5361,6 +5432,9 @@ type StrictServerInterface interface {
 	// DeleteMyReservation Release one of the authenticated account's own reservations
 	// (DELETE /api/v1/me/reservations/{reservationId})
 	DeleteMyReservation(ctx context.Context, request DeleteMyReservationRequestObject) (DeleteMyReservationResponseObject, error)
+	// GetCaptchaChallenge Issue a signed Altcha proof-of-work challenge (anonymous)
+	// (GET /api/v1/public/captcha/challenge)
+	GetCaptchaChallenge(ctx context.Context, request GetCaptchaChallengeRequestObject) (GetCaptchaChallengeResponseObject, error)
 	// GetTenantSettings Get the owner's tenant settings
 	// (GET /api/v1/settings)
 	GetTenantSettings(ctx context.Context, request GetTenantSettingsRequestObject) (GetTenantSettingsResponseObject, error)
@@ -6335,6 +6409,30 @@ func (sh *strictHandler) DeleteMyReservation(w http.ResponseWriter, r *http.Requ
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(DeleteMyReservationResponseObject); ok {
 		if err := validResponse.VisitDeleteMyReservationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetCaptchaChallenge operation middleware
+func (sh *strictHandler) GetCaptchaChallenge(w http.ResponseWriter, r *http.Request) {
+	var request GetCaptchaChallengeRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetCaptchaChallenge(ctx, request.(GetCaptchaChallengeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetCaptchaChallenge")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetCaptchaChallengeResponseObject); ok {
+		if err := validResponse.VisitGetCaptchaChallengeResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

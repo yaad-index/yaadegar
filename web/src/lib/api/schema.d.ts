@@ -61,6 +61,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/public/captcha/challenge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Issue a signed Altcha proof-of-work challenge (anonymous)
+         * @description Returns a freshly signed Altcha challenge for the browser widget to solve (ADR-0013 cut 2). The challenge is HMAC-signed with the instance secret and carries a short expiry, so a solution can be verified server-side with no outbound call and cannot be replayed past its window. Only meaningful when the instance captcha provider is `altcha`; any other provider (including the managed token providers, which carry their own vendor-issued challenge) or a disabled instance answers 404. Unauthenticated and instance-level.
+         */
+        get: operations["getCaptchaChallenge"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/password-reset/request": {
         parameters: {
             query?: never;
@@ -863,8 +883,24 @@ export interface components {
             /** @description Turn Google login on or off for this tenant. */
             oauth_google_enabled: boolean;
         };
+        /** @description A signed Altcha proof-of-work challenge (ADR-0013 cut 2). The widget solves for the secret number whose hash matches `challenge`, then submits the solution as the reserve `captcha_token`; the server re-derives and HMAC-checks it locally. Field names match the Altcha widget's wire format exactly (lowercase `maxnumber`). */
+        AltchaChallenge: {
+            /** @description The hash used for the proof-of-work (e.g. `SHA-256`). */
+            algorithm: string;
+            /** @description The target hash the widget searches for the solving number. */
+            challenge: string;
+            /**
+             * Format: int64
+             * @description The upper bound of the proof-of-work search space.
+             */
+            maxnumber: number;
+            /** @description The per-challenge salt (also carries the signed expiry parameter), hashed together with the secret number to form `challenge`. */
+            salt: string;
+            /** @description The HMAC signature over `challenge`, keyed by the instance secret. */
+            signature: string;
+        };
         LoginMethods: {
-            /** @description The configured anti-bot captcha provider (ADR-0013), one of `turnstile`, `hcaptcha`, `recaptcha`, or `none`/absent when captcha is disabled. Instance-level and public-safe; the giver page uses it to load the matching widget SDK on the low-trust reserve flow. */
+            /** @description The configured anti-bot captcha provider (ADR-0013), one of `turnstile`, `hcaptcha`, `recaptcha`, `altcha`, or `none`/absent when captcha is disabled. Instance-level and public-safe; the giver page uses it to load the matching widget on the low-trust reserve flow. `altcha` is self-hosted proof-of-work and needs no site key — the widget pulls its challenge from GET /api/v1/public/captcha/challenge instead. */
             captcha_provider?: string;
             /** @description The public captcha site key (ADR-0013) the giver widget renders with. Public-safe (never the verify secret); empty when captcha is disabled. */
             captcha_site_key?: string;
@@ -1297,6 +1333,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LoginMethods"];
+                };
+            };
+        };
+    };
+    getCaptchaChallenge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A signed challenge for the widget to solve. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AltchaChallenge"];
+                };
+            };
+            /** @description The instance is not using the Altcha provider (no challenge to issue). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };

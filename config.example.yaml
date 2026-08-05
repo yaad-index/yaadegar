@@ -135,23 +135,32 @@
 # --- Anti-bot captcha on low-trust reserve (ADR-0013, #45) ----------------------
 #
 # Optional. Gates the two low-trust reserve tiers (full_guest, email_confirmed)
-# with a managed captcha, verified server-side before the reservation is created;
-# the registered tier is never gated. "none" (default) disables it and the reserve
-# flow is unchanged. Pick a provider, supply its verify secret (kept server-side)
-# and public site key (rendered by the giver widget). An unknown provider, or one
-# with no secret, refuses to start. A provider outage fails closed (reserves are
-# refused) so an outage never silently reopens the low-trust paths.
+# with a captcha, verified server-side before the reservation is created; the
+# registered tier is never gated. "none" (default) disables it and the reserve flow
+# is unchanged. An unknown provider, or a provider with no secret, refuses to start.
+# Verification fails closed (reserves are refused) so it never silently reopens the
+# low-trust paths.
+#
+# Two kinds of provider:
+#   - Managed token providers (turnstile | hcaptcha | recaptcha): supply the verify
+#     secret (server-side) and public site key (rendered by the giver widget). A
+#     provider outage fails closed.
+#   - altcha: self-hosted proof-of-work (ADR-0013 cut 2). Zero third parties — no
+#     outbound call, no site key. The secret is reused as the HMAC key that signs the
+#     challenges the widget solves; the widget is bundled with the app, not a CDN.
 
-# Provider: none | turnstile | hcaptcha | recaptcha.
+# Provider: none | turnstile | hcaptcha | recaptcha | altcha.
 # (env YAADEGAR_CAPTCHA_PROVIDER, flag --captcha-provider)
 # captcha-provider: "none"
 
-# Provider verify secret — server-side only, never exposed. Read from the
-# environment; do not commit a real value.
+# Captcha secret — the managed-provider verify secret, or the HMAC signing key for
+# altcha. Server-side only, never exposed. Read from the environment; do not commit
+# a real value.
 # (env YAADEGAR_CAPTCHA_SECRET, flag --captcha-secret)
 # captcha-secret: ""
 
-# Public site key the giver widget renders with (safe to expose).
+# Public site key the giver widget renders with (safe to expose). Managed providers
+# only — altcha needs no site key.
 # (env YAADEGAR_CAPTCHA_SITE_KEY, flag --captcha-site-key)
 # captcha-site-key: ""
 
