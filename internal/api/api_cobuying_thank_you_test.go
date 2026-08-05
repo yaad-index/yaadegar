@@ -16,14 +16,14 @@ import (
 // contributor gets the same note — item + thanks only, never a giver identity —
 // once per contributor, best-effort, and only at both_confirmed.
 
-// thankYous returns the thank-you notes among the sent mail, identified by the #22
-// subject. Co-buy proposal ("A co-buying match is proposed") and reveal ("Your
-// co-buying match is confirmed") mail carry other subjects, so this isolates the
-// thank-you fan-out from the surrounding co-buy emails.
+// thankYous returns the thank-you notes among the sent mail, identified by the
+// co-buy subject. Co-buy proposal ("A co-buying match is proposed") and reveal
+// ("Your co-buying match is confirmed") mail carry other subjects, so this
+// isolates the thank-you fan-out from the surrounding co-buy emails.
 func thankYous(sent []email.Message) []email.Message {
 	var out []email.Message
 	for _, m := range sent {
-		if m.Subject == "Thank you for reserving Espresso machine" {
+		if m.Subject == "Thank you for chipping in on Espresso machine" {
 			out = append(out, m)
 		}
 	}
@@ -57,6 +57,8 @@ func TestCoBuyThankYou_SentToEachContributorAtBothConfirmed(t *testing.T) {
 	got := map[string]string{}
 	for _, m := range notes {
 		got[m.To] = m.Body
+		assert.Equal(t, "Thank you for chipping in on Espresso machine", m.Subject,
+			"co-buy-fitting subject, {item} substituted")
 		assert.Equal(t, "Thanks for chipping in on Espresso machine! — the host", m.Body,
 			"{item} substituted, owner-authored body")
 		// Anonymity: the note must not carry any giver's identity.

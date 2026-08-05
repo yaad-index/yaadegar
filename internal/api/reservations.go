@@ -158,8 +158,20 @@ func (s *Server) sendThankYou(ctx context.Context, ts storage.TenantStore, res s
 		s.logger.ErrorContext(ctx, "thank-you: list load failed (ignored)", "reservation_id", res.ID, "error", err)
 		return
 	}
-	s.deliverThankYou(ctx, item, list, *res.GiverEmail, "reservation_id", res.ID)
+	s.deliverThankYou(ctx, item, list, *res.GiverEmail, reserveThankYouSubject, "reservation_id", res.ID)
 }
+
+// Subject lines for the owner→giver thank-you note, per giving path. The body is
+// the owner-authored template either way; only the fixed subject differs so it
+// reads right for how the giver gave — a reserver "reserving", a co-buy
+// contributor "chipping in" (#113). Each pairs a {item}-tokened line with a
+// no-item fallback for the rare unnamed item. Neither carries giver identity.
+var (
+	reserveThankYouSubject = thankYouSubject{withItem: "Thank you for reserving {item}", noItem: "Thank you for your reservation"}
+	cobuyThankYouSubject   = thankYouSubject{withItem: "Thank you for chipping in on {item}", noItem: "Thank you for chipping in"}
+)
+
+type thankYouSubject struct{ withItem, noItem string }
 
 // deliverThankYou renders and sends the owner→giver thank-you note for item to
 // recipient, best-effort. It is the shared core of the single-reserve (#22) and
@@ -168,7 +180,7 @@ func (s *Server) sendThankYou(ctx context.Context, ts storage.TenantStore, res s
 // when the resolved template is empty (an explicit "" item override opts the item
 // out). A send failure is logged and swallowed — the caller's transition stands
 // regardless. logKV labels the send-failure log line for the calling context.
-func (s *Server) deliverThankYou(ctx context.Context, item storage.Item, list storage.List, recipient string, logKV ...any) {
+func (s *Server) deliverThankYou(ctx context.Context, item storage.Item, list storage.List, recipient string, subj thankYouSubject, logKV ...any) {
 	if recipient == "" {
 		return
 	}
@@ -176,9 +188,9 @@ func (s *Server) deliverThankYou(ctx context.Context, item storage.Item, list st
 	if tmpl == "" {
 		return // no note configured for this item
 	}
-	subject := "Thank you for your reservation"
+	subject := subj.noItem
 	if item.Name != "" {
-		subject = renderThankYou("Thank you for reserving {item}", item.Name)
+		subject = renderThankYou(subj.withItem, item.Name)
 	}
 	if err := s.email.Send(ctx, email.Message{
 		To:      recipient,

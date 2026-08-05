@@ -369,7 +369,7 @@ func (s *Server) sendCobuyThankYou(ctx context.Context, ts storage.TenantStore, 
 		return
 	}
 	for _, c := range contribs {
-		s.deliverThankYou(ctx, item, list, c.ContactEmail, "contribution_id", c.ID)
+		s.deliverThankYou(ctx, item, list, c.ContactEmail, cobuyThankYouSubject, "contribution_id", c.ID)
 	}
 }
 
