@@ -29,6 +29,25 @@ export const actions: Actions = {
 		return { settings: data, saved: true };
 	},
 
+	// Update the signed-in account's own display name (#185). A blank name clears the
+	// custom value; the backend falls it back to the account email. On success the
+	// default enhance invalidation reloads /api/v1/me, so the header and the prefilled
+	// field reflect the new name immediately.
+	updateName: async ({ request, locals }) => {
+		const fd = await request.formData();
+		const name = String(fd.get('name') ?? '');
+		const client = backendClient({ host: locals.host, token: locals.token });
+		const { error: err, response } = await client.PUT('/api/v1/me/profile', {
+			body: { name }
+		});
+		if (err) {
+			return fail(response.status || 400, {
+				nameError: err?.detail ?? 'Could not save your name.'
+			});
+		}
+		return { nameSaved: true };
+	},
+
 	// Change the owner's own password (ADR-0011 cut 2). On success the backend
 	// re-issues THIS session (a fresh token at the bumped credential version), so we
 	// swap the session cookie to keep the owner logged in here while every other

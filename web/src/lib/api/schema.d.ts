@@ -259,6 +259,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update the authenticated owner's own profile
+         * @description Updates the signed-in account's own editable profile fields — currently just the display name (#185). The name defaults to the email at account creation and there was no self-serve way to change it (admin user-update is role/ban only). A blank name clears the custom value and the display name falls back to the account email, matching the default at creation. The updated user is returned so the caller can reflect the new name.
+         */
+        put: operations["updateProfile"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/password": {
         parameters: {
             query?: never;
@@ -844,6 +864,10 @@ export interface components {
             token_type: "Bearer";
             /** @description Access-token lifetime in seconds. */
             expires_in: number;
+        };
+        UpdateProfileRequest: {
+            /** @description The account's display name. A blank value clears the custom name and the display falls back to the account email (the creation default). */
+            name: string;
         };
         ChangePasswordRequest: {
             /** @description The caller's current password, re-verified before the change. */
@@ -1663,6 +1687,32 @@ export interface operations {
                     "application/json": components["schemas"]["User"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    updateProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated user and tenant. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };

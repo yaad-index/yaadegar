@@ -399,6 +399,32 @@ paths:
               schema: { $ref: "#/components/schemas/User" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /api/v1/me/profile:
+    put:
+      operationId: updateProfile
+      tags: [auth]
+      summary: Update the authenticated owner's own profile
+      description: >
+        Updates the signed-in account's own editable profile fields — currently
+        just the display name (#185). The name defaults to the email at account
+        creation and there was no self-serve way to change it (admin user-update
+        is role/ban only). A blank name clears the custom value and the display
+        name falls back to the account email, matching the default at creation.
+        The updated user is returned so the caller can reflect the new name.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateProfileRequest" }
+      responses:
+        "200":
+          description: The updated user and tenant.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /api/v1/me/password:
     put:
       operationId: changePassword
@@ -1389,6 +1415,17 @@ components:
         expires_in:
           type: integer
           description: Access-token lifetime in seconds.
+
+    UpdateProfileRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 200
+          description: >
+            The account's display name. A blank value clears the custom name and
+            the display falls back to the account email (the creation default).
 
     ChangePasswordRequest:
       type: object
