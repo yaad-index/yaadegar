@@ -79,6 +79,58 @@ func TestAltchaVerifyRoundtrip(t *testing.T) {
 	require.NoError(t, v.Verify(context.Background(), token, ""), "a correctly solved challenge passes")
 }
 
+func TestAltchaVerifyRejectsReplay(t *testing.T) {
+	// A solved challenge is single-use (#182): the first submission passes, and any
+	// replay of the same signed payload within its TTL is refused, so one solved
+	// challenge buys exactly one reservation.
+	v := newAltcha(t, "hmac-key", nil)
+	ch, err := v.Challenge(context.Background())
+	require.NoError(t, err)
+	token := solve(t, ch, nil)
+
+	require.NoError(t, v.Verify(context.Background(), token, ""), "first submission passes")
+	assert.Error(t, v.Verify(context.Background(), token, ""), "replayed submission is refused")
+}
+
+func TestAltchaVerifyDistinctChallengesBothPass(t *testing.T) {
+	// The single-use store is keyed per challenge, so two independently solved
+	// challenges each redeem once — spending one must not block the other.
+	v := newAltcha(t, "hmac-key", nil)
+
+	ch1, err := v.Challenge(context.Background())
+	require.NoError(t, err)
+	ch2, err := v.Challenge(context.Background())
+	require.NoError(t, err)
+	require.NotEqual(t, ch1.Signature, ch2.Signature, "each issued challenge has its own signature")
+
+	assert.NoError(t, v.Verify(context.Background(), solve(t, ch1, nil), ""))
+	assert.NoError(t, v.Verify(context.Background(), solve(t, ch2, nil), ""))
+}
+
+func TestMemUsedStore(t *testing.T) {
+	// The store keys single-use enforcement: a fresh nonce is accepted (consume=false),
+	// an unexpired repeat is a replay (consume=true), and an entry past its expiry is
+	// swept on the next consume so the map stays bounded and the nonce becomes free
+	// again.
+	s := newMemUsedStore()
+	base := time.Unix(2_000_000, 0)
+	expiry := base.Add(altchaChallengeTTL)
+
+	assert.False(t, s.consume("nonce-a", expiry, base), "first use of a nonce is accepted")
+	assert.True(t, s.consume("nonce-a", expiry, base), "an unexpired repeat is a replay")
+	assert.False(t, s.consume("nonce-b", expiry, base), "a different nonce is independent")
+
+	// Advance past every entry's expiry: the sweep on the next consume evicts them, so
+	// the map does not grow without bound and a lapsed nonce is spendable again.
+	later := expiry.Add(time.Minute)
+	assert.False(t, s.consume("nonce-c", later.Add(altchaChallengeTTL), later), "sweeps expired, accepts new")
+	_, keptA := s.seen["nonce-a"]
+	_, keptB := s.seen["nonce-b"]
+	assert.False(t, keptA, "expired nonce-a swept")
+	assert.False(t, keptB, "expired nonce-b swept")
+	assert.False(t, s.consume("nonce-a", later.Add(altchaChallengeTTL), later), "swept nonce is spendable again")
+}
+
 func TestAltchaVerifyRejectsTamperedNumber(t *testing.T) {
 	v := newAltcha(t, "hmac-key", nil)
 	ch, err := v.Challenge(context.Background())

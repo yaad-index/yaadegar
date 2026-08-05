@@ -56,7 +56,7 @@ func New(provider, secret string) (Verifier, error) {
 		if secret == "" {
 			return nil, fmt.Errorf("captcha: provider %q requires a secret (used as the HMAC key)", provider)
 		}
-		return &altchaVerifier{hmacKey: secret, now: time.Now}, nil
+		return &altchaVerifier{hmacKey: secret, used: newMemUsedStore(), now: time.Now}, nil
 	default:
 		return nil, fmt.Errorf("captcha: unknown provider %q (want %s|%s|%s|%s|%s)",
 			provider, ProviderTurnstile, ProviderHCaptcha, ProviderRecaptcha, ProviderAltcha, ProviderNone)
