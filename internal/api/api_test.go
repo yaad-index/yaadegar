@@ -18,6 +18,7 @@ import (
 	"github.com/yaad-index/yaadegar/internal/api"
 	"github.com/yaad-index/yaadegar/internal/api/gen"
 	"github.com/yaad-index/yaadegar/internal/auth"
+	"github.com/yaad-index/yaadegar/internal/captcha"
 	"github.com/yaad-index/yaadegar/internal/clock"
 	"github.com/yaad-index/yaadegar/internal/email"
 	"github.com/yaad-index/yaadegar/internal/preview"
@@ -73,7 +74,25 @@ func newHarnessBuild(t *testing.T, limiter auth.Limiter, trustForwardedHost bool
 	return newHarnessOpts(t, limiter, trustForwardedHost, "")
 }
 
+// captchaConfig injects a captcha verifier + its public identifiers into the
+// harness (ADR-0013). The zero value leaves captcha disabled (NoopVerifier).
+type captchaConfig struct {
+	verifier captcha.Verifier
+	provider string
+	siteKey  string
+}
+
+// newHarnessCaptcha builds a harness with a captcha verifier configured, for the
+// low-trust reserve-gate tests.
+func newHarnessCaptcha(t *testing.T, cc captchaConfig) *harness {
+	return newHarnessFull(t, nil, false, "", cc)
+}
+
 func newHarnessOpts(t *testing.T, limiter auth.Limiter, trustForwardedHost bool, registrationPolicy storage.RegistrationPolicy) *harness {
+	return newHarnessFull(t, limiter, trustForwardedHost, registrationPolicy, captchaConfig{})
+}
+
+func newHarnessFull(t *testing.T, limiter auth.Limiter, trustForwardedHost bool, registrationPolicy storage.RegistrationPolicy, cc captchaConfig) *harness {
 	t.Helper()
 	ctx := context.Background()
 	dsn := "file:" + filepath.Join(t.TempDir(), "api.db")
@@ -106,6 +125,9 @@ func newHarnessOpts(t *testing.T, limiter auth.Limiter, trustForwardedHost bool,
 		DomainCNAMETarget:  "cname.yaadegar.test",
 		DomainClaimTTL:     testDomainClaimTTL,
 		RegistrationPolicy: registrationPolicy,
+		Captcha:            cc.verifier,
+		CaptchaProvider:    cc.provider,
+		CaptchaSiteKey:     cc.siteKey,
 	})
 	return &harness{t: t, h: h, store: store, tenant: tenant, owner: owner, email: fake, clk: clk, preview: pf, resolver: fr, authSvc: authSvc}
 }

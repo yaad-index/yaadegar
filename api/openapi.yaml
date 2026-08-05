@@ -1458,6 +1458,18 @@ components:
       type: object
       required: [password, google, login_url, registration_enabled]
       properties:
+        captcha_provider:
+          type: string
+          description: >
+            The configured anti-bot captcha provider (ADR-0013), one of
+            `turnstile`, `hcaptcha`, `recaptcha`, or `none`/absent when captcha
+            is disabled. Instance-level and public-safe; the giver page uses it to
+            load the matching widget SDK on the low-trust reserve flow.
+        captcha_site_key:
+          type: string
+          description: >
+            The public captcha site key (ADR-0013) the giver widget renders with.
+            Public-safe (never the verify secret); empty when captcha is disabled.
         registration_enabled:
           type: boolean
           description: >
@@ -1770,6 +1782,14 @@ components:
         giver_name: { type: [string, "null"] }
         giver_email: { type: [string, "null"], format: email }
         quantity: { type: integer, minimum: 1, default: 1 }
+        captcha_token:
+          type: string
+          description: >
+            The anti-bot challenge token from the reserve widget (ADR-0013).
+            Optional at the schema level; enforced server-side only when the
+            list's effective tier is low-trust (full_guest or email_confirmed)
+            AND the instance has a captcha verifier configured. Ignored on a
+            registered-tier list and on an instance with captcha disabled.
 
     ReservationCreated:
       type: object

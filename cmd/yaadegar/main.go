@@ -25,6 +25,7 @@ import (
 
 	"github.com/yaad-index/yaadegar/internal/api"
 	"github.com/yaad-index/yaadegar/internal/auth"
+	"github.com/yaad-index/yaadegar/internal/captcha"
 	"github.com/yaad-index/yaadegar/internal/clock"
 	"github.com/yaad-index/yaadegar/internal/cobuy"
 	"github.com/yaad-index/yaadegar/internal/decay"
@@ -108,6 +109,14 @@ type ServeCmd struct {
 	OAuthGoogleClientID     string `name:"oauth-google-client-id" env:"YAADEGAR_OAUTH_GOOGLE_CLIENT_ID" help:"Google OAuth client id for owner login (#21). Set with the client secret and redirect base to enable Google login."`
 	OAuthGoogleClientSecret string `name:"oauth-google-client-secret" env:"YAADEGAR_OAUTH_GOOGLE_CLIENT_SECRET" help:"Google OAuth client secret (provide via the environment)."`
 	OAuthRedirectBase       string `name:"oauth-redirect-base" env:"YAADEGAR_OAUTH_REDIRECT_BASE" help:"Public https base URL of the fixed OAuth redirect host (e.g. https://yaadegar.example). The single registered redirect_uri is this base + /api/v1/auth/oauth/google/callback."`
+
+	// Anti-bot captcha on the low-trust reserve tiers (ADR-0013, #45). none (default)
+	// disables it (behaviour unchanged). A managed provider needs its verify secret;
+	// the site key is public and surfaced to the giver widget. An unknown provider,
+	// or a provider with no secret, fails startup (fail-closed).
+	CaptchaProvider string `name:"captcha-provider" default:"none" enum:"none,turnstile,hcaptcha,recaptcha" env:"YAADEGAR_CAPTCHA_PROVIDER" help:"Anti-bot captcha provider for low-trust reserve (ADR-0013): none (default, disabled) | turnstile | hcaptcha | recaptcha."`
+	CaptchaSecret   string `name:"captcha-secret" env:"YAADEGAR_CAPTCHA_SECRET" help:"Captcha provider verify secret (server-side, never exposed). Required when --captcha-provider is not none."`
+	CaptchaSiteKey  string `name:"captcha-site-key" env:"YAADEGAR_CAPTCHA_SITE_KEY" help:"Public captcha site key rendered by the giver widget (safe to expose)."`
 
 	// Login brute-force rate limit (applies to both owner and admin login), per IP
 	// and per username. In-memory (single-instance); a multi-instance deployment
@@ -197,6 +206,13 @@ func (c *ServeCmd) Run(cli *CLI) error {
 		return fmt.Errorf("invalid --registration-policy %q (want disabled, givers_only, or owners_allowed)", c.RegistrationPolicy)
 	}
 
+	// Anti-bot captcha verifier (ADR-0013). none → nil (disabled, NoopVerifier); a
+	// managed provider with no secret, or an unknown provider, fails startup here.
+	captchaVerifier, err := captcha.New(c.CaptchaProvider, c.CaptchaSecret)
+	if err != nil {
+		return err
+	}
+
 	handler := api.NewHandler(store, api.Options{
 		BaseDomain:          c.BaseDomain,
 		Logger:              logger,
@@ -211,6 +227,9 @@ func (c *ServeCmd) Run(cli *CLI) error {
 		CobuyConfirmWindow:  c.CobuyConfirmWindow,
 		OAuth:               oauthAuth,
 		RegistrationPolicy:  registrationPolicy,
+		Captcha:             captchaVerifier,
+		CaptchaProvider:     c.CaptchaProvider,
+		CaptchaSiteKey:      c.CaptchaSiteKey,
 	})
 
 	// Run the reservation-decay sweeper on a ticker alongside the server.

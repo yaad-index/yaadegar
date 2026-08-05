@@ -18,6 +18,7 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { resolve } from '$app/paths';
 	import { chipInAllowed } from '$lib/cobuy';
+	import CaptchaWidget from '$lib/components/CaptchaWidget.svelte';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -226,6 +227,14 @@
 						{/if}
 					</p>
 				</fieldset>
+
+				<!-- Anti-bot captcha (ADR-0013): only reached on the low-trust reserve tiers
+				     (this whole form is skipped on a registered/account-required list), and only
+				     rendered when the instance has a provider configured. The widget fills the
+				     hidden captcha_token field the reserve action forwards. -->
+				{#if data.captchaProvider}
+					<CaptchaWidget provider={data.captchaProvider} siteKey={data.captchaSiteKey} />
+				{/if}
 
 				<ul class="mt-6 divide-y rounded border">
 					{#each data.list.items ?? [] as item (item.id)}

@@ -57,8 +57,7 @@ func (s *Server) Register(ctx context.Context, req gen.RegisterRequestObject) (g
 	if req.Body.CaptchaToken != nil {
 		captchaToken = *req.Body.CaptchaToken
 	}
-	human, err := s.captcha.Verify(ctx, captchaToken, clientIPFromContext(ctx))
-	if err != nil || !human {
+	if err := s.captcha.Verify(ctx, captchaToken, clientIPFromContext(ctx)); err != nil {
 		return gen.Register400ApplicationProblemPlusJSONResponse{
 			BadRequestApplicationProblemPlusJSONResponse: badRequest("captcha verification failed"),
 		}, nil

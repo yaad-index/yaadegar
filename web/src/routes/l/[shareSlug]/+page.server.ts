@@ -16,7 +16,11 @@ import type { Actions, PageServerLoad } from './$types';
 const reserveSchema = z.object({
 	item_id: z.string().min(1),
 	giver_name: z.string().max(200).optional(),
-	giver_email: z.string().email('Enter a valid email').optional().or(z.literal(''))
+	giver_email: z.string().email('Enter a valid email').optional().or(z.literal('')),
+	// The anti-bot challenge token from the reserve widget (ADR-0013). Optional here;
+	// the backend enforces it only on the low-trust tiers when a verifier is
+	// configured. Carried through as a hidden field the widget fills in.
+	captcha_token: z.string().optional()
 });
 
 // A co-buying pledge: a share of the item's price plus a contact that is revealed
@@ -88,6 +92,8 @@ export const load: PageServerLoad = async ({ params, locals, cookies, url }) => 
 				accountRequired: false,
 				loggedIn: !!locals.token,
 				registrationEnabled: false,
+				captchaProvider: '',
+				captchaSiteKey: '',
 				reservePath: '',
 				form,
 				pledgeForm
@@ -107,11 +113,13 @@ export const load: PageServerLoad = async ({ params, locals, cookies, url }) => 
 	if (accountRequired && loggedIn) {
 		redirect(303, reservePath);
 	}
-	let registrationEnabled = false;
-	if (accountRequired) {
-		const { data: methods } = await client.GET('/api/v1/auth/methods');
-		registrationEnabled = !!methods?.registration_enabled;
-	}
+	// Instance-level auth + captcha config for the giver surface, fetched once:
+	// registration_enabled drives the account-required prompt, and
+	// captcha_provider/site_key drive the low-trust reserve widget (ADR-0013).
+	const { data: methods } = await client.GET('/api/v1/auth/methods');
+	const registrationEnabled = !!methods?.registration_enabled;
+	const captchaProvider = methods?.captcha_provider ?? '';
+	const captchaSiteKey = methods?.captcha_site_key ?? '';
 
 	// This browser's own pledges: refresh each on load (the approved model is manual
 	// check + on-load refresh, no auto-poll). A stale capability — the contribution
@@ -176,6 +184,11 @@ export const load: PageServerLoad = async ({ params, locals, cookies, url }) => 
 		accountRequired,
 		loggedIn,
 		registrationEnabled,
+		// Low-trust reserve captcha (ADR-0013): the provider selects the widget SDK and
+		// the public site key renders it. Empty when captcha is disabled — the widget
+		// then does not render and the tier gate is a no-op server-side.
+		captchaProvider,
+		captchaSiteKey,
 		reservePath,
 		shareSlug: params.shareSlug,
 		form,
@@ -200,7 +213,10 @@ export const actions: Actions = {
 				giver_email: form.data.giver_email || null,
 				// The giver flow doesn't surface quantity; reserve a single unit. The spec
 				// marks quantity required though it defaults to 1 server-side.
-				quantity: 1
+				quantity: 1,
+				// The reserve widget's challenge token (ADR-0013), forwarded to the backend
+				// gate. Omitted when empty so a disabled/registered instance sends nothing.
+				...(form.data.captcha_token ? { captcha_token: form.data.captcha_token } : {})
 			}
 		});
 		// A real failure: a backend error, or no reservation was created at all.

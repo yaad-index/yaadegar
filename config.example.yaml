@@ -132,6 +132,29 @@
 # (env YAADEGAR_OAUTH_REDIRECT_BASE, flag --oauth-redirect-base)
 # oauth-redirect-base: "https://yaadegar.example"
 
+# --- Anti-bot captcha on low-trust reserve (ADR-0013, #45) ----------------------
+#
+# Optional. Gates the two low-trust reserve tiers (full_guest, email_confirmed)
+# with a managed captcha, verified server-side before the reservation is created;
+# the registered tier is never gated. "none" (default) disables it and the reserve
+# flow is unchanged. Pick a provider, supply its verify secret (kept server-side)
+# and public site key (rendered by the giver widget). An unknown provider, or one
+# with no secret, refuses to start. A provider outage fails closed (reserves are
+# refused) so an outage never silently reopens the low-trust paths.
+
+# Provider: none | turnstile | hcaptcha | recaptcha.
+# (env YAADEGAR_CAPTCHA_PROVIDER, flag --captcha-provider)
+# captcha-provider: "none"
+
+# Provider verify secret — server-side only, never exposed. Read from the
+# environment; do not commit a real value.
+# (env YAADEGAR_CAPTCHA_SECRET, flag --captcha-secret)
+# captcha-secret: ""
+
+# Public site key the giver widget renders with (safe to expose).
+# (env YAADEGAR_CAPTCHA_SITE_KEY, flag --captcha-site-key)
+# captcha-site-key: ""
+
 # --- Login rate limit -----------------------------------------------------------
 
 # Failed login attempts per IP and per username before rate-limiting kicks in
