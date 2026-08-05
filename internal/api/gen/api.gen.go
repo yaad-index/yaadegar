@@ -824,6 +824,12 @@ type TenantSettingsUpdate struct {
 	OauthGoogleEnabled bool `json:"oauth_google_enabled"`
 }
 
+// UpdateProfileRequest defines model for UpdateProfileRequest.
+type UpdateProfileRequest struct {
+	// Name The account's display name. A blank value clears the custom name and the display falls back to the account email (the creation default).
+	Name string `json:"name"`
+}
+
 // User defines model for User.
 type User struct {
 	Id *string `json:"id,omitempty"`
@@ -987,6 +993,9 @@ type CreateItemJSONRequestBody = ItemCreate
 // ChangePasswordJSONRequestBody defines body for ChangePassword for application/json ContentType.
 type ChangePasswordJSONRequestBody = ChangePasswordRequest
 
+// UpdateProfileJSONRequestBody defines body for UpdateProfile for application/json ContentType.
+type UpdateProfileJSONRequestBody = UpdateProfileRequest
+
 // CreateMyReservationJSONRequestBody defines body for CreateMyReservation for application/json ContentType.
 type CreateMyReservationJSONRequestBody = MyReservationCreate
 
@@ -1097,6 +1106,9 @@ type ServerInterface interface {
 	// ChangePassword Change the authenticated owner's password
 	// (PUT /api/v1/me/password)
 	ChangePassword(w http.ResponseWriter, r *http.Request)
+	// UpdateProfile Update the authenticated owner's own profile
+	// (PUT /api/v1/me/profile)
+	UpdateProfile(w http.ResponseWriter, r *http.Request)
 	// ListMyReservations List the authenticated account's own reservations
 	// (GET /api/v1/me/reservations)
 	ListMyReservations(w http.ResponseWriter, r *http.Request, params ListMyReservationsParams)
@@ -1829,6 +1841,20 @@ func (siw *ServerInterfaceWrapper) ChangePassword(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// UpdateProfile operation middleware
+func (siw *ServerInterfaceWrapper) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateProfile(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListMyReservations operation middleware
 func (siw *ServerInterfaceWrapper) ListMyReservations(w http.ResponseWriter, r *http.Request) {
 
@@ -2374,6 +2400,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/admin/tenants/{tenantId}/users", wrapper.AdminCreateUser)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/admin/tenants/{tenantId}/users/{userId}", wrapper.AdminUpdateUser)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/me", wrapper.GetCurrentUser)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/me/profile", wrapper.UpdateProfile)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/me/password", wrapper.ChangePassword)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/me/reservations", wrapper.ListMyReservations)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/me/reservations", wrapper.CreateMyReservation)
@@ -4270,6 +4297,60 @@ func (response ChangePassword403ApplicationProblemPlusJSONResponse) VisitChangeP
 	return err
 }
 
+type UpdateProfileRequestObject struct {
+	Body *UpdateProfileJSONRequestBody
+}
+
+type UpdateProfileResponseObject interface {
+	VisitUpdateProfileResponse(w http.ResponseWriter) error
+}
+
+type UpdateProfile200JSONResponse User
+
+func (response UpdateProfile200JSONResponse) VisitUpdateProfileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateProfile400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateProfile400ApplicationProblemPlusJSONResponse) VisitUpdateProfileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateProfile401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateProfile401ApplicationProblemPlusJSONResponse) VisitUpdateProfileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListMyReservationsRequestObject struct {
 	Params ListMyReservationsParams
 }
@@ -5423,6 +5504,9 @@ type StrictServerInterface interface {
 	// ChangePassword Change the authenticated owner's password
 	// (PUT /api/v1/me/password)
 	ChangePassword(ctx context.Context, request ChangePasswordRequestObject) (ChangePasswordResponseObject, error)
+	// UpdateProfile Update the authenticated owner's own profile
+	// (PUT /api/v1/me/profile)
+	UpdateProfile(ctx context.Context, request UpdateProfileRequestObject) (UpdateProfileResponseObject, error)
 	// ListMyReservations List the authenticated account's own reservations
 	// (GET /api/v1/me/reservations)
 	ListMyReservations(ctx context.Context, request ListMyReservationsRequestObject) (ListMyReservationsResponseObject, error)
@@ -6326,6 +6410,37 @@ func (sh *strictHandler) ChangePassword(w http.ResponseWriter, r *http.Request) 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ChangePasswordResponseObject); ok {
 		if err := validResponse.VisitChangePasswordResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateProfile operation middleware
+func (sh *strictHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	var request UpdateProfileRequestObject
+
+	var body UpdateProfileJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateProfile(ctx, request.(UpdateProfileRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateProfile")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateProfileResponseObject); ok {
+		if err := validResponse.VisitUpdateProfileResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

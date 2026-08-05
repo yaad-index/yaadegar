@@ -142,6 +142,18 @@ func (r userRepo) SetRole(ctx context.Context, userID string, role storage.UserR
 	return expectOne(res)
 }
 
+// SetName updates a user's display name (#185). The caller resolves the
+// blank-falls-back-to-email rule, so the stored value is the intended display
+// name. Scoped to the bound tenant, mirroring the other Set* mutations.
+func (r userRepo) SetName(ctx context.Context, userID, name string) error {
+	res, err := r.db.ExecContext(ctx, r.rb(
+		`UPDATE users SET name = ? WHERE tenant_id = ? AND id = ?`), name, r.tenantID, userID)
+	if err != nil {
+		return err
+	}
+	return expectOne(res)
+}
+
 // SetBanned sets or clears a user's ban flag.
 func (r userRepo) SetBanned(ctx context.Context, userID string, banned bool) error {
 	res, err := r.db.ExecContext(ctx, r.rb(

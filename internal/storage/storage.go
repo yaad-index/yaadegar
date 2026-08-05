@@ -139,6 +139,11 @@ type UserRepo interface {
 	// List returns a page of the tenant's users (admin user-management, ADR-0009),
 	// with the unpaged total, ordered oldest-first.
 	List(ctx context.Context, p Page) ([]User, int, error)
+	// SetName updates a user's display name (#185), the one profile field the account
+	// itself may edit. The caller resolves the blank-name-falls-back-to-email rule
+	// before calling, so the stored value is always the intended display name.
+	// ErrNotFound if the user is absent.
+	SetName(ctx context.Context, userID, name string) error
 	// SetRole updates a user's per-tenant role (ADR-0009). Callers enforce the
 	// demotion-vs-list_owners precondition before calling. ErrNotFound if absent.
 	SetRole(ctx context.Context, userID string, role UserRole) error

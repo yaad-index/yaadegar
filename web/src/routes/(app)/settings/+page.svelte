@@ -44,6 +44,35 @@
 </section>
 
 <section class="mt-8">
+	<h2 class="font-medium">Display name</h2>
+	<p class="mt-1 text-sm text-gray-600">
+		The name shown across your account. Leave it blank to fall back to your email.
+	</p>
+
+	{#if form?.nameSaved}
+		<p class="mt-3 rounded bg-green-50 p-2 text-sm text-green-700" role="status">Name saved.</p>
+	{/if}
+	{#if form?.nameError}
+		<p class="mt-3 rounded bg-red-50 p-2 text-sm text-red-700" role="alert">{form.nameError}</p>
+	{/if}
+
+	<form method="post" action="?/updateName" use:enhance class="mt-3 max-w-sm space-y-2">
+		<label class="block">
+			<span class="text-sm text-gray-700">Display name</span>
+			<input
+				class="mt-1 w-full rounded border p-2"
+				type="text"
+				name="name"
+				maxlength="200"
+				autocomplete="name"
+				value={data.user.name}
+			/>
+		</label>
+		<button class="rounded bg-black px-3 py-2 text-white" type="submit">Save name</button>
+	</form>
+</section>
+
+<section class="mt-8">
 	<h2 class="font-medium">Password</h2>
 	<p class="mt-1 text-sm text-gray-600">
 		Change your password. You'll stay signed in here; any other devices signed in with the old
