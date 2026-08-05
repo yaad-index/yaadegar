@@ -111,12 +111,14 @@ type ServeCmd struct {
 	OAuthRedirectBase       string `name:"oauth-redirect-base" env:"YAADEGAR_OAUTH_REDIRECT_BASE" help:"Public https base URL of the fixed OAuth redirect host (e.g. https://yaadegar.example). The single registered redirect_uri is this base + /api/v1/auth/oauth/google/callback."`
 
 	// Anti-bot captcha on the low-trust reserve tiers (ADR-0013, #45). none (default)
-	// disables it (behaviour unchanged). A managed provider needs its verify secret;
-	// the site key is public and surfaced to the giver widget. An unknown provider,
-	// or a provider with no secret, fails startup (fail-closed).
-	CaptchaProvider string `name:"captcha-provider" default:"none" enum:"none,turnstile,hcaptcha,recaptcha" env:"YAADEGAR_CAPTCHA_PROVIDER" help:"Anti-bot captcha provider for low-trust reserve (ADR-0013): none (default, disabled) | turnstile | hcaptcha | recaptcha."`
-	CaptchaSecret   string `name:"captcha-secret" env:"YAADEGAR_CAPTCHA_SECRET" help:"Captcha provider verify secret (server-side, never exposed). Required when --captcha-provider is not none."`
-	CaptchaSiteKey  string `name:"captcha-site-key" env:"YAADEGAR_CAPTCHA_SITE_KEY" help:"Public captcha site key rendered by the giver widget (safe to expose)."`
+	// disables it (behaviour unchanged). A managed provider (turnstile|hcaptcha|
+	// recaptcha) needs its verify secret and surfaces a public site key to the giver
+	// widget; altcha is self-hosted proof-of-work (cut 2) that needs no site key and
+	// reuses the secret as its HMAC signing key. An unknown provider, or a provider
+	// with no secret, fails startup (fail-closed).
+	CaptchaProvider string `name:"captcha-provider" default:"none" enum:"none,turnstile,hcaptcha,recaptcha,altcha" env:"YAADEGAR_CAPTCHA_PROVIDER" help:"Anti-bot captcha provider for low-trust reserve (ADR-0013): none (default, disabled) | turnstile | hcaptcha | recaptcha | altcha (self-hosted proof-of-work)."`
+	CaptchaSecret   string `name:"captcha-secret" env:"YAADEGAR_CAPTCHA_SECRET" help:"Captcha secret: the managed-provider verify secret, or the HMAC signing key for altcha (server-side, never exposed). Required when --captcha-provider is not none."`
+	CaptchaSiteKey  string `name:"captcha-site-key" env:"YAADEGAR_CAPTCHA_SITE_KEY" help:"Public captcha site key rendered by the managed-provider giver widget (safe to expose). Unused by altcha."`
 
 	// Login brute-force rate limit (applies to both owner and admin login), per IP
 	// and per username. In-memory (single-instance); a multi-instance deployment

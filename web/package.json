@@ -45,6 +45,7 @@
 	},
 	"dependencies": {
 		"@tanstack/svelte-query": "^6.1.38",
+		"altcha": "3.2.1",
 		"bits-ui": "^2.18.1",
 		"marked": "^18.0.7",
 		"openapi-fetch": "^0.17.0",

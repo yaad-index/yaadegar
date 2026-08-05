@@ -92,7 +92,9 @@ func (s *Server) tenantForHost(ctx context.Context, host string) (storage.Tenant
 // (/me, own-password, reserve dashboard). The owner-only distinction is enforced
 // per-endpoint by hasOwnerRole against the STORED tenant role, not the token, so a
 // giver's token never reaches an owner-only handler. The public surface, /healthz,
-// and the unauthenticated auth endpoints (/api/v1/auth/*, e.g. login) pass through.
+// the unauthenticated auth endpoints (/api/v1/auth/*, e.g. login), and the
+// browser-reachable public endpoints (/api/v1/public/*, e.g. the captcha challenge)
+// pass through.
 //
 // Two load-bearing checks: the token is validated with the algorithm pinned to
 // HS256 (auth.Issuer rejects alg:none / any mismatch), and the token's tenant
@@ -102,7 +104,9 @@ func (s *Server) tenantForHost(ctx context.Context, host string) (storage.Tenant
 // it grants nothing here.
 func (s *Server) requireOwner(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/api/v1/") || strings.HasPrefix(r.URL.Path, "/api/v1/auth/") {
+		if !strings.HasPrefix(r.URL.Path, "/api/v1/") ||
+			strings.HasPrefix(r.URL.Path, "/api/v1/auth/") ||
+			strings.HasPrefix(r.URL.Path, "/api/v1/public/") {
 			next.ServeHTTP(w, r)
 			return
 		}
