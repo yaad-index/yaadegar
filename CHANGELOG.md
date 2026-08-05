@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.9.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.8.0...yaadegar-v0.9.0) (2026-08-05)
+
+
+### Features
+
+* **captcha:** Altcha proof-of-work provider on low-trust reserve, cut 2 ([#45](https://github.com/yaad-index/yaadegar/issues/45)) ([#181](https://github.com/yaad-index/yaadegar/issues/181)) ([1aa992c](https://github.com/yaad-index/yaadegar/commit/1aa992c3b64060a73d6474fc734ecbdc04f1f5a6))
+* **captcha:** anti-bot CAPTCHA on low-trust reserve, cut 1 ([#45](https://github.com/yaad-index/yaadegar/issues/45)) ([#180](https://github.com/yaad-index/yaadegar/issues/180)) ([46fc9aa](https://github.com/yaad-index/yaadegar/commit/46fc9aa01785745abd762efff3ad71095ef2db00))
+* **captcha:** single-use Altcha solutions to defend against replay ([#182](https://github.com/yaad-index/yaadegar/issues/182)) ([#183](https://github.com/yaad-index/yaadegar/issues/183)) ([6f4a7a1](https://github.com/yaad-index/yaadegar/commit/6f4a7a1bf71b4df0a543979b1511808a668fbf7a))
+* **cobuy:** thank-you notes for co-buy contributors ([#113](https://github.com/yaad-index/yaadegar/issues/113)) ([#184](https://github.com/yaad-index/yaadegar/issues/184)) ([dfe36b7](https://github.com/yaad-index/yaadegar/commit/dfe36b7e137ddd7d559cee32efc9d469e0f2a810))
+
+
+### Bug Fixes
+
+* **api:** move reset-token persist off the request path ([#159](https://github.com/yaad-index/yaadegar/issues/159)) ([#176](https://github.com/yaad-index/yaadegar/issues/176)) ([fe427de](https://github.com/yaad-index/yaadegar/commit/fe427de547352cfb4b2c7a2b690ae4bd8b3133c6))
+* **storage:** tenant-scope the AddOwner insert ([#60](https://github.com/yaad-index/yaadegar/issues/60)) ([#178](https://github.com/yaad-index/yaadegar/issues/178)) ([4b9e0e3](https://github.com/yaad-index/yaadegar/commit/4b9e0e30c3ab0b08def881a218e14cb6e265ae88))
+
 ## [0.8.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.7.0...yaadegar-v0.8.0) (2026-08-04)
 
 
