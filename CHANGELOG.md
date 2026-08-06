@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.9.0...yaadegar-v0.10.0) (2026-08-06)
+
+
+### Features
+
+* **profile:** self-serve display-name edit ([#185](https://github.com/yaad-index/yaadegar/issues/185)) ([#186](https://github.com/yaad-index/yaadegar/issues/186)) ([27420ee](https://github.com/yaad-index/yaadegar/commit/27420eedcb7cc99c21298d755518d95214cb2cdc))
+
 ## [0.9.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.8.0...yaadegar-v0.9.0) (2026-08-05)
 
 
