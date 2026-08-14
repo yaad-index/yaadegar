@@ -58,6 +58,10 @@ jobs:
   # release. This runs on every PR: it builds the image with a known version and
   # asserts the `version` subcommand hands the same value back, failing the PR
   # that breaks the stamp rather than discovering it after a release ships "dev".
+  # Boundary: this guards the Dockerfile link-flag wiring; it supplies its own
+  # VERSION, so a green run here does not prove the publish workflow still passes
+  # its build-arg — that residual is covered by the release-only asserts there
+  # and tracked in #193.
   version-stamp:
     runs-on: ubuntu-latest
     env:
