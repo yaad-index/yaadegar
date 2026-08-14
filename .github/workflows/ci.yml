@@ -78,6 +78,11 @@ jobs:
       # A plain single-platform `docker build` loads into the local daemon, so the
       # image can be run here — a multi-arch buildx build (as the publish job does)
       # could not be `docker run`.
+      # Known flake mode, accepted knowingly: this pulls the builder base from
+      # Docker Hub on every PR, and anonymous pulls from shared runners are
+      # rate-limited. Kept as a plain build to keep this assert job minimal; if the
+      # flake shows up, wire it through buildx with `cache-from: type=gha` (as the
+      # publish job caches) rather than authenticating.
       - name: Build the image with an injected version
         run: docker build --build-arg VERSION="$STAMP_VERSION" --tag yaadegar:version-stamp-test .
 
