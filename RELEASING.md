@@ -7,7 +7,11 @@ Commits](https://www.conventionalcommits.org/). Versions are git tags
 the binary at link time (`#190`) — the version derived from the release tag
 (e.g. `0.4.0`, from the `yaadegar-v0.4.0` tag), not the raw tag string — so a
 running instance reports its build via the `version` subcommand and the startup
-log. A local `make build` is not stamped and reports `dev`.
+log. A local `make build`, and any plain `docker build` or `docker compose
+build` without the `VERSION` build-arg, are not stamped and report `dev`. That
+`dev` is the Go source default (`var version = "dev"`), which the Dockerfile's
+`ARG VERSION=dev` mirrors so the Docker paths behave the same — an unstamped
+local build is honest about being one.
 
 ## How it works
 
