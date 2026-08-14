@@ -80,7 +80,11 @@ jobs:
         env:
           RESOLVED_VERSION: ${{ steps.meta.outputs.version }}
         run: |
-          if ! printf '%s\n' "$RESOLVED_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+'; then
+          # Anchored both ends; the optional suffix is a semver prerelease (-) or
+          # build (+) tail (0.4.0-rc1, 0.4.0+build.5). A leading dot is not a valid
+          # semver suffix, so this rejects a fourth numeric component (0.4.0.1) and
+          # any trailing garbage.
+          if ! printf '%s\n' "$RESOLVED_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
             echo "resolved release version '$RESOLVED_VERSION' is not semver-shaped (#190): refusing to build and publish a mislabelled image"
             exit 1
           fi
@@ -112,9 +116,11 @@ jobs:
       # rather than equality to the tag, for the same reasons as the gate above.
       - name: Assert the released image reports a semver version
         if: github.event_name == 'release'
+        env:
+          IMAGE_REF: ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}
         run: |
-          got="$(docker run --rm ${{ env.IMAGE }}:${{ steps.meta.outputs.version }} version)"
-          if ! printf '%s\n' "$got" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+'; then
+          got="$(docker run --rm "$IMAGE_REF" version)"
+          if ! printf '%s\n' "$got" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
             echo "released image reports '$got', which is not a semver version (#190): the resolved publish version is wrong"
             exit 1
           fi
