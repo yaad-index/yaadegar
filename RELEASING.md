@@ -3,7 +3,11 @@
 Yaadegar uses [release-please](https://github.com/googleapis/release-please) to
 automate versioning and releases from [Conventional
 Commits](https://www.conventionalcommits.org/). Versions are git tags
-(`vMAJOR.MINOR.PATCH`); the build stamps the tag into the binary at link time.
+(`vMAJOR.MINOR.PATCH`). The **published image** stamps the release version into
+the binary at link time (`#190`) — the version derived from the release tag
+(e.g. `0.4.0`, from the `yaadegar-v0.4.0` tag), not the raw tag string — so a
+running instance reports its build via the `version` subcommand and the startup
+log. A local `make build` is not stamped and reports `dev`.
 
 ## How it works
 

@@ -16,9 +16,14 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+# VERSION is stamped into the binary at link time so a running image reports its
+# build instead of "dev" (#190). The publish workflow passes the release version
+# as a build-arg; a plain `docker build` with no build-arg keeps the "dev" default.
+ARG VERSION=dev
 # CGO off → a fully static binary (modernc sqlite and pgx are pure Go), so it runs
-# on the distroless static base. -s -w strips debug info to keep it small.
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/yaadegar ./cmd/yaadegar
+# on the distroless static base. -s -w strips debug info to keep it small;
+# -X main.version stamps VERSION (main.version is the var in ./cmd/yaadegar).
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o /out/yaadegar ./cmd/yaadegar
 
 # --- runtime ---
 # gcr.io/distroless/static-debian12:nonroot
