@@ -73,7 +73,33 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
+          # Stamp the resolved version into the binary at link time (#190) so the
+          # image reports its build via the `version` subcommand and startup log
+          # instead of "dev". On a release this is the version derived from the tag
+          # (e.g. 0.4.0 from yaadegar-v0.4.0, prefix stripped by the metadata step);
+          # on a main push it is "main". The Dockerfile defaults it to "dev".
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Read the version back out of the just-published release image and assert it
+      # is a real semver (#190). The ci.yml round-trip proves the stamp is *wired*
+      # but is self-consistent for any injected value; this compares the resolved
+      # publish version to an external shape, so a later tag-config change that
+      # resolves the version to something useless (a bare sha, an empty string)
+      # fails the release instead of shipping a mislabelled image.
+      # Release only: a main push legitimately resolves to "main". Shape, never
+      # equality to the git tag — release-please's `yaadegar-v0.4.0` correctly
+      # resolves to `0.4.0`, so an equality check would fail a good build.
+      - name: Assert the released image reports a semver version
+        if: github.event_name == 'release'
+        run: |
+          got="$(docker run --rm ${{ env.IMAGE }}:${{ steps.meta.outputs.version }} version)"
+          if ! printf '%s\n' "$got" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+'; then
+            echo "released image reports '$got', which is not a semver version (#190): the resolved publish version is wrong"
+            exit 1
+          fi
+          echo "released image reports semver version: $got"

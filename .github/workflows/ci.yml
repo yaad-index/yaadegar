@@ -50,3 +50,42 @@ jobs:
 
       - name: Test
         run: go test -race ./...
+
+  # Guard the link-time version stamp (#190). The stamp lives in the Dockerfile
+  # link flags + the publish workflow's build-arg — both outside the Go build the
+  # `check` job exercises — so nothing above would notice the flag being dropped,
+  # and docker-publish.yml has no pull_request trigger to catch it before a
+  # release. This runs on every PR: it builds the image with a known version and
+  # asserts the `version` subcommand hands the same value back, failing the PR
+  # that breaks the stamp rather than discovering it after a release ships "dev".
+  version-stamp:
+    runs-on: ubuntu-latest
+    env:
+      # A sentinel fed to both the build-arg and the assertion below, so the check
+      # passes only if the value round-trips through the real link flags. It must
+      # NOT be "dev": with no build-arg the Dockerfile default supplies "dev", and
+      # the round-trip would then compare dev-to-dev and pass while proving nothing
+      # — green in the exact workflow added to protect this. A value that cannot
+      # arise by accident keeps the three outcomes diagnosable:
+      #   v0.0.0-citest reported → stamp wiring is correct
+      #   dev reported           → the build-arg never arrived
+      #   empty reported         → the ARG is out of the build stage (see Dockerfile)
+      STAMP_VERSION: v0.0.0-citest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # A plain single-platform `docker build` loads into the local daemon, so the
+      # image can be run here — a multi-arch buildx build (as the publish job does)
+      # could not be `docker run`.
+      - name: Build the image with an injected version
+        run: docker build --build-arg VERSION="$STAMP_VERSION" --tag yaadegar:version-stamp-test .
+
+      - name: Assert the version subcommand reports the injected version
+        run: |
+          got="$(docker run --rm yaadegar:version-stamp-test version)"
+          if [ "$got" != "$STAMP_VERSION" ]; then
+            echo "version subcommand reported '$got', want '$STAMP_VERSION': link-time version stamping is broken (#190)"
+            exit 1
+          fi
+          echo "version stamp round-trips: $got"
