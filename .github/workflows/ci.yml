@@ -60,8 +60,8 @@ jobs:
   # that breaks the stamp rather than discovering it after a release ships "dev".
   # Boundary: this guards the Dockerfile link-flag wiring; it supplies its own
   # VERSION, so a green run here does not prove the publish workflow still passes
-  # its build-arg — that residual is covered by the release-only asserts there
-  # and tracked in #193.
+  # its build-arg — that residual is covered by the release-only pre-publish gate
+  # in docker-publish.yml and the publish-forwards-version job below (#193).
   version-stamp:
     runs-on: ubuntu-latest
     env:
@@ -98,3 +98,43 @@ jobs:
             exit 1
           fi
           echo "version stamp round-trips: $got"
+
+  # Observe that the publish workflow still forwards VERSION into the multi-arch
+  # build (#193). The release-only pre-publish gate in docker-publish.yml builds
+  # its own single-arch image to prove the stamp works end to end, but it supplies
+  # its own build-arg — so it cannot notice if the *publish* step stops forwarding
+  # the value. Deleting the publish step's build-args block leaves that gate green
+  # (it builds a different image), the resolved-value gate green (it validates a
+  # string), and only the post-push read notices, once `latest` has moved: the
+  # exact after-the-fact shape #193 removes. The two guards are complementary —
+  # the pre-publish gate exercises the production build path, this one observes the
+  # push step keeps its forwarding — and each leaves the other's hole open alone.
+  # This is a text check on the workflow file, scoped to the publish step (the one
+  # named "Build and push") so the pre-publish gate's own build-args block cannot
+  # mask a deleted one. It runs on every PR, failing the change that drops the
+  # forwarding rather than a release.
+  publish-forwards-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Assert the publish step forwards the resolved version build-arg
+        run: |
+          wf=.github/workflows/docker-publish.yml
+          # Isolate the "Build and push" step: every line from its `- name:` header
+          # until the next step header at the same indent.
+          block="$(awk '/^      - name: / { instep = ($0 ~ /Build and push/) ? 1 : 0 } instep { print }' "$wf")"
+          if [ -z "$block" ]; then
+            echo "could not locate the publish step (- name: Build and push) in $wf (#193): rename? the forwarding check can no longer find its target"
+            exit 1
+          fi
+          if ! printf '%s\n' "$block" | grep -q 'build-args:'; then
+            echo "publish step has no build-args block — the resolved version is no longer forwarded (#193)"
+            exit 1
+          fi
+          if ! printf '%s\n' "$block" | grep -Eq 'VERSION=.*steps\.meta\.outputs\.version'; then
+            echo "publish step no longer forwards the resolved version as a VERSION build-arg set to steps.meta.outputs.version (#193): a dev-stamped image would ship and only the post-push assert would notice"
+            exit 1
+          fi
+          echo "publish step forwards the resolved version: OK"
