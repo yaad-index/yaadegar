@@ -122,9 +122,18 @@ jobs:
       - name: Assert the publish step forwards the resolved version build-arg
         run: |
           wf=.github/workflows/docker-publish.yml
-          # Isolate the "Build and push" step: every line from its `- name:` header
-          # until the next step header at the same indent.
-          block="$(awk '/^      - name: / { instep = ($0 ~ /Build and push/) ? 1 : 0 } instep { print }' "$wf")"
+          # Isolate the "Build and push" step: from its `- name:` header until the
+          # next step boundary. That boundary is the next `- name:` header OR the
+          # next step's leading comment (a `#` at the 6-space step indent) — stopping
+          # at the comment too matters here, because comments at this level explain
+          # the forwarding, so over-running into the next step's comment could let a
+          # stray `VERSION=` there satisfy the check. Step-body comments sit deeper
+          # (8+ spaces) and are kept.
+          block="$(awk '
+            /^      - name: / { instep = ($0 ~ /Build and push/) ? 1 : 0 }
+            /^      #/        { instep = 0 }
+            instep           { print }
+          ' "$wf")"
           if [ -z "$block" ]; then
             echo "could not locate the publish step (- name: Build and push) in $wf (#193): rename? the forwarding check can no longer find its target"
             exit 1
