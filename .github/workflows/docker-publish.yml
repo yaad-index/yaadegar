@@ -90,6 +90,44 @@ jobs:
           fi
           echo "resolved release version is semver-shaped: $RESOLVED_VERSION"
 
+      # Verify the publish workflow still forwards VERSION into the build BEFORE
+      # anything is pushed (#193). The resolved-value gate above checks the version
+      # string; the post-push read below checks the shipped binary — but neither
+      # notices if this workflow stops forwarding VERSION into the build: the
+      # resolved value stays fine, and the shipped-binary read fires only once
+      # `latest` has already moved. This step builds single-arch with the real
+      # publish build-args and reads the stamp back off the loaded image, so a
+      # dropped build-arg fails here instead of after shipping. Native amd64 +
+      # load only (no QEMU, no push); the layer feeds the gha cache the multi-arch
+      # push below reuses, so the extra cost is one amd64 build on releases only.
+      # The build-args here MUST mirror the push step's — this gates that exact
+      # forwarding. Shape check, release-only, for the same reasons as the two
+      # asserts around it.
+      - name: Build single-arch and verify the version stamp before publishing
+        if: github.event_name == 'release'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+          tags: ${{ env.IMAGE }}:verify-stamp
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Assert the pre-publish image reports a semver version
+        if: github.event_name == 'release'
+        env:
+          IMAGE_REF: ${{ env.IMAGE }}:verify-stamp
+        run: |
+          got="$(docker run --rm "$IMAGE_REF" version)"
+          if ! printf '%s\n' "$got" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
+            echo "pre-publish image reports '$got', which is not a semver version (#193): the publish workflow is no longer forwarding VERSION into the build — refusing to push a mislabelled image"
+            exit 1
+          fi
+          echo "pre-publish image reports semver version: $got"
+
       - name: Build and push
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
