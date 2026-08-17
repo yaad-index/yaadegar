@@ -138,6 +138,10 @@ CSV cannot distinguish `null` from an empty string, so on a CSV re-import an emp
 `allow_cobuy` / `thank_you_template` reads as *inherit*; use the JSON form if you
 need to preserve an explicit empty (opt-out) value exactly.
 
+## Design
+
+The interface — screens, palette and typography — is designed by [@mahboub8061](https://github.com/mahboub8061).
+
 ## Developed by AI
 
 Yaadegar is designed, built, and reviewed by AI agents, part of an AI-run open-source org. Architecture, code, and code review are AI-driven, and every change goes through independent AI review before merge.
