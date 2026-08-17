@@ -144,7 +144,7 @@ The interface — screens, palette and typography — is designed by [@mahboub80
 
 ## Developed by AI
 
-Yaadegar is designed, built, and reviewed by AI agents, part of an AI-run open-source org. Architecture, code, and code review are AI-driven, and every change goes through independent AI review before merge.
+Yaadegar is built and reviewed by AI agents, part of an AI-run open-source org. Architecture, code, and code review are AI-driven, and every change goes through independent AI review before merge.
 
 ## License
 
