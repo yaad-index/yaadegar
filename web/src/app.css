@@ -1,3 +1,48 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/*
+ * Design tokens for the Yaadegar visual system (#199).
+ *
+ * These custom properties are the single source of truth for the palette and
+ * typeface indirection; tailwind.config.ts maps each to an ergonomic utility
+ * (see the mapping table there). The colour values were sampled pixel-by-pixel
+ * from the delivered design set — they are measurements, not eyeballed.
+ *
+ * This block only *defines* the tokens. It intentionally applies no ambient
+ * styling to `body`/`h1`/… so that landing the layer changes no existing
+ * screen: the tokens and components are inert until a screen adopts them.
+ */
+:root {
+	/* Colour */
+	--bg: #fcfaf6; /* page background, warm off-white */
+	--surface: #ffffff; /* cards, the auth panel */
+	--surface-alt: #faf5ef; /* input fill, count chips */
+	--surface-accent: #f2ece3; /* the welcome banner */
+	--border: #e8e2db; /* auth panel outline, 1px (NOT the card — cards use the shadow) */
+	--border-subtle: #f1ebe5; /* input outline */
+	--divider: #eadfd7; /* under the top bar */
+	--primary: #a85a68; /* primary button fill, wordmark */
+	--primary-hover: #ad6472; /* links */
+	--primary-tint: #f9f3f4; /* rose icon chip */
+	--accent-gold: #e6b450; /* sparkle icon, gold icon chip */
+	--accent-gold-tint: #fdfaf3; /* gold icon chip background */
+	--accent-green: #8aa05a; /* green icon chip */
+	--accent-green-tint: #eef1e6; /* green icon chip background */
+	--text: #2e2824; /* body copy */
+	--text-heading: #3a342e; /* headings */
+	--text-muted: #aea69f; /* subtitles, helper text */
+
+	/*
+	 * Typeface families are the one open question in #199: the set uses a
+	 * transitional serif for display/wordmark and a humanist sans for body/UI,
+	 * neither of which could be named from a raster export. The real families
+	 * drop in by prepending them here — a two-value edit, not a refactor. Until
+	 * then these resolve to the platform's own serif/sans so the app renders
+	 * without a family being *chosen* on the designer's behalf.
+	 */
+	--font-display: ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
+	--font-ui:
+		ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
