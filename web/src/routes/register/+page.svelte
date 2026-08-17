@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
+	import AuthPanel from '$lib/components/AuthPanel.svelte';
+	import Field from '$lib/components/Field.svelte';
+	import PasswordField from '$lib/components/PasswordField.svelte';
+	import Button from '$lib/components/Button.svelte';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -8,77 +12,62 @@
 
 <svelte:head><title>Create an account · Yaadegar</title></svelte:head>
 
-<main class="mx-auto max-w-sm p-8">
-	<h1 class="text-2xl font-bold">Create an account</h1>
-
+<AuthPanel heading="Create an account">
 	{#if form?.sent}
-		<p class="mt-4 rounded bg-green-50 p-2 text-sm text-green-700" role="status">
+		<p class="rounded-card bg-green-50 px-3 py-2 font-ui text-ui text-green-700" role="status">
 			Check your email to verify your account. The link expires soon and can be used once.
 		</p>
 	{:else if form?.disabled}
-		<p class="mt-4 rounded bg-red-50 p-2 text-sm text-red-700" role="alert">
+		<p class="rounded-card bg-red-50 px-3 py-2 font-ui text-ui text-red-700" role="alert">
 			Registration isn't enabled on this instance.
 		</p>
 	{:else}
-		<p class="mt-2 text-sm text-gray-600">
+		<p class="mb-4 font-ui text-body text-ink-muted">
 			Enter your email and choose a password. We'll send a link to verify your email.
 		</p>
 		{#if form?.error}
-			<p class="mt-3 rounded bg-red-50 p-2 text-sm text-red-700" role="alert">{form.error}</p>
+			<p class="mb-4 rounded-card bg-red-50 px-3 py-2 font-ui text-ui text-red-700" role="alert">
+				{form.error}
+			</p>
 		{/if}
 		<form
 			method="post"
 			action={data.returnTo ? `?return_to=${encodeURIComponent(data.returnTo)}` : undefined}
 			use:enhance
-			class="mt-4 space-y-3"
+			class="space-y-4"
 		>
-			<label class="block">
-				<span class="text-sm font-medium">Email</span>
-				<input
-					class="mt-1 w-full rounded border p-2"
-					type="email"
-					name="email"
-					autocomplete="email"
-					required
-				/>
-			</label>
-			<label class="block">
-				<span class="text-sm font-medium">Password</span>
-				<input
-					class="mt-1 w-full rounded border p-2"
-					type="password"
-					name="password"
-					autocomplete="new-password"
-					minlength="8"
-					required
-				/>
-			</label>
-			<label class="block">
-				<span class="text-sm font-medium">Confirm password</span>
-				<input
-					class="mt-1 w-full rounded border p-2"
-					type="password"
-					name="confirm_password"
-					autocomplete="new-password"
-					minlength="8"
-					required
-				/>
-			</label>
-			<button class="w-full rounded bg-black px-3 py-2 text-white" type="submit">
-				Create account
-			</button>
+			<Field label="Email" type="email" name="email" autocomplete="email" required />
+			<PasswordField
+				label="Password"
+				name="password"
+				autocomplete="new-password"
+				minlength={8}
+				required
+			/>
+			<PasswordField
+				label="Confirm password"
+				name="confirm_password"
+				autocomplete="new-password"
+				minlength={8}
+				required
+			/>
+			<Button type="submit" full>Create account</Button>
 		</form>
 	{/if}
 
-	<p class="mt-4 text-sm">
-		<!-- eslint-disable svelte/no-navigation-without-resolve -- resolve() cannot express the
-		?return_to= query; the path is resolve()'d and the value is a validated local path. -->
-		<a
-			class="text-gray-600 underline hover:text-gray-900"
-			href={data.returnTo
-				? `${resolve('/login')}?return_to=${encodeURIComponent(data.returnTo)}`
-				: resolve('/login')}>Back to sign in</a
-		>
-		<!-- eslint-enable svelte/no-navigation-without-resolve -->
-	</p>
-</main>
+	{#snippet links()}
+		<p>
+			<!-- eslint-disable svelte/no-navigation-without-resolve -- resolve() cannot express the
+			?return_to= query; the path is resolve()'d and the value is a validated local path. -->
+			<a
+				class="text-primary-hover hover:underline"
+				href={data.returnTo
+					? `${resolve('/login')}?return_to=${encodeURIComponent(data.returnTo)}`
+					: resolve('/login')}
+			>
+				Back to sign in
+			</a>
+			<!-- eslint-enable svelte/no-navigation-without-resolve -->
+		</p>
+	{/snippet}
+</AuthPanel>
