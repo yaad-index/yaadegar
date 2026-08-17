@@ -19,7 +19,9 @@
 	let { heading, description, children, links }: Props = $props();
 </script>
 
-<div class="flex min-h-screen items-center justify-center bg-page px-4 py-10">
+<!-- <main> is the page's landmark region: each auth page renders only this
+     component, so this is the single main per page, matching PageShell. -->
+<main class="flex min-h-screen items-center justify-center bg-page px-4 py-10">
 	<div class="w-full max-w-[400px]">
 		<div class="rounded-card border border-line bg-surface p-8">
 			<div class="mb-6 flex flex-col items-center text-center">
@@ -47,4 +49,4 @@
 			<div class="mt-6 space-y-2 text-center font-ui text-ui text-ink-muted">{@render links()}</div>
 		{/if}
 	</div>
-</div>
+</main>

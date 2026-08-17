@@ -12,4 +12,12 @@ describe('AuthPanel', () => {
 		expect(screen.getByTestId('form-body')).toBeInTheDocument();
 		expect(screen.getByTestId('forgot-link')).toHaveAttribute('href', '/forgot');
 	});
+
+	it('exposes a main landmark so screen-reader users can jump to content', () => {
+		render(AuthPanelHarness);
+		const main = screen.getByRole('main');
+		expect(main).toBeInTheDocument();
+		// content lives inside the landmark
+		expect(main).toContainElement(screen.getByTestId('form-body'));
+	});
 });
