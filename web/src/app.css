@@ -20,7 +20,7 @@
 	--surface: #ffffff; /* cards, the auth panel */
 	--surface-alt: #faf5ef; /* input fill, count chips */
 	--surface-accent: #f2ece3; /* the welcome banner */
-	--border: #e8e2db; /* card outline, 1px */
+	--border: #e8e2db; /* auth panel outline, 1px (NOT the card — cards use the shadow) */
 	--border-subtle: #f1ebe5; /* input outline */
 	--divider: #eadfd7; /* under the top bar */
 	--primary: #a85a68; /* primary button fill, wordmark */

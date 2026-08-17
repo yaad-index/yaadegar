@@ -82,11 +82,13 @@ export default {
 			minHeight: {
 				card: '104px' // list card height
 			},
-			// The one value not in the measured set: the design edges cards with a
-			// 1px border, not a shadow, so this is a restrained inference kept
-			// available for surfaces that need lift. Flagged for review.
+			// Measured: the list card and welcome banner are separated from the page
+			// by a soft downward shadow, not a border — ~3% darkening at the edge,
+			// 12-14px falloff, almost nothing above (positive y-offset + negative
+			// spread pull it downward). This is the card's separation; the 1px
+			// --border outline belongs to the auth panel.
 			boxShadow: {
-				card: '0 1px 2px rgb(46 40 36 / 0.04)'
+				card: '0 6px 14px -2px rgb(46 40 36 / 0.06)'
 			}
 		}
 	},

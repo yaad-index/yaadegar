@@ -1,9 +1,11 @@
 <script lang="ts">
-	// The list card (#199): a 104px-tall surface with a 1px border, an optional
-	// category-accent icon chip on the left, and content on the right. When `href`
-	// is set the whole card is the link (the common list-item case); otherwise it
-	// is a plain container. The accent comes from the addressable set in
-	// $lib/tokens so cards across a screen stay coherent.
+	// The list card (#199): a 104px-tall surface separated from the page by a soft
+	// downward shadow (not a border — measured: the card and welcome banner carry
+	// zero border pixels; the 1px --border outline belongs to the auth panel). An
+	// optional category-accent icon chip sits on the left, content on the right.
+	// When `href` is set the whole card is the link (the common list-item case);
+	// otherwise it is a plain container. The accent comes from the addressable set
+	// in $lib/tokens so cards across a screen stay coherent.
 	import type { Snippet } from 'svelte';
 	import type { CategoryAccent } from '$lib/tokens';
 
@@ -19,8 +21,7 @@
 
 	let { accent, icon, href, children }: Props = $props();
 
-	const container =
-		'flex min-h-card items-center gap-4 rounded-card border border-line bg-surface p-4 shadow-card';
+	const container = 'flex min-h-card items-center gap-4 rounded-card bg-surface p-4 shadow-card';
 </script>
 
 {#snippet inner()}

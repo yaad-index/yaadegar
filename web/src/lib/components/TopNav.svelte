@@ -14,7 +14,7 @@
 	let { brand = 'Yaadegar', home = '/', actions }: Props = $props();
 </script>
 
-<header class="border-b border-divider bg-surface">
+<header class="border-b border-divider bg-page">
 	<div class="mx-auto flex max-w-content items-center justify-between px-4 py-3">
 		<!-- eslint-disable svelte/no-navigation-without-resolve -- home is a caller-supplied
 		     href (defaults to '/'); a shared nav cannot resolve the caller's route for them. -->

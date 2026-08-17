@@ -24,6 +24,16 @@ describe('Field', () => {
 		expect(input).toHaveAttribute('aria-describedby', alert.id);
 	});
 
+	it('gives an errored input a visible focus indicator, not just a red border', () => {
+		// Regression guard (WCAG 2.4.7): with focus:outline-none, an error state
+		// whose focus style only re-asserts the resting red border is visually
+		// inert on focus. The focus indicator must be a ring that appears on focus.
+		render(Field, { label: 'Email', error: 'Required' });
+		const input = screen.getByLabelText('Email');
+		expect(input.className).toContain('focus-visible:ring-2');
+		expect(input.className).toContain('focus-visible:ring-red-500');
+	});
+
 	it('shows the hint only while there is no error', () => {
 		const { rerender } = render(Field, { label: 'Name', hint: 'As it appears on the gift' });
 		expect(screen.getByText('As it appears on the gift')).toBeInTheDocument();

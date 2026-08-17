@@ -36,8 +36,10 @@
 		bind:value
 		aria-invalid={invalid || undefined}
 		aria-describedby={describedBy}
-		class={`h-12 w-full rounded-card border bg-surface-alt px-3 font-ui text-body text-ink placeholder:text-ink-muted focus:outline-none ${
-			invalid ? 'border-red-500 focus:border-red-500' : 'border-line-subtle focus:border-primary'
+		class={`h-12 w-full rounded-card border bg-surface-alt px-3 font-ui text-body text-ink placeholder:text-ink-muted focus:outline-none focus-visible:ring-2 ${
+			invalid
+				? 'border-red-500 focus-visible:ring-red-500'
+				: 'border-line-subtle focus-visible:border-primary focus-visible:ring-primary'
 		} ${klass}`}
 	/>
 	{#if error}
