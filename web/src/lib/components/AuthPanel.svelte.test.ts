@@ -1,0 +1,15 @@
+import { describe, it, expect } from 'vitest';
+import '@testing-library/jest-dom/vitest';
+import { render, screen } from '@testing-library/svelte';
+import AuthPanelHarness from './AuthPanelHarness.svelte';
+
+describe('AuthPanel', () => {
+	it('renders the wordmark, heading, description, form body, and link row', () => {
+		render(AuthPanelHarness);
+		expect(screen.getByText('YAADEGAR')).toBeInTheDocument();
+		expect(screen.getByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
+		expect(screen.getByText('Welcome back')).toBeInTheDocument();
+		expect(screen.getByTestId('form-body')).toBeInTheDocument();
+		expect(screen.getByTestId('forgot-link')).toHaveAttribute('href', '/forgot');
+	});
+});
