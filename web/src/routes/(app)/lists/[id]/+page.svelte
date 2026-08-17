@@ -6,6 +6,7 @@
 	import { page } from '$app/state';
 	import Tabs from '$lib/components/Tabs.svelte';
 	import Button from '$lib/components/Button.svelte';
+	import Field from '$lib/components/Field.svelte';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form: actionForm }: { data: PageData; form: ActionData } = $props();
@@ -303,40 +304,53 @@
 		{/if}
 	</section>
 
-	<!-- Add an item. Currency stays a free-text 3-letter field: the design shows a select,
-	     but that would narrow the accepted values (a behaviour change, out of scope for a
-	     visual PR) — flagged for the designer. All field names/actions/bindings unchanged. -->
+	<!-- Add an item. Every field carries a visible label (the design puts one above
+	     each; #210 review): name and url use the Field foundation (label + announced
+	     error), which is the pattern #202 established; the number/textarea fields use
+	     the wrapping-<label> pattern because Field is a single-string-input component
+	     and extending it for numbers/textarea is a foundation change out of scope for a
+	     screen PR. Currency stays free-text (a select would narrow accepted values — a
+	     behaviour change), flagged for the designer. Field names/actions/bindings
+	     unchanged. Shared label styling below matches Field's. -->
 	<form
 		method="post"
 		action="?/add"
 		use:enhance
-		class="mt-6 space-y-3 rounded-card border border-line bg-surface p-4"
+		class="mt-6 space-y-4 rounded-card border border-line bg-surface p-4"
 	>
 		<p class="font-display text-title text-ink-heading">Add an item</p>
-		<div class="flex gap-2">
-			<input
-				class="h-12 flex-1 rounded-card border border-line bg-surface px-3 font-ui text-body text-ink placeholder:text-ink-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-				name="name"
-				placeholder="Item name"
-				bind:value={$form.name}
-			/>
-			<input
-				class="h-12 w-20 rounded-card border border-line bg-surface px-3 font-ui text-body text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-				name="quantity_wanted"
-				type="number"
-				min="1"
-				aria-label="Quantity"
-				bind:value={$form.quantity_wanted}
-			/>
+		<div class="flex items-end gap-2">
+			<div class="flex-1">
+				<Field
+					label="Item name"
+					name="name"
+					placeholder="Item name"
+					bind:value={$form.name}
+					error={$errors.name?.[0]}
+				/>
+			</div>
+			<label class="block">
+				<span class="mb-1 block font-ui text-ui font-medium text-ink">Qty</span>
+				<input
+					class="h-12 w-20 rounded-card border border-line bg-surface px-3 font-ui text-body text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+					name="quantity_wanted"
+					type="number"
+					min="1"
+					bind:value={$form.quantity_wanted}
+				/>
+			</label>
 		</div>
 		<!-- Paste a product link and fetch its details, or fill the fields manually. -->
-		<div class="flex gap-2">
-			<input
-				class="h-12 flex-1 rounded-card border border-line bg-surface px-3 font-ui text-body text-ink placeholder:text-ink-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-				name="url"
-				placeholder="Paste a product link (optional)"
-				bind:value={$form.url}
-			/>
+		<div class="flex items-end gap-2">
+			<div class="flex-1">
+				<Field
+					label="Product link"
+					name="url"
+					placeholder="Paste a product link (optional)"
+					bind:value={$form.url}
+					error={$errors.url?.[0]}
+				/>
+			</div>
 			<Button type="submit" formaction="?/preview" variant="secondary" disabled={$submitting}>
 				Fetch
 			</Button>
@@ -350,46 +364,52 @@
 			name="price_minor"
 			value={priceAmount == null ? '' : Math.round(priceAmount * 100)}
 		/>
-		<div class="flex flex-wrap items-center gap-2">
-			<input
-				class="h-12 w-28 rounded-card border border-line bg-surface px-3 font-ui text-body text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-				type="number"
-				step="0.01"
-				min="0"
-				inputmode="decimal"
-				placeholder="Price"
-				aria-label="Price"
-				bind:value={priceAmount}
-			/>
-			<input
-				class="h-12 w-20 rounded-card border border-line bg-surface px-3 font-ui text-body uppercase text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-				name="price_currency"
-				maxlength="3"
-				placeholder="USD"
-				aria-label="Currency"
-				bind:value={$form.price_currency}
-			/>
+		<div class="flex flex-wrap items-end gap-2">
+			<label class="block">
+				<span class="mb-1 block font-ui text-ui font-medium text-ink">Price</span>
+				<input
+					class="h-12 w-28 rounded-card border border-line bg-surface px-3 font-ui text-body text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+					type="number"
+					step="0.01"
+					min="0"
+					inputmode="decimal"
+					placeholder="Price"
+					bind:value={priceAmount}
+				/>
+			</label>
+			<label class="block">
+				<span class="mb-1 block font-ui text-ui font-medium text-ink">Currency</span>
+				<input
+					class="h-12 w-20 rounded-card border border-line bg-surface px-3 font-ui text-body uppercase text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+					name="price_currency"
+					maxlength="3"
+					placeholder="USD"
+					bind:value={$form.price_currency}
+				/>
+			</label>
 			{#if priceAmount != null && !$form.price_currency}
-				<span class="font-ui text-ui text-red-600">Add a 3-letter currency for the price.</span>
+				<span class="mb-3 font-ui text-ui text-red-600">Add a 3-letter currency for the price.</span
+				>
 			{/if}
 			{#if $form.image_url}
 				<img
 					src={$form.image_url}
 					alt=""
-					class="h-10 w-10 rounded-card border border-line object-cover"
+					class="mb-1 h-10 w-10 rounded-card border border-line object-cover"
 				/>
 			{/if}
 		</div>
-		<textarea
-			class="w-full rounded-card border border-line bg-surface p-3 font-ui text-body text-ink placeholder:text-ink-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-			name="note"
-			rows="2"
-			placeholder="Note (optional — supports light markdown)"
-			bind:value={$form.note}></textarea>
+		<label class="block">
+			<span class="mb-1 block font-ui text-ui font-medium text-ink">Note</span>
+			<textarea
+				class="w-full rounded-card border border-line bg-surface p-3 font-ui text-body text-ink placeholder:text-ink-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+				name="note"
+				rows="2"
+				placeholder="Optional — supports light markdown"
+				bind:value={$form.note}></textarea>
+		</label>
 		<div class="flex items-center gap-3">
 			<Button type="submit" disabled={$submitting}>Add item</Button>
-			{#if $errors.name}<span class="font-ui text-ui text-red-600">{$errors.name}</span>{/if}
-			{#if $errors.url}<span class="font-ui text-ui text-red-600">{$errors.url}</span>{/if}
 			{#if $message}<span class="font-ui text-ui text-ink-muted">{$message}</span>{/if}
 		</div>
 	</form>
@@ -403,12 +423,34 @@
 			<li class="rounded-card border border-line bg-surface p-4">
 				<div class="flex items-start justify-between gap-3">
 					<div class="flex min-w-0 gap-3">
+						<!-- Every row carries a thumbnail; an item with no image gets a
+						     placeholder glyph rather than nothing (#210 review). -->
 						{#if item.image_url}
 							<img
 								src={item.image_url}
 								alt={item.name}
 								class="h-14 w-14 shrink-0 rounded-card border border-line object-cover"
 							/>
+						{:else}
+							<div
+								class="flex h-14 w-14 shrink-0 items-center justify-center rounded-card border border-line bg-surface-alt text-ink-muted"
+								aria-hidden="true"
+							>
+								<svg
+									width="24"
+									height="24"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<rect x="3" y="8" width="18" height="4" rx="1" />
+									<path d="M12 8v13M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" />
+									<path d="M12 8S9.5 3.5 7.5 4.5 7 8 12 8Zm0 0s2.5-4.5 4.5-3.5S17 8 12 8Z" />
+								</svg>
+							</div>
 						{/if}
 						<div class="min-w-0">
 							<div class="flex flex-wrap items-center gap-2">
