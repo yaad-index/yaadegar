@@ -40,12 +40,14 @@
 	</svg>
 {/snippet}
 
-<!-- Welcome banner -->
+<!-- Welcome banner. The greeting is subordinate to the page's own title ("Your
+	 lists"): the design makes the greeting 20px and "Your lists" 31px, so the
+	 greeting is prominent styled text, not the page heading. -->
 <section class="flex items-start justify-between gap-4 rounded-card bg-surface-accent p-6">
 	<div>
-		<h1 class="font-display text-panel text-ink-heading">
+		<p class="font-display text-title text-ink-heading">
 			Welcome back to your safe space of wishes
-		</h1>
+		</p>
 		<p class="mt-2 max-w-lg font-ui text-body text-ink-muted">
 			Create separate spaces for seasons, occasions, or dream items. Share them elegantly when
 			you're ready.
@@ -64,9 +66,10 @@
 	</svg>
 </section>
 
-<!-- Your lists -->
+<!-- The page's own title — the dominant heading (31px in the design), above the
+	 subordinate greeting banner. -->
 <div class="mt-8">
-	<h2 class="font-display text-title text-ink-heading">Your lists</h2>
+	<h1 class="font-display text-panel text-ink-heading">Your lists</h1>
 	<p class="mt-1 font-ui text-ui text-ink-muted">
 		Organized collections of your desired gifts and curated memories
 	</p>
@@ -176,7 +179,7 @@
 	</div>
 {/if}
 
-<!-- Footer note -->
-<p class="mt-8 font-ui text-ui text-ink-muted">
+<!-- Footer note — centred in the column (per the design). -->
+<p class="mt-8 text-center font-ui text-ui text-ink-muted">
 	Your lists are private by default. Sharing configurations can be set per list.
 </p>
