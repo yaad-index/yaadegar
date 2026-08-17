@@ -3,6 +3,11 @@
 	// slot on the right, and the divider rule beneath. Layout only — the caller
 	// supplies whatever nav items/links belong on a given screen through `actions`,
 	// so this component makes no assumption about auth state.
+	//
+	// Narrow-viewport behaviour (#211): the row WRAPS rather than clipping — with an
+	// admin item present and a long account name the single nowrap row ran off a
+	// phone and scrolled the page sideways. Wrapping is the interim mobile treatment
+	// (the design set is desktop-only); the real mobile design is the designer's.
 	import type { Snippet } from 'svelte';
 
 	interface Props {
@@ -15,13 +20,15 @@
 </script>
 
 <header class="border-b border-divider bg-page">
-	<div class="mx-auto flex max-w-content items-center justify-between px-4 py-3">
+	<div
+		class="mx-auto flex max-w-content flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3"
+	>
 		<!-- eslint-disable svelte/no-navigation-without-resolve -- home is a caller-supplied
 		     href (defaults to '/'); a shared nav cannot resolve the caller's route for them. -->
 		<a href={home} class="font-display text-title font-semibold text-primary">{brand}</a>
 		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		{#if actions}
-			<nav class="flex items-center gap-4 font-ui text-ui text-ink-muted">
+			<nav class="flex flex-wrap items-center gap-x-4 gap-y-1 font-ui text-ui text-ink-muted">
 				{@render actions()}
 			</nav>
 		{/if}
