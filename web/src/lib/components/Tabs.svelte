@@ -28,7 +28,7 @@
 	}
 </script>
 
-<nav class="mt-4 flex gap-1 border-b text-sm" aria-label={label}>
+<nav class="mt-4 flex gap-1 border-b border-divider font-ui text-ui" aria-label={label}>
 	{#each tabs as tab (tab.id)}
 		<!-- eslint-disable svelte/no-navigation-without-resolve -- caller-supplied internal
 		     href (query-only, the no-JS fallback); JS intercepts for an in-place switch. -->
@@ -36,10 +36,10 @@
 			href={tab.href}
 			onclick={(e) => select(e, tab.id)}
 			aria-current={active === tab.id ? 'page' : undefined}
-			class={`-mb-px border-b-2 px-3 py-2 ${
+			class={`-mb-px border-b-2 px-3 py-2 transition-colors ${
 				active === tab.id
-					? 'border-black font-medium'
-					: 'border-transparent text-gray-500 hover:text-gray-700'
+					? 'border-primary font-medium text-primary'
+					: 'border-transparent text-ink-muted hover:text-ink'
 			}`}
 		>
 			{tab.label}

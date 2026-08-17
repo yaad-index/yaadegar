@@ -5,6 +5,7 @@
 	import { replaceState } from '$app/navigation';
 	import { page } from '$app/state';
 	import Tabs from '$lib/components/Tabs.svelte';
+	import Button from '$lib/components/Button.svelte';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form: actionForm }: { data: PageData; form: ActionData } = $props();
@@ -97,6 +98,16 @@
 		co_buying: 'Co-buying',
 		purchased: 'Purchased'
 	};
+	// Status-chip tints. The design specifies two states — Available (green) and
+	// Reserved (amber) — so those follow the export; amber is not in the token set
+	// yet (flagged). co_buying/purchased are not in the design; they get restrained
+	// stand-ins (gold accent / neutral) pending the designer.
+	const availabilityChip: Record<string, string> = {
+		available: 'bg-green-tint text-green',
+		reserved: 'bg-amber-50 text-amber-700',
+		co_buying: 'bg-gold-tint text-gold',
+		purchased: 'bg-surface-alt text-ink-muted'
+	};
 
 	// Which item's editor is open (only one at a time).
 	let editingId = $state<string | null>(null);
@@ -118,13 +129,15 @@
 
 <svelte:head><title>{data.list.title} · Yaadegar</title></svelte:head>
 
-<a href={resolve('/')} class="text-sm text-gray-500 hover:underline">← Your lists</a>
-<h1 class="mt-1 text-2xl font-bold">{data.list.title}</h1>
+<a href={resolve('/')} class="font-ui text-ui text-ink-muted transition-colors hover:text-ink"
+	>← Your lists</a
+>
+<h1 class="mt-1 font-display text-panel text-ink-heading">{data.list.title}</h1>
 {#if data.descriptionHtml}
 	<!-- data.descriptionHtml is sanitized server-side (renderNote: marked → sanitize-html
 	     tight allowlist); {@html} only ever touches this pre-sanitized field (#143, ADR-0006). -->
 	<!-- eslint-disable svelte/no-at-html-tags -->
-	<div class="prose prose-sm mt-2 max-w-none text-gray-700">{@html data.descriptionHtml}</div>
+	<div class="prose prose-sm mt-2 max-w-none text-ink">{@html data.descriptionHtml}</div>
 	<!-- eslint-enable svelte/no-at-html-tags -->
 {/if}
 
@@ -261,76 +274,76 @@
 		</div>
 	</section>
 {:else}
-	<!-- Share link. The selectable input is always the fallback (works with no JS and in
-	     non-secure contexts); the copy button is a progressive enhancement on top. -->
-	<section class="mt-3 rounded border bg-gray-50 p-3">
-		<p class="text-sm font-medium">Share this list</p>
-		<p class="mt-0.5 text-xs text-gray-600">
+	<!-- Share panel on a rose tint. The selectable input is always the fallback (works with
+	     no JS and in non-secure contexts); the Copy button is a progressive enhancement.
+	     shareUrl derives from the request origin + the /l/<slug> route — NOT a hardcoded
+	     domain (the export's yaadegar.app/list/… is a mock; #209 gotcha 2). -->
+	<section class="mt-4 rounded-card bg-primary-tint p-4">
+		<p class="font-ui text-ui font-medium text-ink">Share this list</p>
+		<p class="mt-1 font-ui text-ui text-ink-muted">
 			Send this link to givers — they can reserve without an account, and you never see who reserved
 			what.
 		</p>
-		<div class="mt-2 flex gap-2">
+		<div class="mt-3 flex gap-2">
 			<input
-				class="flex-1 rounded border p-2 text-sm"
+				class="h-12 flex-1 rounded-card border border-line bg-surface px-3 font-ui text-ui text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
 				readonly
 				value={shareUrl}
 				aria-label="Public share link"
 				onclick={(e) => e.currentTarget.select()}
 			/>
-			<button
-				type="button"
-				class="rounded bg-black px-3 py-2 text-sm text-white"
-				onclick={copyShare}
-			>
-				Copy
-			</button>
+			<Button type="button" onclick={copyShare}>Copy</Button>
 		</div>
 		{#if copied === 'ok'}
-			<p class="mt-1 text-xs text-green-700" role="status">Link copied.</p>
+			<p class="mt-1 font-ui text-ui text-green" role="status">Link copied.</p>
 		{:else if copied === 'fail'}
-			<p class="mt-1 text-xs text-gray-600" role="status">
+			<p class="mt-1 font-ui text-ui text-ink-muted" role="status">
 				Couldn't copy automatically — select the link above and copy it.
 			</p>
 		{/if}
 	</section>
 
-	<!-- Add item -->
-	<form method="post" action="?/add" use:enhance class="mt-4 space-y-2 rounded border p-3">
+	<!-- Add an item. Currency stays a free-text 3-letter field: the design shows a select,
+	     but that would narrow the accepted values (a behaviour change, out of scope for a
+	     visual PR) — flagged for the designer. All field names/actions/bindings unchanged. -->
+	<form
+		method="post"
+		action="?/add"
+		use:enhance
+		class="mt-6 space-y-3 rounded-card border border-line bg-surface p-4"
+	>
+		<p class="font-display text-title text-ink-heading">Add an item</p>
 		<div class="flex gap-2">
 			<input
-				class="flex-1 rounded border p-2"
+				class="h-12 flex-1 rounded-card border border-line bg-surface px-3 font-ui text-body text-ink placeholder:text-ink-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
 				name="name"
 				placeholder="Item name"
 				bind:value={$form.name}
 			/>
 			<input
-				class="w-20 rounded border p-2"
+				class="h-12 w-20 rounded-card border border-line bg-surface px-3 font-ui text-body text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
 				name="quantity_wanted"
 				type="number"
 				min="1"
+				aria-label="Quantity"
 				bind:value={$form.quantity_wanted}
 			/>
 		</div>
 		<!-- Paste a product link and fetch its details, or fill the fields manually. -->
 		<div class="flex gap-2">
 			<input
-				class="flex-1 rounded border p-2"
+				class="h-12 flex-1 rounded-card border border-line bg-surface px-3 font-ui text-body text-ink placeholder:text-ink-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
 				name="url"
 				placeholder="Paste a product link (optional)"
 				bind:value={$form.url}
 			/>
-			<button
-				type="submit"
-				formaction="?/preview"
-				class="rounded border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
-				disabled={$submitting}
-			>
-				Fetch details
-			</button>
+			<Button type="submit" formaction="?/preview" variant="secondary" disabled={$submitting}>
+				Fetch
+			</Button>
 		</div>
-		<!-- Editable price (major units) + currency: prefilled from a scrape but editable
-		     or clearable. The amount drives the hidden price_minor the ?/add action reads.
-		     The scraped image rides along read-only as a thumbnail. -->
+		<!-- Editable price (major units) + currency: prefilled from a scrape but editable or
+		     clearable. The amount drives the hidden price_minor the ?/add action reads. The
+		     scraped image rides along read-only as a thumbnail. -->
 		<input type="hidden" name="image_url" bind:value={$form.image_url} />
 		<input
 			type="hidden"
@@ -339,7 +352,7 @@
 		/>
 		<div class="flex flex-wrap items-center gap-2">
 			<input
-				class="w-28 rounded border p-2 text-sm"
+				class="h-12 w-28 rounded-card border border-line bg-surface px-3 font-ui text-body text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
 				type="number"
 				step="0.01"
 				min="0"
@@ -349,7 +362,7 @@
 				bind:value={priceAmount}
 			/>
 			<input
-				class="w-20 rounded border p-2 text-sm uppercase"
+				class="h-12 w-20 rounded-card border border-line bg-surface px-3 font-ui text-body uppercase text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
 				name="price_currency"
 				maxlength="3"
 				placeholder="USD"
@@ -357,107 +370,128 @@
 				bind:value={$form.price_currency}
 			/>
 			{#if priceAmount != null && !$form.price_currency}
-				<span class="text-xs text-red-600">Add a 3-letter currency for the price.</span>
+				<span class="font-ui text-ui text-red-600">Add a 3-letter currency for the price.</span>
 			{/if}
 			{#if $form.image_url}
-				<img src={$form.image_url} alt="" class="h-10 w-10 rounded border object-cover" />
+				<img
+					src={$form.image_url}
+					alt=""
+					class="h-10 w-10 rounded-card border border-line object-cover"
+				/>
 			{/if}
 		</div>
 		<textarea
-			class="w-full rounded border p-2"
+			class="w-full rounded-card border border-line bg-surface p-3 font-ui text-body text-ink placeholder:text-ink-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
 			name="note"
 			rows="2"
 			placeholder="Note (optional — supports light markdown)"
 			bind:value={$form.note}></textarea>
 		<div class="flex items-center gap-3">
-			<button
-				class="rounded bg-black px-3 py-2 text-white disabled:opacity-50"
-				disabled={$submitting}
-			>
-				Add item
-			</button>
-			{#if $errors.name}<span class="text-xs text-red-600">{$errors.name}</span>{/if}
-			{#if $errors.url}<span class="text-xs text-red-600">{$errors.url}</span>{/if}
-			{#if $message}<span class="text-xs text-gray-600">{$message}</span>{/if}
+			<Button type="submit" disabled={$submitting}>Add item</Button>
+			{#if $errors.name}<span class="font-ui text-ui text-red-600">{$errors.name}</span>{/if}
+			{#if $errors.url}<span class="font-ui text-ui text-red-600">{$errors.url}</span>{/if}
+			{#if $message}<span class="font-ui text-ui text-ink-muted">{$message}</span>{/if}
 		</div>
 	</form>
 
-	<!-- Items -->
-	<ul class="mt-6 divide-y rounded border">
+	<!-- Your items -->
+	<h2 class="mt-8 font-display text-title text-ink-heading">Your items</h2>
+	<ul class="mt-3 space-y-3">
 		{#each data.items as item (item.id)}
 			{@const id = item.id ?? ''}
-			<li class="p-3">
+			{@const availability = item.availability ?? 'available'}
+			<li class="rounded-card border border-line bg-surface p-4">
 				<div class="flex items-start justify-between gap-3">
 					<div class="flex min-w-0 gap-3">
 						{#if item.image_url}
 							<img
 								src={item.image_url}
 								alt={item.name}
-								class="h-14 w-14 shrink-0 rounded border object-cover"
+								class="h-14 w-14 shrink-0 rounded-card border border-line object-cover"
 							/>
 						{/if}
 						<div class="min-w-0">
-							{#if item.url}
-								<!-- eslint-disable svelte/no-navigation-without-resolve -- external, user-provided product URL -->
-								<a
-									href={item.url}
-									class="font-medium hover:underline"
-									rel="noreferrer"
-									target="_blank">{item.name}</a
-								>
-								<!-- eslint-enable svelte/no-navigation-without-resolve -->
-							{:else}
-								<span class="font-medium">{item.name}</span>
-							{/if}
-							<div class="mt-0.5 text-xs text-gray-500">
-								Wants {item.quantity_wanted ?? 1} · {availabilityLabel[
-									item.availability ?? 'available'
-								]}
-								{#if (item.reserved_quantity ?? 0) > 0}
-									· {item.reserved_quantity} reserved
+							<div class="flex flex-wrap items-center gap-2">
+								{#if item.url}
+									<!-- eslint-disable svelte/no-navigation-without-resolve -- external, user-provided product URL -->
+									<a
+										href={item.url}
+										class="font-ui text-body font-medium text-ink-heading hover:underline"
+										rel="noreferrer"
+										target="_blank">{item.name}</a
+									>
+									<!-- eslint-enable svelte/no-navigation-without-resolve -->
+								{:else}
+									<span class="font-ui text-body font-medium text-ink-heading">{item.name}</span>
 								{/if}
+								<!-- The owner sees THAT an item is reserved, never who (ADR-0002 §5) —
+								     reserved-state, not reserver-identity (#209 gotcha 3). -->
+								<span
+									class={`rounded-card px-2 py-0.5 font-ui text-chip ${availabilityChip[availability]}`}
+								>
+									{availabilityLabel[availability]}
+								</span>
+							</div>
+							<div class="mt-1 font-ui text-ui text-ink-muted">
+								Wants {item.quantity_wanted ?? 1}{#if (item.reserved_quantity ?? 0) > 0}
+									· {item.reserved_quantity}
+									reserved{/if}
 							</div>
 							{#if data.noteHtml[id]}
 								<!-- data.noteHtml is sanitized server-side (marked → sanitize-html tight
 								     allowlist); {@html} only ever touches this pre-sanitized field. -->
 								<!-- eslint-disable svelte/no-at-html-tags -->
-								<div class="prose prose-sm mt-1 max-w-none text-sm text-gray-700">
+								<div class="prose prose-sm mt-1 max-w-none text-ink">
 									{@html data.noteHtml[id]}
 								</div>
 								<!-- eslint-enable svelte/no-at-html-tags -->
 							{/if}
 						</div>
 					</div>
-					<div class="flex shrink-0 gap-3 text-sm">
+					<div class="flex shrink-0 gap-3 font-ui text-ui">
 						<button
 							type="button"
-							class="text-gray-600 hover:underline"
+							class="text-ink-muted transition-colors hover:text-ink"
 							onclick={() => (editingId = editingId === id ? null : id)}
 						>
 							{editingId === id ? 'Close' : 'Edit'}
 						</button>
 						<form method="post" action="?/delete" use:formEnhance>
 							<input type="hidden" name="item_id" value={id} />
-							<button class="text-red-600 hover:underline">Delete</button>
+							<button class="text-red-600 transition-colors hover:text-red-700">Delete</button>
 						</form>
 					</div>
 				</div>
 
 				{#if editingId === id}
-					<form method="post" action="?/edit" use:formEnhance={onEditSubmit} class="mt-3 space-y-2">
+					<form
+						method="post"
+						action="?/edit"
+						use:formEnhance={onEditSubmit}
+						class="mt-4 space-y-3 rounded-card border border-line bg-surface-alt p-4"
+					>
+						<p class="font-ui text-chip font-medium uppercase tracking-wide text-ink-muted">
+							Editing item
+						</p>
 						<input type="hidden" name="item_id" value={id} />
 						<div class="flex gap-2">
-							<input class="flex-1 rounded border p-2 text-sm" name="name" value={item.name} />
 							<input
-								class="w-20 rounded border p-2 text-sm"
+								class="h-12 flex-1 rounded-card border border-line bg-surface px-3 font-ui text-body text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+								name="name"
+								aria-label="Item name"
+								value={item.name}
+							/>
+							<input
+								class="h-12 w-20 rounded-card border border-line bg-surface px-3 font-ui text-body text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
 								name="quantity_wanted"
 								type="number"
 								min="1"
+								aria-label="Quantity"
 								value={item.quantity_wanted ?? 1}
 							/>
 						</div>
 						<input
-							class="w-full rounded border p-2 text-sm"
+							class="h-12 w-full rounded-card border border-line bg-surface px-3 font-ui text-body text-ink placeholder:text-ink-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
 							name="url"
 							placeholder="Link (optional)"
 							value={item.url ?? ''}
@@ -468,7 +502,7 @@
 						     the same limitation as the other edit fields. -->
 						<div class="flex gap-2">
 							<input
-								class="w-28 rounded border p-2 text-sm"
+								class="h-12 w-28 rounded-card border border-line bg-surface px-3 font-ui text-body text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
 								name="price_amount"
 								type="number"
 								step="0.01"
@@ -479,7 +513,7 @@
 								value={item.price?.amount_minor != null ? item.price.amount_minor / 100 : ''}
 							/>
 							<input
-								class="w-20 rounded border p-2 text-sm uppercase"
+								class="h-12 w-20 rounded-card border border-line bg-surface px-3 font-ui text-body uppercase text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
 								name="price_currency"
 								maxlength="3"
 								placeholder="USD"
@@ -488,22 +522,25 @@
 							/>
 						</div>
 						<textarea
-							class="w-full rounded border p-2 text-sm"
+							class="w-full rounded-card border border-line bg-surface p-3 font-ui text-body text-ink placeholder:text-ink-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
 							name="note"
 							rows="3"
 							placeholder="Note (optional — supports light markdown)">{item.note ?? ''}</textarea
 						>
-						<label class="block text-sm text-gray-600">
+						<label class="block font-ui text-ui text-ink-muted">
 							Group-buying
 							<!-- Per-item co-buy override (#100). "Use list default" keeps the item
 							     inheriting; switching to Allowed/Not allowed sets an explicit override. -->
-							<select name="allow_cobuy" class="mt-1 w-full rounded border p-2 text-sm">
+							<select
+								name="allow_cobuy"
+								class="mt-1 h-12 w-full rounded-card border border-line bg-surface px-3 font-ui text-body text-ink"
+							>
 								<option value="" selected={item.allow_cobuy == null}>Use list default</option>
 								<option value="true" selected={item.allow_cobuy === true}>Allowed</option>
 								<option value="false" selected={item.allow_cobuy === false}>Not allowed</option>
 							</select>
 						</label>
-						<div class="text-sm text-gray-600">
+						<div class="font-ui text-ui text-ink-muted">
 							<!-- Per-item thank-you override (#22). Checked = inherit the list default
 							     (sends null); unchecked = use the textarea (blank = no note for this item). -->
 							<label class="flex items-center gap-2">
@@ -517,24 +554,26 @@
 							<textarea
 								name="thank_you_template"
 								rows="2"
-								class="mt-1 w-full rounded border p-2 text-sm"
+								class="mt-1 w-full rounded-card border border-line bg-surface p-3 font-ui text-body text-ink placeholder:text-ink-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
 								placeholder="Override the thank-you note for this item ({'{item}'} = item name; blank = no note)"
 								>{item.thank_you_template ?? ''}</textarea
 							>
 						</div>
 						<div class="flex gap-2">
-							<button class="rounded bg-black px-3 py-1.5 text-sm text-white">Save</button>
-							<button
-								type="button"
-								class="rounded border px-3 py-1.5 text-sm hover:bg-gray-50"
-								onclick={() => (editingId = null)}>Cancel</button
-							>
+							<Button type="submit">Save changes</Button>
+							<Button type="button" variant="secondary" onclick={() => (editingId = null)}>
+								Cancel
+							</Button>
 						</div>
 					</form>
 				{/if}
 			</li>
 		{:else}
-			<li class="p-3 text-gray-500">No items yet — add one above.</li>
+			<li
+				class="rounded-card border border-line bg-surface p-6 text-center font-ui text-body text-ink-muted"
+			>
+				No items yet — add one above.
+			</li>
 		{/each}
 	</ul>
 {/if}
