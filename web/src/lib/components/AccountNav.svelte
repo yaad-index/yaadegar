@@ -25,7 +25,8 @@
 	const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
 </script>
 
-<div class="flex items-center gap-4">
+<!-- Wraps on narrow viewports so the account items never run off a phone (#211). -->
+<div class="flex flex-wrap items-center gap-x-4 gap-y-1">
 	<!-- Identity: muted and lighter — the design de-emphasises who you are. -->
 	<span class="font-normal text-ink-muted">{name}</span>
 	<!-- Divider so the identity and the action group read as two clusters. -->
