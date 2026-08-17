@@ -69,9 +69,15 @@ export default {
 				ui: ['14px', '1.4'],
 				body: ['16px', '1.6'],
 				title: ['20px', '1.3'],
+				// display-sm and display below are declared but UNVERIFIED — no element in
+				// the set lands on either, so neither is a measurement (title and panel are).
 				'display-sm': ['24px', '1.25'],
-				panel: ['30px', '1.2'],
-				display: ['36px', '1.15']
+				// Display heading ("Your lists"/"Sign in"): 40px is the design value itself,
+				// not a cap-height derivation — a calc() would only hide it. Measured as a
+				// 28px cap at a 0.700 ratio (28 / 0.700 = 40.0), cross-checked by the same
+				// procedure returning 20.0px on the three title elements. See #218.
+				panel: ['40px', '1.2'],
+				display: ['36px', '1.15'] // unverified (see the display-sm note)
 			},
 			borderRadius: {
 				card: '12px' // list card / control radius
