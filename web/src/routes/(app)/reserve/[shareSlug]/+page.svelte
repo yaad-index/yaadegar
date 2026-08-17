@@ -28,7 +28,9 @@
 	<title>{data.closed ? 'List unavailable' : (data.list?.title ?? 'Reserve')} · Yaadegar</title>
 </svelte:head>
 
-<main class="mx-auto max-w-2xl p-6">
+<!-- Plain container, not <main>: this leaf route sits inside the (app) shell's
+	 single <main> (#205). It carried a redundant nested landmark since #175. -->
+<div class="mx-auto max-w-2xl p-6">
 	{#if data.closed}
 		<h1 class="text-2xl font-bold">This list is no longer active</h1>
 		<p class="mt-3 text-gray-600">
@@ -141,4 +143,4 @@
 			Reserving keeps the surprise: the owner never sees who reserved.
 		</p>
 	{/if}
-</main>
+</div>

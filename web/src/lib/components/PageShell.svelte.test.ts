@@ -16,4 +16,10 @@ describe('PageShell', () => {
 		expect(screen.getByTestId('empty')).toBeInTheDocument();
 		expect(screen.queryByTestId('content')).toBeNull();
 	});
+
+	it('owns exactly one main landmark (the shell contract, #205)', () => {
+		const { container } = render(PageShellHarness);
+		expect(container.querySelectorAll('main')).toHaveLength(1);
+		expect(screen.getByRole('main')).toContainElement(screen.getByTestId('content'));
+	});
 });
