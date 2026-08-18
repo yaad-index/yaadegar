@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.11.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.10.0...yaadegar-v0.11.0) (2026-08-18)
+
+
+### Features
+
+* **web:** convert the signed-in area shell to the redesigned top bar ([#206](https://github.com/yaad-index/yaadegar/issues/206)) ([3ff2c96](https://github.com/yaad-index/yaadegar/commit/3ff2c968c939a5edcb4fdbb3a32cef55e6cf3c55))
+* **web:** rebuild the auth screens on the design foundations ([#202](https://github.com/yaad-index/yaadegar/issues/202)) ([af2acb5](https://github.com/yaad-index/yaadegar/commit/af2acb5290479be088bca7c24b41bc10d4361b82))
+* **web:** rebuild the dashboard on the design foundations ([#208](https://github.com/yaad-index/yaadegar/issues/208)) ([2c50e91](https://github.com/yaad-index/yaadegar/commit/2c50e91e9f8dc4f22284db99d2d29db6887f37cb))
+* **web:** rebuild the owner list view (List tab) on the foundations ([#210](https://github.com/yaad-index/yaadegar/issues/210)) ([1727e18](https://github.com/yaad-index/yaadegar/commit/1727e1881480ef6e9d9aa74c4280573cd92c792d))
+* **web:** self-host Fraunces and Inter, land the display type ([#218](https://github.com/yaad-index/yaadegar/issues/218)) ([#219](https://github.com/yaad-index/yaadegar/issues/219)) ([4f16c97](https://github.com/yaad-index/yaadegar/commit/4f16c972b97e3ec5700e6b23d026afbe42b9e24a))
+* **web:** shared design foundations — tokens + components ([#200](https://github.com/yaad-index/yaadegar/issues/200)) ([3b87cd4](https://github.com/yaad-index/yaadegar/commit/3b87cd4ff0deaa64f76673eda48edd0ead7d2a82))
+
+
+### Bug Fixes
+
+* stamp the version into the released image at link time ([#191](https://github.com/yaad-index/yaadegar/issues/191)) ([6e2895e](https://github.com/yaad-index/yaadegar/commit/6e2895e2fb47db61795d03282b923abbb5201d5f))
+* **web:** correct --accent-green-tint to the card icon chip colour ([#220](https://github.com/yaad-index/yaadegar/issues/220)) ([#221](https://github.com/yaad-index/yaadegar/issues/221)) ([9005bd3](https://github.com/yaad-index/yaadegar/commit/9005bd3b8ebe71f490de130372b163b9d48d5557))
+* **web:** wrap the signed-in top bar on narrow viewports ([#212](https://github.com/yaad-index/yaadegar/issues/212)) ([0718e99](https://github.com/yaad-index/yaadegar/commit/0718e99315aac419be3098b430d1dab30ff5e13c))
+
 ## [0.10.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.9.0...yaadegar-v0.10.0) (2026-08-10)
 
 
