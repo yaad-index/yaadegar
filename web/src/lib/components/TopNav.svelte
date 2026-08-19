@@ -25,14 +25,17 @@
 	>
 		<!-- eslint-disable svelte/no-navigation-without-resolve -- home is a caller-supplied
 		     href (defaults to '/'); a shared nav cannot resolve the caller's route for them. -->
+		<!-- The wordmark is responsive: title (20px) on mobile, which matches the
+		     export, and display-sm (24px, an existing rung) on desktop (#231). The
+		     desktop size was pinned by a ladder measurement, not the box bbox, whose
+		     height/width ratios disagreed. -->
 		<a
 			href={home}
-			class="flex items-center gap-2.5 font-display text-title font-semibold text-primary"
+			class="flex items-center gap-2.5 font-display text-title font-semibold text-primary sm:text-display-sm"
 		>
 			<!-- Brand mark (#229): the rose rounded square with a white "Y", drawn in the
 			     design on both surfaces. Responsive — 28px on mobile, 32px on desktop
-			     (measured: solid-fill ~26 mobile / ~30 desktop). The wordmark's own
-			     desktop-vs-mobile size is a separate, not-yet-pinned finding (#231). -->
+			     (measured: solid-fill ~26 mobile / ~30 desktop). -->
 			<span
 				class="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-lg leading-none text-white sm:h-8 sm:w-8 sm:text-xl"
 				aria-hidden="true">Y</span

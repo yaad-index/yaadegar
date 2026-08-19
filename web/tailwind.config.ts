@@ -69,15 +69,16 @@ export default {
 				ui: ['14px', '1.4'],
 				body: ['16px', '1.6'],
 				title: ['20px', '1.3'],
-				// display-sm and display below are declared but UNVERIFIED — no element in
-				// the set lands on either, so neither is a measurement (title is).
+				// display-sm (24px): the desktop wordmark (#231), measured at 24px by word
+				// advance; mobile keeps title (20px).
 				'display-sm': ['24px', '1.25'],
-				// The display headings ("Your lists" / list name / auth "Log in") vary by
-				// ROLE — a role owns both size AND weight — so they are the `.display-title`
-				// and `.display-panel` role classes in app.css, not a size-only token here.
-				// See #223/#224 (this replaced the former size-keyed `panel` token, whose
-				// single size served two roles the design draws differently).
-				display: ['36px', '1.15'] // unverified (see the display-sm note)
+				// The role-keyed display headings ("Your lists" / list name / auth) are the
+				// `.display-title` / `.display-list-title` / `.display-panel` classes in
+				// app.css, not size-only tokens here (see #223/#224 — this replaced the
+				// former size-keyed `panel` token). `display` (36px) is the "Reserved by me"
+				// page title, measured at 36px; that screen is a planned child, but the token
+				// is verified against the design.
+				display: ['36px', '1.15']
 			},
 			borderRadius: {
 				card: '12px' // list card / control radius
