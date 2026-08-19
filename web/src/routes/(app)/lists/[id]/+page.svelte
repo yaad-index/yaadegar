@@ -133,7 +133,7 @@
 <a href={resolve('/')} class="font-ui text-ui text-ink-muted transition-colors hover:text-ink"
 	>← Your lists</a
 >
-<h1 class="display-title mt-1 font-display text-ink-heading">{data.list.title}</h1>
+<h1 class="display-list-title mt-1 font-display text-ink-heading">{data.list.title}</h1>
 {#if data.descriptionHtml}
 	<!-- data.descriptionHtml is sanitized server-side (renderNote: marked → sanitize-html
 	     tight allowlist); {@html} only ever touches this pre-sanitized field (#143, ADR-0006). -->
@@ -151,81 +151,88 @@
 {#if activeTab === 'settings'}
 	<!-- List settings: reserver tier (#126) + co-buy default (#100) + thank-you note
 	     default (#22). allow_cobuy and thank_you are overridable per item; the
-	     reserver tier is a list-level setting only. -->
-	<section class="mt-3 rounded border p-3">
-		<p class="text-sm font-medium">List settings</p>
-		<form method="post" action="?/settings" use:formEnhance class="mt-2 space-y-3">
-			<div>
-				<label class="block text-sm text-gray-700" for="list-description">Description</label>
+	     reserver tier is a list-level setting only. Migrated to the design system
+	     (#222): matches the sibling List tab's card / label / input / Button
+	     treatment so the two tabs of this page do not diverge. -->
+	<section class="mt-6 rounded-card border border-line bg-surface p-4">
+		<p class="font-display text-title text-ink-heading">List settings</p>
+		<form method="post" action="?/settings" use:formEnhance class="mt-4 space-y-4">
+			<label class="block">
+				<span class="mb-1 block font-ui text-ui font-medium text-ink">Description</span>
 				<textarea
 					id="list-description"
 					name="description"
 					rows="3"
 					maxlength="2000"
-					class="mt-1 w-full rounded border p-2 text-sm"
+					class="w-full rounded-card border border-line bg-surface p-3 font-ui text-body text-ink placeholder:text-ink-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
 					placeholder="Shown to givers at the top of your list. Light markdown (bold, italic, links, lists). Leave blank for none."
 					>{data.list.description ?? ''}</textarea
 				>
-				<p class="mt-0.5 text-xs text-gray-500">
+				<p class="mt-1 font-ui text-ui text-ink-muted">
 					Supports light markdown; links open in a new tab. Max 2000 characters.
 				</p>
-			</div>
-			<div class="flex items-center gap-2">
-				<label class="text-sm text-gray-700" for="list-allow-cobuy">Group-buying default</label>
-				<select id="list-allow-cobuy" name="allow_cobuy" class="rounded border p-1.5 text-sm">
-					<option value="true" selected={data.list.allow_cobuy !== false}>Allowed</option>
-					<option value="false" selected={data.list.allow_cobuy === false}>Not allowed</option>
-				</select>
-			</div>
-			<div>
-				<div class="flex items-center gap-2">
-					<label class="text-sm text-gray-700" for="list-reserver-tier">Who can reserve</label>
+			</label>
+			<div class="flex flex-col gap-4 sm:flex-row">
+				<label class="block sm:flex-1">
+					<span class="mb-1 block font-ui text-ui font-medium text-ink">Group-buying default</span>
+					<select
+						id="list-allow-cobuy"
+						name="allow_cobuy"
+						class="h-12 w-full rounded-card border border-line bg-surface px-3 font-ui text-body text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+					>
+						<option value="true" selected={data.list.allow_cobuy !== false}>Allowed</option>
+						<option value="false" selected={data.list.allow_cobuy === false}>Not allowed</option>
+					</select>
+				</label>
+				<label class="block sm:flex-1">
+					<span class="mb-1 block font-ui text-ui font-medium text-ink">Who can reserve</span>
 					<!-- bind:value drives the live warning below; the value still posts as
 					     reserver_tier. Empty = inherit the instance default (null, three-state). -->
 					<select
 						id="list-reserver-tier"
 						name="reserver_tier"
 						bind:value={reserverTier}
-						class="rounded border p-1.5 text-sm"
+						class="h-12 w-full rounded-card border border-line bg-surface px-3 font-ui text-body text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
 					>
 						<option value="">Inherit default</option>
 						<option value="full_guest">Anyone</option>
 						<option value="email_confirmed">Require email confirmation</option>
 						<option value="registered">Require an account</option>
 					</select>
-				</div>
-				{#if reserverTier === 'registered' && !data.registrationEnabled}
-					<p class="mt-1 rounded bg-amber-50 p-2 text-xs text-amber-800" role="status">
-						Self-registration is disabled on this instance, so only operator-created accounts can
-						reserve on this list.
-					</p>
-				{/if}
+				</label>
 			</div>
-			<div>
-				<label class="block text-sm text-gray-700" for="list-thank-you"
-					>Thank-you note (default)</label
+			{#if reserverTier === 'registered' && !data.registrationEnabled}
+				<!-- Amber is not in the design token set yet (flagged separately); kept as a
+				     semantic warning, aligned to the card / font-ui rhythm. -->
+				<p class="rounded-card bg-amber-50 p-3 font-ui text-ui text-amber-800" role="status">
+					Self-registration is disabled on this instance, so only operator-created accounts can
+					reserve on this list.
+				</p>
+			{/if}
+			<label class="block">
+				<span class="mb-1 block font-ui text-ui font-medium text-ink">Thank-you note (default)</span
 				>
 				<textarea
 					id="list-thank-you"
 					name="thank_you_template"
 					rows="2"
-					class="mt-1 w-full rounded border p-2 text-sm"
+					class="w-full rounded-card border border-line bg-surface p-3 font-ui text-body text-ink placeholder:text-ink-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
 					placeholder="Emailed to a giver after they reserve. Use {'{item}'} for the item name. Leave blank for no note."
 					>{data.list.thank_you_template ?? ''}</textarea
 				>
-				<p class="mt-0.5 text-xs text-gray-500">
+				<p class="mt-1 font-ui text-ui text-ink-muted">
 					One-way: the giver never sees your list, and you never learn who reserved.
 				</p>
-			</div>
-			<button class="rounded bg-black px-3 py-1.5 text-sm text-white">Save settings</button>
+			</label>
+			<Button type="submit">Save settings</Button>
 		</form>
 	</section>
 
 	<!-- Import / export: back up or move the item catalog (#26). It never includes
 	     who reserved — items only. -->
-	<section class="mt-3 rounded border p-3">
-		<p class="text-sm font-medium">Import / export</p>
-		<p class="mt-0.5 text-xs text-gray-600">
+	<section class="mt-4 rounded-card border border-line bg-surface p-4">
+		<p class="font-display text-title text-ink-heading">Import / export</p>
+		<p class="mt-1 font-ui text-ui text-ink-muted">
 			Back up your items or move them elsewhere. Never includes who reserved.
 		</p>
 
@@ -234,23 +241,23 @@
 			action="?/import"
 			enctype="multipart/form-data"
 			use:formEnhance
-			class="mt-2 flex flex-wrap items-center gap-2"
+			class="mt-4 flex flex-wrap items-center gap-2"
 		>
 			<input
 				type="file"
 				name="file"
 				accept=".json,.csv,application/json,text/csv"
-				class="text-sm"
+				class="font-ui text-ui text-ink"
 			/>
-			<button class="rounded border px-3 py-1.5 text-sm hover:bg-gray-50">Import</button>
+			<Button type="submit">Import</Button>
 		</form>
 		{#if imported !== undefined}
-			<p class="mt-1 text-xs text-green-700" role="status">Imported {imported} item(s).</p>
+			<p class="mt-2 font-ui text-ui text-green" role="status">Imported {imported} item(s).</p>
 		{/if}
 		{#if importError}
-			<p class="mt-1 text-xs text-red-600" role="alert">{importError}</p>
+			<p class="mt-2 font-ui text-ui text-red-600" role="alert">{importError}</p>
 			{#if importRowErrors.length > 0}
-				<ul class="mt-1 list-inside list-disc text-xs text-red-600">
+				<ul class="mt-1 list-inside list-disc font-ui text-ui text-red-600">
 					{#each importRowErrors as e (e.row)}
 						<li>Row {e.row}: {e.message}</li>
 					{/each}
@@ -258,16 +265,16 @@
 			{/if}
 		{/if}
 
-		<div class="mt-2 flex gap-2">
+		<div class="mt-4 flex flex-col gap-2 sm:flex-row">
 			<!-- eslint-disable svelte/no-navigation-without-resolve -- resolved path + a
 			     ?format query the rule can't see through; both are internal download routes. -->
 			<a
-				class="rounded border px-3 py-1.5 text-sm hover:bg-gray-50"
+				class="inline-flex h-12 flex-1 items-center justify-center rounded-card border border-line bg-surface px-6 font-ui text-ui font-medium text-ink transition-colors hover:bg-surface-alt focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
 				href={`${resolve('/(app)/lists/[id]/export', { id: data.list.id ?? '' })}?format=json`}
 				download>Export JSON</a
 			>
 			<a
-				class="rounded border px-3 py-1.5 text-sm hover:bg-gray-50"
+				class="inline-flex h-12 flex-1 items-center justify-center rounded-card border border-line bg-surface px-6 font-ui text-ui font-medium text-ink transition-colors hover:bg-surface-alt focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
 				href={`${resolve('/(app)/lists/[id]/export', { id: data.list.id ?? '' })}?format=csv`}
 				download>Export CSV</a
 			>
