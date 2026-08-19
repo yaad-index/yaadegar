@@ -60,13 +60,23 @@ html {
 
 /*
  * Display heading roles (#223/#224). The design varies display headings by
- * ROLE, and a role owns BOTH size and weight — the two are independent axes
- * (Fraunces' cap ratio is 0.700 at every weight, so 40px is the title size at
- * 400 or 700 alike). A single size-keyed token (`text-panel`, 40px) was the
- * sole treatment on both roles, so it shipped the auth heading 40% too large
- * (#224) and both titles too light (#223). Weight therefore rides with size on
- * the role, not on the size step and not globally — either of which would fix
- * one screen and break another.
+ * ROLE. WEIGHT is the axis #223 measured and it is role-level: the heavy title
+ * role is 700, the auth panel heading is 400. A single size-keyed token
+ * (`text-panel`, 40px, no weight) was the sole treatment across these, so it
+ * shipped the auth heading 40% too large (#224) and the titles too light
+ * (#223). Weight rides on the role, not on the size step and not globally —
+ * either would fix one screen and break another.
+ *
+ * SIZE does NOT always follow weight, so it is not claimed uniform within a
+ * role. Two sizes are confirmed and bundled here: the auth heading at 28.6px
+ * and the page title ("Your lists") at 40px. `.display-title` carries the heavy
+ * weight plus the page title's 40px. The list-name heading shares the heavy
+ * role's WEIGHT (700) but is a third, smaller size in the design (cap 22,
+ * ~31.4px, against the page title's cap 28) — it takes `.display-title` for the
+ * corrected weight and keeps its existing 40px unchanged; its true size is
+ * #222's business (title-size wiring) and is deliberately not touched here. So
+ * the list-name is grouped by shared weight, NOT by an asserted shared size —
+ * the size-role claim is scoped to the auth-vs-title pair, which is measured.
  *
  * The auth size is derived from the title size, not stated absolutely: 20/28
  * (= 5/7) is a within-design cap-height ratio measured the same way in the same
@@ -75,7 +85,7 @@ html {
  * are not. Kept as one calc() so the relationship lives in a single place.
  */
 :root {
-	--display-title-size: 40px; /* page & list titles; #223 */
+	--display-title-size: 40px; /* page title; list-name borrows it pending #222 */
 	--display-panel-size: calc(var(--display-title-size) * 5 / 7); /* auth heading; #224 */
 }
 
