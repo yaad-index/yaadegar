@@ -28,6 +28,8 @@
 
 	let open = $state(false);
 	let closeButton = $state<HTMLButtonElement | null>(null);
+	let hamburger = $state<HTMLButtonElement | null>(null);
+	let panel = $state<HTMLElement | null>(null);
 
 	const home = resolve('/');
 	type Row = { label: string; href: string; icon: 'gift' | 'lock' | 'shield' | 'gear' };
@@ -45,8 +47,15 @@
 	const isActive = (href: string) =>
 		href === home ? pathname === home : pathname === href || pathname.startsWith(href + '/');
 
-	// A navigation closes the drawer (a row was tapped, or any route change).
+	// A navigation closes the drawer (a row was tapped, or any route change). No
+	// focus restore here — the destination page owns focus after a navigation.
 	afterNavigate(() => (open = false));
+
+	// Close and hand focus back to the trigger (Escape / scrim / close button).
+	function close() {
+		open = false;
+		hamburger?.focus();
+	}
 
 	// Lock body scroll while the drawer is open; focus the close control on open.
 	$effect(() => {
@@ -58,8 +67,32 @@
 		};
 	});
 
+	// While open: close on Escape, and keep Tab focus inside the drawer. The panel
+	// sits before <main> in the DOM, so without a trap Tab would leave the dialog
+	// into the scrimmed page (there is no `inert` helper in this codebase).
 	function onKeydown(e: KeyboardEvent) {
-		if (e.key === 'Escape' && open) open = false;
+		if (!open) return;
+		if (e.key === 'Escape') {
+			close();
+			return;
+		}
+		if (e.key !== 'Tab' || !panel) return;
+		const focusable = panel.querySelectorAll<HTMLElement>(
+			'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+		);
+		if (focusable.length === 0) return;
+		const first = focusable[0];
+		const last = focusable[focusable.length - 1];
+		const active = document.activeElement;
+		if (e.shiftKey) {
+			if (active === first || !panel.contains(active)) {
+				last.focus();
+				e.preventDefault();
+			}
+		} else if (active === last || !panel.contains(active)) {
+			first.focus();
+			e.preventDefault();
+		}
 	}
 </script>
 
@@ -67,11 +100,11 @@
 
 <!-- Hamburger: 18x12, right-aligned in the bar, only on the collapsed header. -->
 <button
+	bind:this={hamburger}
 	type="button"
 	class="text-ink transition-colors hover:text-primary sm:hidden"
 	aria-label="Open menu"
 	aria-expanded={open}
-	aria-controls="mobile-nav-drawer"
 	onclick={() => (open = true)}
 >
 	<svg
@@ -92,15 +125,18 @@
 	<!-- Overlay: scrim (40% black) + the right-side panel. Fixed, above content,
 	     mobile only. Clicking the scrim closes; the panel stops propagation. -->
 	<div class="fixed inset-0 z-50 sm:hidden">
+		<!-- Scrim: a mouse convenience for closing, hidden from assistive tech so it is
+		     not a duplicate "Close menu" in the controls list — the labelled close
+		     button and Escape own the accessible close. -->
 		<button
 			type="button"
 			class="absolute inset-0 h-full w-full cursor-default bg-black/40"
-			aria-label="Close menu"
+			aria-hidden="true"
 			tabindex="-1"
-			onclick={() => (open = false)}
+			onclick={close}
 		></button>
 		<div
-			id="mobile-nav-drawer"
+			bind:this={panel}
 			class="absolute right-0 top-0 flex h-full w-[74%] max-w-[289px] flex-col border-l border-line bg-surface"
 			role="dialog"
 			aria-modal="true"
@@ -114,7 +150,7 @@
 					type="button"
 					class="text-ink transition-colors hover:text-primary"
 					aria-label="Close menu"
-					onclick={() => (open = false)}
+					onclick={close}
 				>
 					<svg
 						width="22"
