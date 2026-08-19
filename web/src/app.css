@@ -86,10 +86,12 @@ html {
  * are not. Kept as one calc() so the relationship lives in a single place.
  */
 :root {
-	--display-title-size: 40px; /* page title; #223 */
-	/* list-name heading; measured design-to-build by the ratio method (#222), NOT
-	   a fraction of 40 — an independent size that merely sits near 4/5, so a
-	   literal, not a calc that would fabricate a relationship the design lacks. */
+	--display-title-size: 40px; /* dashboard page title; #223 */
+	--display-title-md-size: 36px; /* "Reserved by me" page title; #234 (the 36 rung) */
+	/* list-name + account "Settings" titles; measured design-to-build by the ratio
+	   method (#222), NOT a fraction of 40 — an independent size that merely sits
+	   near 4/5, so a literal, not a calc that would fabricate a relationship the
+	   design lacks. */
 	--display-list-title-size: 32px;
 	--display-panel-size: calc(var(--display-title-size) * 5 / 7); /* auth heading; #224 */
 }
@@ -97,6 +99,11 @@ html {
 @layer components {
 	.display-title {
 		font-size: var(--display-title-size);
+		line-height: 1.2;
+		font-weight: 700;
+	}
+	.display-title-md {
+		font-size: var(--display-title-md-size);
 		line-height: 1.2;
 		font-weight: 700;
 	}
