@@ -69,7 +69,7 @@
 <!-- The page's own title — the dominant heading (31px in the design), above the
 	 subordinate greeting banner. -->
 <div class="mt-8">
-	<h1 class="font-display text-panel text-ink-heading">Your lists</h1>
+	<h1 class="display-title font-display text-ink-heading">Your lists</h1>
 	<p class="mt-1 font-ui text-ui text-ink-muted">
 		Organized collections of your desired gifts and curated memories
 	</p>

@@ -39,7 +39,7 @@
 					>YAADEGAR</span
 				>
 			</div>
-			<h1 class="text-center font-display text-panel text-ink-heading">{heading}</h1>
+			<h1 class="display-panel text-center font-display text-ink-heading">{heading}</h1>
 			{#if description}
 				<p class="mt-2 text-center font-ui text-body text-ink-muted">{@render description()}</p>
 			{/if}

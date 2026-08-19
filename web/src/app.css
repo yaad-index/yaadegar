@@ -59,6 +59,40 @@ html {
 }
 
 /*
+ * Display heading roles (#223/#224). The design varies display headings by
+ * ROLE, and a role owns BOTH size and weight — the two are independent axes
+ * (Fraunces' cap ratio is 0.700 at every weight, so 40px is the title size at
+ * 400 or 700 alike). A single size-keyed token (`text-panel`, 40px) was the
+ * sole treatment on both roles, so it shipped the auth heading 40% too large
+ * (#224) and both titles too light (#223). Weight therefore rides with size on
+ * the role, not on the size step and not globally — either of which would fix
+ * one screen and break another.
+ *
+ * The auth size is derived from the title size, not stated absolutely: 20/28
+ * (= 5/7) is a within-design cap-height ratio measured the same way in the same
+ * export at the same scale, so the cap-ratio error is common to both and
+ * cancels — the ratio is robust exactly where the two absolute caps (each ±0.5px)
+ * are not. Kept as one calc() so the relationship lives in a single place.
+ */
+:root {
+	--display-title-size: 40px; /* page & list titles; #223 */
+	--display-panel-size: calc(var(--display-title-size) * 5 / 7); /* auth heading; #224 */
+}
+
+@layer components {
+	.display-title {
+		font-size: var(--display-title-size);
+		line-height: 1.2;
+		font-weight: 700;
+	}
+	.display-panel {
+		font-size: var(--display-panel-size);
+		line-height: 1.2;
+		font-weight: 400;
+	}
+}
+
+/*
  * Design tokens for the Yaadegar visual system (#199).
  *
  * These custom properties are the single source of truth for the palette and

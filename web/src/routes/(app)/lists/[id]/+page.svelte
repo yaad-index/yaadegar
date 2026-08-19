@@ -133,7 +133,7 @@
 <a href={resolve('/')} class="font-ui text-ui text-ink-muted transition-colors hover:text-ink"
 	>← Your lists</a
 >
-<h1 class="mt-1 font-display text-panel text-ink-heading">{data.list.title}</h1>
+<h1 class="display-title mt-1 font-display text-ink-heading">{data.list.title}</h1>
 {#if data.descriptionHtml}
 	<!-- data.descriptionHtml is sanitized server-side (renderNote: marked → sanitize-html
 	     tight allowlist); {@html} only ever touches this pre-sanitized field (#143, ADR-0006). -->
