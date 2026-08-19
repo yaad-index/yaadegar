@@ -59,6 +59,51 @@ html {
 }
 
 /*
+ * Display heading roles (#223/#224). The design varies display headings by
+ * ROLE. WEIGHT is the axis #223 measured and it is role-level: the heavy title
+ * role is 700, the auth panel heading is 400. A single size-keyed token
+ * (`text-panel`, 40px, no weight) was the sole treatment across these, so it
+ * shipped the auth heading 40% too large (#224) and the titles too light
+ * (#223). Weight rides on the role, not on the size step and not globally —
+ * either would fix one screen and break another.
+ *
+ * SIZE does NOT always follow weight, so it is not claimed uniform within a
+ * role. Two sizes are confirmed and bundled here: the auth heading at 28.6px
+ * and the page title ("Your lists") at 40px. `.display-title` carries the heavy
+ * weight plus the page title's 40px. The list-name heading shares the heavy
+ * role's WEIGHT (700, confirmed) but is drawn SMALLER than the page title (cap
+ * 22 against its cap 28); the exact size does not pin cleanly at that cap
+ * height — only "not 40px" is solid — so it is left to #222 (title-size wiring)
+ * rather than asserted here. The class keeps the list-name's existing 40px
+ * unchanged; this PR corrects only its weight (400 -> 700). So the list-name is
+ * grouped by shared weight, NOT by an asserted shared size — the size-role
+ * claim is scoped to the auth-vs-title pair, which is measured.
+ *
+ * The auth size is derived from the title size, not stated absolutely: 20/28
+ * (= 5/7) is a within-design cap-height ratio measured the same way in the same
+ * export at the same scale, so the cap-ratio error is common to both and
+ * cancels — the ratio is robust exactly where the two absolute caps (each ±0.5px)
+ * are not. Kept as one calc() so the relationship lives in a single place.
+ */
+:root {
+	--display-title-size: 40px; /* page title; list-name borrows it pending #222 */
+	--display-panel-size: calc(var(--display-title-size) * 5 / 7); /* auth heading; #224 */
+}
+
+@layer components {
+	.display-title {
+		font-size: var(--display-title-size);
+		line-height: 1.2;
+		font-weight: 700;
+	}
+	.display-panel {
+		font-size: var(--display-panel-size);
+		line-height: 1.2;
+		font-weight: 400;
+	}
+}
+
+/*
  * Design tokens for the Yaadegar visual system (#199).
  *
  * These custom properties are the single source of truth for the palette and
