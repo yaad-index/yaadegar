@@ -25,7 +25,20 @@
 	>
 		<!-- eslint-disable svelte/no-navigation-without-resolve -- home is a caller-supplied
 		     href (defaults to '/'); a shared nav cannot resolve the caller's route for them. -->
-		<a href={home} class="font-display text-title font-semibold text-primary">{brand}</a>
+		<a
+			href={home}
+			class="flex items-center gap-2.5 font-display text-title font-semibold text-primary"
+		>
+			<!-- Brand mark (#229): the rose rounded square with a white "Y", drawn in the
+			     design on both surfaces. Responsive — 28px on mobile, 32px on desktop
+			     (measured: solid-fill ~26 mobile / ~30 desktop). The wordmark's own
+			     desktop-vs-mobile size is a separate, not-yet-pinned finding (#231). -->
+			<span
+				class="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-lg leading-none text-white sm:h-8 sm:w-8 sm:text-xl"
+				aria-hidden="true">Y</span
+			>
+			{brand}
+		</a>
 		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		{#if actions}
 			<nav class="flex flex-wrap items-center gap-x-4 gap-y-1 font-ui text-ui text-ink-muted">

@@ -25,8 +25,9 @@
 	const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
 </script>
 
-<!-- Wraps on narrow viewports so the account items never run off a phone (#211). -->
-<div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+<!-- Desktop inline nav. Hidden on the collapsed header (< sm), where MobileNav's
+     drawer takes over (#229); shown as a wrapping row from sm up. -->
+<div class="hidden flex-wrap items-center gap-x-4 gap-y-1 sm:flex">
 	<!-- Identity: muted and lighter — the design de-emphasises who you are. -->
 	<span class="font-normal text-ink-muted">{name}</span>
 	<!-- Divider so the identity and the action group read as two clusters. -->

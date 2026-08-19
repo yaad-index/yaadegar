@@ -10,13 +10,21 @@
 	import { resolve } from '$app/paths';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import AccountNav from '$lib/components/AccountNav.svelte';
+	import MobileNav from '$lib/components/MobileNav.svelte';
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
 </script>
 
 {#snippet accountActions()}
+	<!-- Desktop inline nav (hidden < sm) + the mobile hamburger/drawer (hidden >= sm);
+	     the two are mutually exclusive so exactly one shows per viewport (#229). -->
 	<AccountNav
+		name={data.user.name ?? ''}
+		isAdmin={data.user.is_admin ?? false}
+		pathname={page.url.pathname}
+	/>
+	<MobileNav
 		name={data.user.name ?? ''}
 		isAdmin={data.user.is_admin ?? false}
 		pathname={page.url.pathname}
