@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -36,8 +37,52 @@ import (
 	"github.com/yaad-index/yaadegar/internal/storage/sqlstore"
 )
 
-// version is the build version, overridden at link time via -ldflags.
-var version = "dev"
+// version is the release build version, set at link time via
+// -ldflags "-X main.version=<semver>" only on a tagged release build (the publish
+// pipeline). It is empty otherwise; a non-release build reports its embedded VCS
+// commit instead, and a build with neither reports "unknown" — kept distinct from a
+// release that silently failed to stamp, which must not look like an ordinary build
+// (#225).
+var version = ""
+
+// resolveVersion decides what a build reports: the release semver when link-stamped,
+// else the short VCS commit (with "-dirty" when the built tree was modified), else
+// "unknown". Pure over its inputs so all three branches are unit-testable without a
+// real build.
+func resolveVersion(linkVersion string, settings []debug.BuildSetting) string {
+	if linkVersion != "" {
+		return linkVersion
+	}
+	var revision, modified string
+	for _, s := range settings {
+		switch s.Key {
+		case "vcs.revision":
+			revision = s.Value
+		case "vcs.modified":
+			modified = s.Value
+		}
+	}
+	if revision == "" {
+		return "unknown"
+	}
+	if len(revision) > 12 {
+		revision = revision[:12]
+	}
+	if modified == "true" {
+		revision += "-dirty"
+	}
+	return revision
+}
+
+// reportedVersion resolves the running build's version from the link-time stamp and
+// the binary's own embedded VCS metadata (debug.ReadBuildInfo).
+func reportedVersion() string {
+	var settings []debug.BuildSetting
+	if info, ok := debug.ReadBuildInfo(); ok {
+		settings = info.Settings
+	}
+	return resolveVersion(version, settings)
+}
 
 // CLI is the yaadegar command surface. Every config value resolves through
 // file < env < flag.
@@ -141,7 +186,7 @@ type ServeCmd struct {
 func (c *ServeCmd) Run(cli *CLI) error {
 	logger := newLogger(cli.LogLevel)
 	logger.Info("yaadegar starting",
-		"version", version, "http_addr", c.HTTPAddr, "storage_driver", c.StorageDriver)
+		"version", reportedVersion(), "http_addr", c.HTTPAddr, "storage_driver", c.StorageDriver)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -339,7 +384,7 @@ type VersionCmd struct{}
 
 // Run prints the version to stdout.
 func (VersionCmd) Run() error {
-	fmt.Println(version)
+	fmt.Println(reportedVersion())
 	return nil
 }
 

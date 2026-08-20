@@ -16,13 +16,20 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-# VERSION is stamped into the binary at link time so a running image reports its
-# build instead of "dev" (#190). The publish workflow passes the release version
-# as a build-arg; a plain `docker build` with no build-arg keeps the "dev" default.
-ARG VERSION=dev
+# VERSION stamps the release semver at link time (the publish workflow passes it as a
+# build-arg on a tagged release). Left EMPTY for a source build (e.g. a
+# `docker compose up --build` deployment), which then reports its embedded VCS commit
+# instead of a placeholder — the `.git` copied into THIS builder stage carries it via
+# Go's -buildvcs, and the runtime stage below copies only the binary, so `.git` never
+# reaches the final image (#225).
+ARG VERSION=
+# go build reads the commit from the .git in the build context; mark it a safe
+# directory so git does not refuse it as dubious-ownership under the build user.
+RUN git config --global --add safe.directory /src
 # CGO off → a fully static binary (modernc sqlite and pgx are pure Go), so it runs
 # on the distroless static base. -s -w strips debug info to keep it small;
-# -X main.version stamps VERSION (main.version is the var in ./cmd/yaadegar).
+# -X main.version stamps VERSION (empty on a source build, so main.version — the var
+# in ./cmd/yaadegar — falls back to the embedded VCS commit; "unknown" if neither).
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o /out/yaadegar ./cmd/yaadegar
 
 # --- runtime ---
