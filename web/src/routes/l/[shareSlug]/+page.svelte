@@ -90,6 +90,15 @@
 	let giverEmail = $state('');
 	let clientEmailError = $state<string | null>(null);
 
+	// The anti-bot widget (when configured) hooks the form's submit and blocks it while
+	// unverified, and auto-resets after each submit — so after a reserve the guest must
+	// re-verify (click it) before Release / another reserve / withdraw can go through.
+	// An empty token means unverified; reflect it next to each action so a blocked
+	// submit is visible instead of a silent no-op (#246). Note: over plain http the
+	// widget can never verify (no Web Crypto), so every action is correctly disabled.
+	let captchaToken = $state('');
+	const captchaBlocking = $derived(!!data.captchaProvider && captchaToken.trim() === '');
+
 	const guardReserve: SubmitFunction = ({ action, cancel }) => {
 		if (reserveNeedsEmail(action.search, emailRequired, giverEmail)) {
 			clientEmailError = 'Enter your email to reserve on this list.';
@@ -324,7 +333,11 @@
 				<!-- Anti-bot captcha (ADR-0013): only on the low-trust reserve tiers, only when a
 				     provider is configured. Fills the hidden captcha_token the reserve action reads. -->
 				{#if data.captchaProvider}
-					<CaptchaWidget provider={data.captchaProvider} siteKey={data.captchaSiteKey} />
+					<CaptchaWidget
+						provider={data.captchaProvider}
+						siteKey={data.captchaSiteKey}
+						bind:token={captchaToken}
+					/>
 				{/if}
 
 				<h2 class="display-section mt-8 font-display text-ink-heading">The gifts</h2>
@@ -415,10 +428,11 @@
 									{#if reservedByYou}
 										<p class="font-ui text-ui font-medium text-green">✓ You reserved this</p>
 										<button
-											class="font-ui text-ui text-primary underline hover:text-primary-hover"
+											class="font-ui text-ui text-primary underline hover:text-primary-hover disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50"
 											formaction="?/release"
 											name="item_id"
-											value={item.id}>Release</button
+											value={item.id}
+											disabled={captchaBlocking}>Release</button
 										>
 									{:else if pledge}
 										<p class="font-ui text-ui font-medium text-green">✓ You're chipping in</p>
@@ -430,18 +444,26 @@
 											>
 										{:else}
 											<button
-												class="font-ui text-ui text-primary underline hover:text-primary-hover"
+												class="font-ui text-ui text-primary underline hover:text-primary-hover disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50"
 												formaction="?/withdraw"
 												name="item_id"
-												value={item.id}>Withdraw pledge</button
+												value={item.id}
+												disabled={captchaBlocking}>Withdraw pledge</button
 											>
 										{/if}
 										<button
-											class="font-ui text-chip text-ink-muted underline hover:text-ink"
-											formaction="?/refresh">Check for updates</button
+											class="font-ui text-chip text-ink-muted underline hover:text-ink disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50"
+											formaction="?/refresh"
+											disabled={captchaBlocking}>Check for updates</button
 										>
 									{:else if availability === 'available'}
-										<Button type="submit" formaction="?/reserve" name="item_id" value={item.id}>
+										<Button
+											type="submit"
+											formaction="?/reserve"
+											name="item_id"
+											value={item.id}
+											disabled={captchaBlocking}
+										>
 											Reserve it
 										</Button>
 										{#if chipInAllowed(item)}
@@ -459,6 +481,14 @@
 										<span class="font-ui text-ui text-ink-muted"
 											>{availabilityLabel[availability] ?? 'Taken'}</span
 										>
+									{/if}
+									{#if captchaBlocking && (reservedByYou || pledge || availability === 'available')}
+										<!-- The anti-bot widget silently blocks the form submit while unverified;
+										     surface it next to the action so a disabled control explains itself,
+										     rather than a click that does nothing (#246). -->
+										<span class="font-ui text-chip text-ink-muted">
+											Complete the anti-bot check above first.
+										</span>
 									{/if}
 								</div>
 							</div>
@@ -529,7 +559,9 @@
 										the owner.
 									</p>
 									<div class="mt-3 flex items-center gap-3">
-										<Button type="submit" formaction="?/pledge">Pledge</Button>
+										<Button type="submit" formaction="?/pledge" disabled={captchaBlocking}
+											>Pledge</Button
+										>
 										<button
 											type="button"
 											class="font-ui text-ui text-ink-muted underline hover:text-ink"

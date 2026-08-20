@@ -61,11 +61,19 @@
 	// provider selects the widget; siteKey is the public render key (managed providers
 	// only — Altcha needs none). Both come from the instance auth-methods config. The
 	// parent only mounts this when provider is a known captcha-enabled value.
-	let { provider, siteKey }: { provider: string; siteKey: string } = $props();
+	// `token` is bindable so the enclosing form can reflect verification state next to
+	// its actions: empty = not verified. The widget hooks the form's submit and blocks
+	// it silently when unverified (and it auto-resets after each submit), so an action
+	// that needs it must show its state rather than wait for a refusal event that never
+	// fires (#246).
+	let {
+		provider,
+		siteKey,
+		token = $bindable('')
+	}: { provider: string; siteKey: string; token?: string } = $props();
 
 	// The resolved challenge token, surfaced to the enclosing <form> through a hidden
 	// input named captcha_token (the field the reserve action reads).
-	let token = $state('');
 	let container = $state<HTMLDivElement | null>(null);
 
 	const managedConfig = $derived(captchaProviders[provider]);
@@ -153,7 +161,11 @@
 
 {#if active}
 	<div class="mt-4" data-testid="captcha-widget" data-provider={provider}>
-		<p class="mb-1 text-xs text-gray-500">Please complete the anti-bot check to reserve.</p>
+		{#if !token}
+			<p class="mb-2 font-ui text-ui text-ink-muted">
+				Please complete the anti-bot check to reserve.
+			</p>
+		{/if}
 		<div bind:this={container}></div>
 		<input type="hidden" name="captcha_token" value={token} />
 	</div>
