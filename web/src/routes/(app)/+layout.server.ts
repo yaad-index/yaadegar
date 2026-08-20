@@ -3,7 +3,7 @@ import { backendClient } from '$lib/server/api';
 import { clearSession } from '$lib/server/session';
 import type { LayoutServerLoad } from './$types';
 
-export const load: LayoutServerLoad = async ({ locals, cookies }) => {
+export const load: LayoutServerLoad = async ({ locals, cookies, url }) => {
 	if (!locals.token) redirect(303, '/login');
 
 	// The backend is the source of truth for the session; a 401 means the token is
@@ -12,7 +12,7 @@ export const load: LayoutServerLoad = async ({ locals, cookies }) => {
 	const { data, error: err, response } = await client.GET('/api/v1/me');
 	if (err || !data) {
 		if (response.status === 401) {
-			clearSession(cookies);
+			clearSession(cookies, url.protocol === 'https:');
 			redirect(303, '/login');
 		}
 		error(response.status || 500, 'Could not load your account.');
