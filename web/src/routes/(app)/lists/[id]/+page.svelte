@@ -130,8 +130,9 @@
 
 <svelte:head><title>{data.list.title} · Yaadegar</title></svelte:head>
 
-<a href={resolve('/')} class="font-ui text-ui text-ink-muted transition-colors hover:text-ink"
-	>← Your lists</a
+<a
+	href={resolve('/(app)/lists')}
+	class="font-ui text-ui text-ink-muted transition-colors hover:text-ink">← Your lists</a
 >
 <h1 class="display-list-title mt-1 font-display text-ink-heading">{data.list.title}</h1>
 {#if data.descriptionHtml}

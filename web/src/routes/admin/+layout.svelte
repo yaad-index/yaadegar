@@ -15,7 +15,7 @@
 			<div class="mx-auto flex max-w-3xl items-center justify-between p-4">
 				<a href={resolve('/admin')} class="font-bold">Yaadegar admin</a>
 				<div class="flex items-center gap-3 text-sm">
-					<a href={resolve('/')} class="text-gray-300 underline">Dashboard</a>
+					<a href={resolve('/(app)/lists')} class="text-gray-300 underline">Dashboard</a>
 					<span class="text-gray-300">{data.admin.name}</span>
 					<form method="post" action="/logout">
 						<button class="text-gray-300 underline">Sign out</button>

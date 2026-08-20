@@ -14,7 +14,7 @@
 <svelte:head><title>Settings · Yaadegar</title></svelte:head>
 
 <a
-	href={resolve('/')}
+	href={resolve('/(app)/lists')}
 	class="font-ui text-ui text-primary transition-colors hover:text-primary-hover"
 	>← Back to dashboard</a
 >
