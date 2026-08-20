@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
-	import { txtRecordName } from '$lib/domains';
+	import DomainDnsRecords from '$lib/components/DomainDnsRecords.svelte';
 	import Field from '$lib/components/Field.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import type { PageData, ActionData } from './$types';
@@ -204,18 +204,11 @@
 							     rather than redrawn (#234). -->
 							<div class="mt-3 space-y-2 font-ui text-ui">
 								<p class="text-ink-muted">Publish these DNS records, then verify:</p>
-								<dl
-									class="space-y-2 rounded-card border border-line bg-surface p-3 font-mono text-chip"
-								>
-									<div>
-										<dt class="text-ink-muted">CNAME · {domain.hostname}</dt>
-										<dd class="break-all text-ink">{domain.cname_target}</dd>
-									</div>
-									<div>
-										<dt class="text-ink-muted">TXT · {txtRecordName(domain.hostname ?? '')}</dt>
-										<dd class="break-all text-ink">{domain.verification_token}</dd>
-									</div>
-								</dl>
+								<DomainDnsRecords
+									hostname={domain.hostname}
+									cnameTarget={domain.cname_target}
+									verificationToken={domain.verification_token}
+								/>
 								{#if form?.verifiedId === domain.id && form?.nowVerified === false}
 									<p class="text-amber-700">
 										Not verified yet — DNS changes can take a while to propagate. Try again shortly.
@@ -226,9 +219,13 @@
 
 						<div class="mt-3 flex gap-2">
 							{#if !domain.verified}
+								<!-- Verify is gated on a configured CNAME target: without one the domain
+								     can't be served, so verifying it would be inconsistent (#239). -->
 								<form method="post" action="?/verifyDomain" use:enhance>
 									<input type="hidden" name="id" value={domain.id} />
-									<Button type="submit" variant="secondary">Verify</Button>
+									<Button type="submit" variant="secondary" disabled={!domain.cname_target}>
+										Verify
+									</Button>
 								</form>
 							{/if}
 							<form method="post" action="?/removeDomain" use:enhance>
