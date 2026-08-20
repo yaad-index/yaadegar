@@ -90,12 +90,26 @@
 	let giverEmail = $state('');
 	let clientEmailError = $state<string | null>(null);
 
-	// The anti-bot widget (when configured) hooks the form's submit and blocks it while
-	// unverified, and auto-resets after each submit — so after a reserve the guest must
-	// re-verify (click it) before Release / another reserve / withdraw can go through.
-	// An empty token means unverified; reflect it next to each action so a blocked
-	// submit is visible instead of a silent no-op (#246). Note: over plain http the
-	// widget can never verify (no Web Crypto), so every action is correctly disabled.
+	// The anti-bot guard belongs only on the actions that create state on someone else's
+	// list — reserve and pledge — never on undoing your own action or a plain read (#249).
+	// So captchaBlocking gates the Reserve and Pledge submits; Release, Withdraw, and the
+	// refresh ("Check for updates") read submit freely. Release/Withdraw only need this
+	// browser's own capability cookie server-side (a bot can't undo a stranger's
+	// reservation without their cookie), and refresh creates nothing at all.
+	//
+	// An empty token means unverified (still solving, or reset after the previous submit —
+	// the widget auto-resets, #246). Where it gates, reflect it next to the action so a
+	// disabled control explains itself rather than a click that does nothing (#246/#247).
+	// Over plain http the widget can never verify (no Web Crypto), so Reserve/Pledge stay
+	// correctly disabled there.
+	//
+	// The mechanism, pinned by driving a real altcha widget (#246/#249): altcha injects a
+	// `required` checkbox into this form, so while it is unverified `form.checkValidity()`
+	// is false and native constraint validation SILENTLY blocks EVERY submit from the form
+	// — reserve, release, withdraw and refresh alike — dispatching no submit event at all.
+	// That is why the exempt undo/read buttons carry `formnovalidate` (skip validation for
+	// that submission) in addition to dropping the disabled gate: without it, an enabled
+	// Release button would still be swallowed by the shared form's invalid checkbox.
 	let captchaToken = $state('');
 	const captchaBlocking = $derived(!!data.captchaProvider && captchaToken.trim() === '');
 
@@ -427,12 +441,14 @@
 								<div class="flex shrink-0 flex-col items-end gap-1 text-right">
 									{#if reservedByYou}
 										<p class="font-ui text-ui font-medium text-green">✓ You reserved this</p>
+										<!-- Release undoes THIS browser's own reservation (capability cookie only),
+										     so it is exempt from the anti-bot guard: no disabled state (#249). -->
 										<button
-											class="font-ui text-ui text-primary underline hover:text-primary-hover disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50"
+											class="font-ui text-ui text-primary underline hover:text-primary-hover"
 											formaction="?/release"
+											formnovalidate
 											name="item_id"
-											value={item.id}
-											disabled={captchaBlocking}>Release</button
+											value={item.id}>Release</button
 										>
 									{:else if pledge}
 										<p class="font-ui text-ui font-medium text-green">✓ You're chipping in</p>
@@ -443,18 +459,22 @@
 												>Confirm the group buy →</a
 											>
 										{:else}
+											<!-- Withdraw undoes this browser's own pledge (capability cookie only):
+											     exempt from the anti-bot guard, no disabled state (#249). -->
 											<button
-												class="font-ui text-ui text-primary underline hover:text-primary-hover disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50"
+												class="font-ui text-ui text-primary underline hover:text-primary-hover"
 												formaction="?/withdraw"
+												formnovalidate
 												name="item_id"
-												value={item.id}
-												disabled={captchaBlocking}>Withdraw pledge</button
+												value={item.id}>Withdraw pledge</button
 											>
 										{/if}
+										<!-- Refresh only re-runs load (a read); it creates no state, so it is
+										     exempt from the anti-bot guard too (#249). -->
 										<button
-											class="font-ui text-chip text-ink-muted underline hover:text-ink disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50"
+											class="font-ui text-chip text-ink-muted underline hover:text-ink"
 											formaction="?/refresh"
-											disabled={captchaBlocking}>Check for updates</button
+											formnovalidate>Check for updates</button
 										>
 									{:else if availability === 'available'}
 										<Button
@@ -482,10 +502,11 @@
 											>{availabilityLabel[availability] ?? 'Taken'}</span
 										>
 									{/if}
-									{#if captchaBlocking && (reservedByYou || pledge || availability === 'available')}
-										<!-- The anti-bot widget silently blocks the form submit while unverified;
-										     surface it next to the action so a disabled control explains itself,
-										     rather than a click that does nothing (#246). -->
+									{#if captchaBlocking && !reservedByYou && !pledge && availability === 'available'}
+										<!-- Reserve is disabled while the anti-bot check is unverified; surface it
+										     so the disabled control explains itself instead of a click that does
+										     nothing (#246/#247). Only the gated actions (reserve here, pledge in the
+										     chip-in form) carry this — Release/Withdraw/refresh are exempt (#249). -->
 										<span class="font-ui text-chip text-ink-muted">
 											Complete the anti-bot check above first.
 										</span>
@@ -568,6 +589,15 @@
 											onclick={() => (openPledge = null)}>Cancel</button
 										>
 									</div>
+									{#if captchaBlocking}
+										<!-- Pledge creates state on someone else's list, so it stays gated; surface
+										     the disabled Pledge button here too so it explains itself rather than a
+										     silent no-op (#246/#247) — including the co-buying chip-in, which the
+										     item-row note above does not cover. -->
+										<p class="mt-2 font-ui text-chip text-ink-muted">
+											Complete the anti-bot check above first.
+										</p>
+									{/if}
 								</div>
 							{/if}
 						</li>

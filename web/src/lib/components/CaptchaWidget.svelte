@@ -62,10 +62,14 @@
 	// only — Altcha needs none). Both come from the instance auth-methods config. The
 	// parent only mounts this when provider is a known captcha-enabled value.
 	// `token` is bindable so the enclosing form can reflect verification state next to
-	// its actions: empty = not verified. The widget hooks the form's submit and blocks
-	// it silently when unverified (and it auto-resets after each submit), so an action
-	// that needs it must show its state rather than wait for a refusal event that never
-	// fires (#246).
+	// its actions: empty = not verified. The widget solves on mount (auto="onload") and
+	// auto-resets after each submit, so after one submit `token` is briefly empty again.
+	// While unverified, altcha's injected `required` checkbox makes the enclosing
+	// form invalid, so native constraint validation SILENTLY blocks every submit from
+	// that form (no submit event fires) — the #246 no-op. The form therefore both gates
+	// the verification-required actions with a disabled control (and shows why), and lets
+	// the exempt undo/read actions bypass validation via `formnovalidate` (#249). (This is
+	// not altcha's own submit hook, which only preventDefaults under auto="onsubmit".)
 	let {
 		provider,
 		siteKey,
