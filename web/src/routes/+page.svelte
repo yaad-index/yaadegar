@@ -26,6 +26,31 @@
 			state: 'available' as const
 		}
 	];
+
+	// The four "how it works" steps; step 3 is emphasised (filled number badge + border).
+	const steps = [
+		{
+			n: 1,
+			title: 'Make your wishlist',
+			body: 'Write down whatever makes your heart sing. Add names, links, and optional photos.'
+		},
+		{
+			n: 2,
+			title: 'Share the link',
+			body: 'Send your private list URL to friends, family, or publish it. No authentication wall for them.'
+		},
+		{
+			n: 3,
+			title: 'Friends reserve secretly',
+			body: "Givers reserve items so duplicates don't happen. The system coordinates without spoiling who did it.",
+			featured: true
+		},
+		{
+			n: 4,
+			title: 'Surprise stays safe',
+			body: 'When you look at your own wishlist, everything looks active. No spoilers, ever.'
+		}
+	];
 </script>
 
 <svelte:head>
@@ -265,6 +290,168 @@
 	</div>
 </section>
 
+<!-- How it works: four steps, step 3 emphasised. -->
+<section id="how-it-works" class="bg-page py-20">
+	<div class="mx-auto max-w-7xl px-6">
+		<div class="text-center">
+			<span
+				class="inline-block rounded-full bg-primary-tint px-3 py-1 font-ui text-chip font-semibold uppercase tracking-wide text-primary"
+			>
+				Simple coordination
+			</span>
+			<h2 class="landing-section-title mt-5 font-display text-ink-heading">
+				The magic lives in the secrecy
+			</h2>
+			<p class="mx-auto mt-4 max-w-2xl font-ui text-[18px] leading-[1.6] text-ink-muted">
+				Setting up your wishlist takes seconds, and coordinating gifts requires zero communication
+				friction.
+			</p>
+		</div>
+
+		<ul class="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+			{#each steps as step (step.n)}
+				<li
+					class={`rounded-2xl border bg-surface p-6 ${step.featured ? 'border-primary ring-1 ring-primary' : 'border-line'}`}
+				>
+					<span
+						class={`flex h-10 w-10 items-center justify-center rounded-lg font-display text-title font-semibold ${step.featured ? 'bg-primary text-white' : 'bg-primary-tint text-primary'}`}
+						aria-hidden="true">{step.n}</span
+					>
+					<h3 class="mt-5 font-display text-title font-semibold text-ink-heading">{step.title}</h3>
+					<p class="mt-2 font-ui text-ui leading-[1.6] text-ink-muted">{step.body}</p>
+				</li>
+			{/each}
+		</ul>
+	</div>
+</section>
+
+<!-- Built differently: three value cards on the accent ground. -->
+<section id="features" class="bg-surface-accent py-20">
+	<div class="mx-auto max-w-7xl px-6">
+		<div class="text-center">
+			<span
+				class="inline-block rounded-full bg-primary-tint px-3 py-1 font-ui text-chip font-semibold uppercase tracking-wide text-primary"
+			>
+				Built differently
+			</span>
+			<h2 class="landing-section-title mt-5 font-display text-ink-heading">
+				Designed for humans, not for trackers
+			</h2>
+			<p class="mx-auto mt-4 max-w-2xl font-ui text-[18px] leading-[1.6] text-ink-muted">
+				Most wishlist platforms exist to sell your search history to advertising brokers. Yaadegar
+				is a clean canvas built for pure, delightful gifting.
+			</p>
+		</div>
+
+		<div class="mt-14 grid gap-5 md:grid-cols-3">
+			<div class="rounded-2xl bg-surface p-7 shadow-sm">
+				<span
+					class="flex h-11 w-11 items-center justify-center rounded-lg bg-primary-tint text-primary"
+					aria-hidden="true"
+				>
+					<svg
+						width="22"
+						height="22"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<circle cx="12" cy="12" r="10" /><path d="m15 9-6 6M9 9l6 6" />
+					</svg>
+				</span>
+				<h3 class="mt-5 font-display text-title font-semibold text-ink-heading">
+					Private &amp; self-hosted
+				</h3>
+				<!-- Deploy line names Docker Compose with SQLite or Postgres; no one-click-deploy
+				     claim, since there is no such artifact. -->
+				<p class="mt-2 font-ui text-ui leading-[1.6] text-ink-muted">
+					Your server, your choices. Deploy with Docker Compose using SQLite or Postgres. Feel
+					secure knowing nobody is packaging your intimate desires for marketing.
+				</p>
+			</div>
+			<div class="rounded-2xl bg-surface p-7 shadow-sm">
+				<span
+					class="flex h-11 w-11 items-center justify-center rounded-lg bg-primary-tint text-primary"
+					aria-hidden="true"
+				>
+					<svg
+						width="22"
+						height="22"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+					</svg>
+				</span>
+				<h3 class="mt-5 font-display text-title font-semibold text-ink-heading">
+					Surprise stays intact
+				</h3>
+				<p class="mt-2 font-ui text-ui leading-[1.6] text-ink-muted">
+					Because Yaadegar hides reservation statuses from the creator, you'll still gasp with
+					genuine joy when you rip the wrapping paper.
+				</p>
+			</div>
+			<div class="rounded-2xl bg-surface p-7 shadow-sm">
+				<span
+					class="flex h-11 w-11 items-center justify-center rounded-lg bg-primary-tint text-primary"
+					aria-hidden="true"
+				>
+					<svg
+						width="22"
+						height="22"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle
+							cx="9"
+							cy="7"
+							r="4"
+						/><path d="m17 8 5 5m0-5-5 5" />
+					</svg>
+				</span>
+				<h3 class="mt-5 font-display text-title font-semibold text-ink-heading">
+					No account needed
+				</h3>
+				<p class="mt-2 font-ui text-ui leading-[1.6] text-ink-muted">
+					Grandparents don't need to learn a new password. Family can instantly click and reserve
+					from any phone without completing a sign-up flow.
+				</p>
+			</div>
+		</div>
+	</div>
+</section>
+
+<!-- Pull quote. -->
+<section class="bg-page py-20">
+	<figure class="mx-auto max-w-4xl px-6 text-center">
+		<svg
+			class="mx-auto h-10 w-10 text-primary-tint"
+			viewBox="0 0 24 24"
+			fill="currentColor"
+			aria-hidden="true"
+		>
+			<path
+				d="M9.5 8C7 8 5 10 5 12.5V18h5.5v-5.5H8c0-1.4 1.1-2.5 2.5-2.5V8zm9 0C16 8 14 10 14 12.5V18h5.5v-5.5H17c0-1.4 1.1-2.5 2.5-2.5V8z"
+			/>
+		</svg>
+		<blockquote class="landing-quote mt-6 font-display text-ink-heading">
+			A gift list shouldn't feel like an invoice. Yaadegar keeps the humanity and playfulness of
+			gift-giving alive, wrapping the process in security.
+		</blockquote>
+	</figure>
+</section>
+
 <style>
 	/* Landing-LOCAL display type (#236 D2): the hero sits above the app's 40px top rung
 	   and is used nowhere else, so it lives here rather than growing the shared scale with
@@ -278,6 +465,31 @@
 	@media (max-width: 640px) {
 		.landing-hero-title {
 			font-size: 38px;
+		}
+	}
+
+	/* Landing-local section heading: 40px/600. The app's shared 40px display role
+	   (.display-title) is 700 weight, so this lighter cut lives here, not on that role. */
+	.landing-section-title {
+		font-size: 40px;
+		font-weight: 600;
+		line-height: 1.15;
+	}
+	@media (max-width: 640px) {
+		.landing-section-title {
+			font-size: 30px;
+		}
+	}
+
+	/* Landing-local pull-quote type: 35px/500, a display size used only here. */
+	.landing-quote {
+		font-size: 35px;
+		font-weight: 500;
+		line-height: 1.35;
+	}
+	@media (max-width: 640px) {
+		.landing-quote {
+			font-size: 24px;
 		}
 	}
 </style>
