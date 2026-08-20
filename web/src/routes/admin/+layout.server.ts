@@ -9,14 +9,14 @@ import type { LayoutServerLoad } from './$types';
 // signed-in owner without the capability → back to the dashboard. Every /admin
 // backend call is still authorized server-side by requireAdmin; this guard only
 // governs what the browser is shown.
-export const load: LayoutServerLoad = async ({ locals, cookies }) => {
+export const load: LayoutServerLoad = async ({ locals, cookies, url }) => {
 	if (!locals.token) redirect(303, '/login');
 
 	const client = backendClient({ host: locals.host, token: locals.token });
 	const { data, error: err, response } = await client.GET('/api/v1/me');
 	if (err || !data) {
 		if (response.status === 401) {
-			clearSession(cookies);
+			clearSession(cookies, url.protocol === 'https:');
 			redirect(303, '/login');
 		}
 		error(response.status || 500, 'Could not load your account.');
