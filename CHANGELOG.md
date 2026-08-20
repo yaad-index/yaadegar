@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.12.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.11.0...yaadegar-v0.12.0) (2026-08-20)
+
+
+### Features
+
+* **web:** add the how-it-works, built-differently, and pull-quote landing sections ([#236](https://github.com/yaad-index/yaadegar/issues/236)) ([#254](https://github.com/yaad-index/yaadegar/issues/254)) ([cf1864e](https://github.com/yaad-index/yaadegar/commit/cf1864e0dd6f727486a3432e3be10375cfe87db4))
+* **web:** add the mobile shell — collapsed header + nav drawer ([#232](https://github.com/yaad-index/yaadegar/issues/232)) ([978d260](https://github.com/yaad-index/yaadegar/commit/978d2609a17bbfe62f3d627dda288fd63afeeb97))
+* **web:** add the public marketing landing page and move the dashboard to /lists ([#236](https://github.com/yaad-index/yaadegar/issues/236)) ([#252](https://github.com/yaad-index/yaadegar/issues/252)) ([30d3d40](https://github.com/yaad-index/yaadegar/commit/30d3d4008c99a5b15990f261ebbfdc070c9c36a1))
+* **web:** credit the designer beneath the landing pull quote ([#236](https://github.com/yaad-index/yaadegar/issues/236)) ([#257](https://github.com/yaad-index/yaadegar/issues/257)) ([1c571fe](https://github.com/yaad-index/yaadegar/commit/1c571fe2aef69b540858df9d6a011ce03e03db3c))
+* **web:** migrate the account area — settings and reserved-by-me ([#237](https://github.com/yaad-index/yaadegar/issues/237)) ([e7846d5](https://github.com/yaad-index/yaadegar/commit/e7846d51c5907c2c11d03e73dbb227ec83b2db8b))
+* **web:** migrate the list Settings tab to the design system ([#230](https://github.com/yaad-index/yaadegar/issues/230)) ([95ceebb](https://github.com/yaad-index/yaadegar/commit/95ceebbeda5d49f8f2527b2b03bffd0b4f2929cb)), closes [#222](https://github.com/yaad-index/yaadegar/issues/222)
+* **web:** migrate the public guest page to the design system ([#245](https://github.com/yaad-index/yaadegar/issues/245)) ([34632c7](https://github.com/yaad-index/yaadegar/commit/34632c7df101f39f23dba8281e298d691442ff6e))
+
+
+### Bug Fixes
+
+* report a source build's version from its embedded VCS commit, not "dev" ([#248](https://github.com/yaad-index/yaadegar/issues/248)) ([5a07b44](https://github.com/yaad-index/yaadegar/commit/5a07b4494c7376dced609c520dbcec2d23fb2981))
+* **web:** clear the session cookie with protocol-derived secure so logout works over plain http ([#240](https://github.com/yaad-index/yaadegar/issues/240)) ([03910a1](https://github.com/yaad-index/yaadegar/commit/03910a1c68c6e60070a697aa98a9fefbbc6e825a))
+* **web:** exempt undo and read actions on the guest page from the anti-bot check ([#249](https://github.com/yaad-index/yaadegar/issues/249)) ([#250](https://github.com/yaad-index/yaadegar/issues/250)) ([a7ff39a](https://github.com/yaad-index/yaadegar/commit/a7ff39a3c5011fb6f03316825bc9a3984c7f258e))
+* **web:** give each cookie a single set/clear owner so their attributes can't drift ([#244](https://github.com/yaad-index/yaadegar/issues/244)) ([052304f](https://github.com/yaad-index/yaadegar/commit/052304fc85e5c6c1ff48d6a71fbabff3c0703fe3))
+* **web:** key display headings by role, not size ([#226](https://github.com/yaad-index/yaadegar/issues/226)) ([8aefaff](https://github.com/yaad-index/yaadegar/commit/8aefaff6e54135f858d9a52a43ac953f0594bb9a))
+* **web:** make the anti-bot widget's silent form-block visible on the guest page ([#247](https://github.com/yaad-index/yaadegar/issues/247)) ([0aa5a65](https://github.com/yaad-index/yaadegar/commit/0aa5a65f2fdf2e448a602db8a83c491339c90f39))
+* **web:** pin the desktop wordmark at 24px, responsive ([#233](https://github.com/yaad-index/yaadegar/issues/233)) ([41a5e2f](https://github.com/yaad-index/yaadegar/commit/41a5e2fe9e93b3fca7c523de724511fbd31353cf))
+* **web:** show an explicit note instead of a blank CNAME value when no target is configured ([#242](https://github.com/yaad-index/yaadegar/issues/242)) ([90e7298](https://github.com/yaad-index/yaadegar/commit/90e7298579ba682a888a1dc0dca3228a15eb2a4c))
+
 ## [0.11.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.10.0...yaadegar-v0.11.0) (2026-08-18)
 
 
