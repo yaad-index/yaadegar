@@ -42,7 +42,7 @@
 		{
 			n: 3,
 			title: 'Friends reserve secretly',
-			body: "Givers claim items so duplicates don't happen. The system coordinates without spoiling who did it.",
+			body: "Givers reserve items so duplicates don't happen. The system coordinates without spoiling who did it.",
 			featured: true
 		},
 		{
@@ -449,9 +449,6 @@
 			A gift list shouldn't feel like an invoice. Yaadegar keeps the humanity and playfulness of
 			gift-giving alive, wrapping the process in security.
 		</blockquote>
-		<figcaption class="mt-6 font-ui text-ui font-semibold uppercase tracking-wide text-ink-muted">
-			— Yaadegar core team
-		</figcaption>
 	</figure>
 </section>
 
