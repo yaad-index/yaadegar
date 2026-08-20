@@ -1,11 +1,20 @@
-# Keep the build context small: the builder only needs the Go sources + module
-# files. Everything below is either not needed to build or regenerated.
-.git
-.github
-*.md
-docs
-Dockerfile
-.dockerignore
-docker-compose.yml
+# Only generated / gitignored paths are excluded — never a tracked file.
+#
+# Two reasons this list is what it is (#225):
+#  - The builder reads the commit from `.git` via Go's -buildvcs so a source build
+#    reports its version. `.git` is therefore kept IN the context (it reaches the
+#    builder stage only; the runtime stage copies just the binary).
+#  - -buildvcs also records whether the built tree was modified. Dropping a TRACKED
+#    file here would make git see a deletion and stamp a clean checkout as "-dirty",
+#    so tracked files (docs, .github, *.md, the compose file, this file) stay in.
+#    The entries below are all gitignored, so excluding them changes nothing git sees
+#    — they are just build artifacts the Go binary does not need, and leaving
+#    node_modules out keeps the context small.
+web/node_modules
+web/build
+web/.svelte-kit
+/yaadegar
 *.db
+*.db-wal
+*.db-shm
 *.db-journal
