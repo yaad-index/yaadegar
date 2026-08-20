@@ -449,6 +449,14 @@
 			A gift list shouldn't feel like an invoice. Yaadegar keeps the humanity and playfulness of
 			gift-giving alive, wrapping the process in security.
 		</blockquote>
+		<figcaption class="mt-6 font-ui text-ui font-semibold uppercase tracking-wide text-ink-muted">
+			Design by <a
+				class="underline decoration-1 underline-offset-2 transition-colors hover:text-ink"
+				href="https://github.com/mahboub8061"
+				rel="noreferrer"
+				target="_blank">Mahboubeh Ghafouri</a
+			> · Built by AI
+		</figcaption>
 	</figure>
 </section>
 
