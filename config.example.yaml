@@ -108,6 +108,18 @@
 # (env YAADEGAR_AUTH_ACCESS_TTL, flag --auth-access-ttl)
 # auth-access-ttl: "12h"
 
+# --- Self-registration (ADR-0012) -----------------------------------------------
+
+# Whether strangers can create their own account, and as what:
+#   disabled        no self-registration (default) — accounts are created only by
+#                   an operator (create-owner) or an admin invite.
+#   givers_only     a self-registered account is a giver: it can reserve gifts but
+#                   cannot create lists.
+#   owners_allowed  a self-registered account is an owner: it can create lists.
+# This is the switch that governs whether the public /register flow is open at all.
+# (env YAADEGAR_REGISTRATION_POLICY, flag --registration-policy)
+# registration-policy: "disabled"
+
 # --- Instance admin (ADR-0010) --------------------------------------------------
 #
 # Admin is a capability on an existing owner account, not a separate login: there is
@@ -195,6 +207,17 @@
 # TLS mode: starttls (587, required), tls (465 implicit), or none (plaintext,
 # loopback only).  (env YAADEGAR_SMTP_TLS_MODE, flag --smtp-tls-mode)
 # smtp-tls-mode: "starttls"
+
+# --- Health probe (the `health` subcommand, not the server) ---------------------
+#
+# This configures `yaadegar health` — the one-shot probe a container healthcheck
+# runs against an already-running server, exiting non-zero if it is unhealthy. It
+# is NOT server configuration. Documented here so the key is discoverable rather
+# than invisible; it takes effect only on the `health` subcommand.
+
+# Health endpoint the `health` subcommand probes.
+# (env YAADEGAR_HEALTH_URL, flag --url)
+# url: "http://127.0.0.1:8080/healthz"
 
 # --- Secrets (environment ONLY — do not set here) -------------------------------
 #
