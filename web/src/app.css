@@ -117,6 +117,17 @@ html {
 		line-height: 1.2;
 		font-weight: 400;
 	}
+	.display-section {
+		/* A section heading INSIDE a page ("The gifts", #235) — subordinate to the
+		   page-title roles above. A role over the existing 24px display-sm rung, NOT a
+		   new size token. Word advance couldn't fix size or weight here (it's a product
+		   of both — a heavier glyph is wider — so 700@23 / 600@24 / 500@25 / 400@25 all
+		   reproduced the export width); cap-height pinned the size to 24 and stem width
+		   the weight to 600 (stem/size 0.833, against the 700 title's 0.175). */
+		@apply text-display-sm;
+		line-height: 1.2;
+		font-weight: 600;
+	}
 }
 
 /*
