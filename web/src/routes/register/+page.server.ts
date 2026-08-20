@@ -1,6 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import { backendClient } from '$lib/server/api';
-import { safeReturnTo } from '$lib/server/returnTo';
+import { safeReturnTo, returnToCookie } from '$lib/server/returnTo';
 import type { Actions, PageServerLoad } from './$types';
 
 // Carry a validated local return path (#170) through registration: the page echoes it
@@ -10,10 +10,6 @@ import type { Actions, PageServerLoad } from './$types';
 export const load: PageServerLoad = ({ url }) => {
 	return { returnTo: safeReturnTo(url.searchParams.get('return_to')) ?? '' };
 };
-
-// returnToCookie is the short-lived stash for the post-verify redirect target. It
-// outlives the "check your email" round-trip but is scoped tight (httpOnly, lax).
-const returnToCookie = 'return_to';
 
 export const actions: Actions = {
 	// Start email self-registration (ADR-0012 cut 1a). The backend is enumeration-safe:
@@ -52,13 +48,7 @@ export const actions: Actions = {
 		// mirrors the verification link's own lifetime.
 		const returnTo = safeReturnTo(url.searchParams.get('return_to'));
 		if (returnTo) {
-			cookies.set(returnToCookie, returnTo, {
-				path: '/',
-				httpOnly: true,
-				sameSite: 'lax',
-				maxAge: 3600,
-				secure: url.protocol === 'https:'
-			});
+			returnToCookie.set(cookies, returnTo, { maxAge: 3600, secure: url.protocol === 'https:' });
 		}
 
 		// Enumeration-neutral: the same confirmation whether the email was new or already

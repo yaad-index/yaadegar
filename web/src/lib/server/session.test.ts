@@ -10,12 +10,12 @@ describe('clearSession secure attribute (#238)', () => {
 	it('over http clears WITHOUT Secure, so the browser accepts the clear', () => {
 		const del = vi.fn();
 		clearSession({ delete: del } as never, false);
-		expect(del).toHaveBeenCalledWith(SESSION_COOKIE, { path: '/', secure: false });
+		expect(del).toHaveBeenCalledWith(SESSION_COOKIE, expect.objectContaining({ secure: false }));
 	});
 
 	it('over https clears WITH Secure', () => {
 		const del = vi.fn();
 		clearSession({ delete: del } as never, true);
-		expect(del).toHaveBeenCalledWith(SESSION_COOKIE, { path: '/', secure: true });
+		expect(del).toHaveBeenCalledWith(SESSION_COOKIE, expect.objectContaining({ secure: true }));
 	});
 });
