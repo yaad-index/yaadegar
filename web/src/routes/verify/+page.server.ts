@@ -1,7 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { backendClient } from '$lib/server/api';
 import { setSession } from '$lib/server/session';
-import { safeReturnTo } from '$lib/server/returnTo';
+import { safeReturnTo, returnToCookie } from '$lib/server/returnTo';
 import type { Actions, PageServerLoad } from './$types';
 
 // The verification token arrives in the emailed link's ?token=. We deliberately do
@@ -35,8 +35,8 @@ export const actions: Actions = {
 		// If registration started from a list that needs an account (#170), the register
 		// step stashed a return path; consume it once and land back there. Validated to a
 		// local path, so a tampered cookie can't become an open redirect.
-		const returnTo = safeReturnTo(cookies.get('return_to'));
-		cookies.delete('return_to', { path: '/' });
+		const returnTo = safeReturnTo(returnToCookie.read(cookies));
+		returnToCookie.clear(cookies, { secure: url.protocol === 'https:' });
 		redirect(303, returnTo ?? '/');
 	}
 };

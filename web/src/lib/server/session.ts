@@ -1,8 +1,18 @@
 import type { Cookies } from '@sveltejs/kit';
+import { defineCookie } from './cookies';
 
 // The owner session cookie holds the JWT. It is httpOnly (never exposed to client
-// JS), lax-samesite, and secure over https (ADR-0006 §4).
+// JS), lax-samesite, and secure over https (ADR-0006 §4). Its set and clear go
+// through one owner (defineCookie) so their attributes — including `secure`, the
+// axis #238 got wrong — cannot drift apart. `secure` is derived from the request
+// protocol by every caller and passed to both set and clear.
 export const SESSION_COOKIE = 'yaadegar_session';
+
+const sessionCookie = defineCookie(SESSION_COOKIE, {
+	path: '/',
+	httpOnly: true,
+	sameSite: 'lax'
+});
 
 export function setSession(
 	cookies: Cookies,
@@ -10,25 +20,13 @@ export function setSession(
 	maxAgeSeconds: number,
 	secure: boolean
 ) {
-	cookies.set(SESSION_COOKIE, token, {
-		path: '/',
-		httpOnly: true,
-		sameSite: 'lax',
-		secure,
-		maxAge: maxAgeSeconds
-	});
+	sessionCookie.set(cookies, token, { maxAge: maxAgeSeconds, secure });
 }
 
-// Clearing must carry the SAME `secure` as the cookie was set with — derived from
-// the request protocol, exactly like setSession — not SvelteKit's default. The
-// default is Secure for any non-localhost host, so over plain http (e.g. the
-// docker-compose LAN demo) the clear cookie would be Secure, the browser would
-// refuse it, and the session cookie (set without Secure) would survive: logout
-// silently leaves you signed in. Over https both are Secure and it already worked.
 export function clearSession(cookies: Cookies, secure: boolean) {
-	cookies.delete(SESSION_COOKIE, { path: '/', secure });
+	sessionCookie.clear(cookies, { secure });
 }
 
 export function readSession(cookies: Cookies): string | undefined {
-	return cookies.get(SESSION_COOKIE);
+	return sessionCookie.read(cookies);
 }

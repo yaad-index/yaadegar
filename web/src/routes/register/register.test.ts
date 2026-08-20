@@ -7,11 +7,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const post = vi.fn();
 vi.mock('$lib/server/api', () => ({ backendClient: () => ({ POST: post }) }));
-vi.mock('$lib/server/returnTo', () => ({
-	safeReturnTo: (raw?: string | null) =>
-		raw && raw.startsWith('/') && !raw.startsWith('//') && !raw.startsWith('/\\') ? raw : null
-}));
-
+// Resolve the real returnTo module (safeReturnTo + returnToCookie) under its $lib
+// specifier, which vitest can't alias-resolve for a route test on its own. Using the
+// real module — not a hand-copied stub — so the test exercises the actual cookie
+// owner and can't drift from it (the whole point of #243).
+vi.mock('$lib/server/returnTo', async () => await import('../../lib/server/returnTo'));
 import { actions } from './+page.server';
 
 interface Cookies {

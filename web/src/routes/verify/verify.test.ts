@@ -9,11 +9,10 @@ vi.mock('$lib/server/api', () => ({ backendClient: () => ({ POST: post }) }));
 
 const setSession = vi.fn();
 vi.mock('$lib/server/session', () => ({ setSession: (...args: unknown[]) => setSession(...args) }));
-vi.mock('$lib/server/returnTo', () => ({
-	safeReturnTo: (raw?: string | null) =>
-		raw && raw.startsWith('/') && !raw.startsWith('//') && !raw.startsWith('/\\') ? raw : null
-}));
-
+// Real returnTo module (safeReturnTo + returnToCookie) under its $lib specifier —
+// vitest can't alias-resolve it for a route test, and a hand-copied stub would be
+// exactly the kind of drift #243 is about.
+vi.mock('$lib/server/returnTo', async () => await import('../../lib/server/returnTo'));
 import { actions } from './+page.server';
 
 interface Cookies {
