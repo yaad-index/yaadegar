@@ -23,7 +23,7 @@
 		{
 			name: 'Waffle-Knit Rust Throw Blanket',
 			note: 'Something warm for those autumn evenings on the couch.',
-			state: 'claim' as const
+			state: 'available' as const
 		}
 	];
 </script>
@@ -159,7 +159,7 @@
 					>
 						<rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
 					</svg>
-					yaadegar.gift/sarah-home
+					wishes.example/sarah-home
 				</span>
 			</div>
 			<div class="p-5">
@@ -201,10 +201,13 @@
 											● Reserved
 										</span>
 									{:else}
+										<!-- The available action mirrors the app's own wording ("Reserve it")
+										     and its rose treatment, so the shot doesn't teach a word the product
+										     doesn't use. -->
 										<span
-											class="shrink-0 rounded-card bg-gold-tint px-2 py-0.5 font-ui text-chip text-gold"
+											class="shrink-0 rounded-full bg-primary px-2.5 py-0.5 font-ui text-chip font-medium text-white"
 										>
-											Claim Gift
+											Reserve it
 										</span>
 									{/if}
 								</div>
