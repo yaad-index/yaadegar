@@ -31,7 +31,7 @@
 	let hamburger = $state<HTMLButtonElement | null>(null);
 	let panel = $state<HTMLElement | null>(null);
 
-	const home = resolve('/');
+	const home = resolve('/(app)/lists');
 	type Row = { label: string; href: string; icon: 'gift' | 'lock' | 'shield' | 'gear' };
 	const rows: Row[] = $derived([
 		{ label: 'My lists', href: home, icon: 'gift' },

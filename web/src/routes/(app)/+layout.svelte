@@ -31,6 +31,6 @@
 	/>
 {/snippet}
 
-<PageShell brand="Yaadegar" home={resolve('/')} actions={accountActions}>
+<PageShell brand="Yaadegar" home={resolve('/(app)/lists')} actions={accountActions}>
 	{@render children()}
 </PageShell>
