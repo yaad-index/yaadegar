@@ -1,9 +1,19 @@
-# Build and publish the container image to GHCR (#57).
+# Build and publish the container images to GHCR (#57, #268).
+#
+# Two images, released as a matched pair (ADR-0014): the API (`yaadegar`, from the
+# repo root — the CGO-free static Go binary on distroless) and the web frontend
+# (`yaadegar-web`, from `web/` — adapter-node on a slim Node base). Both are derived
+# from ONE metadata step and one resolved version, so `:0.13.0` denotes the same
+# release on both and they cannot drift apart at the tag level.
 #
 # On a published release, push the versioned tags + `latest` (release-please cuts
 # the releases). On a push to main, push a rolling `main` tag + a short-sha tag for
-# bleeding-edge testing. Images are multi-arch (amd64 + arm64); the binary is
-# CGO-free static so it cross-builds cleanly under buildx.
+# bleeding-edge testing. Images are multi-arch (amd64 + arm64).
+#
+# Neither image is pushed until BOTH have had their version stamp built and read
+# back (release only) — a half-published release that moves `:latest` on one image
+# and not the other is exactly the mismatched pair ADR-0014 exists to prevent, so
+# the verify-both-then-push-both ordering is the requirement, not an optimisation.
 #
 # Auth is the built-in GITHUB_TOKEN against ghcr.io — no PAT or extra secret.
 
@@ -21,6 +31,7 @@ permissions:
 
 env:
   IMAGE: ghcr.io/yaad-index/yaadegar
+  WEB_IMAGE: ghcr.io/yaad-index/yaadegar-web
 
 jobs:
   publish:
@@ -40,7 +51,13 @@ jobs:
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: ${{ env.IMAGE }}
+          # BOTH images from one step, so a single version resolution fans out to an
+          # identical tag set on each — the matched pair is established here, not by
+          # two steps that could diverge. steps.meta.outputs.version is the single
+          # resolved version, image-independent.
+          images: |
+            ${{ env.IMAGE }}
+            ${{ env.WEB_IMAGE }}
           # Versioned + major.minor + latest on release; a rolling branch tag on
           # main; a short-sha tag always (bleeding-edge / traceability).
           #
@@ -60,6 +77,27 @@ jobs:
             org.opencontainers.image.description=API-first, self-hosted gift registry and wishlist.
             org.opencontainers.image.source=https://github.com/yaad-index/yaadegar
             org.opencontainers.image.licenses=MIT
+
+      - name: Split the shared tag set per image
+        id: tags
+        # metadata-action emits every tag for both images, interleaved. Partition it
+        # back into one list per image so each build-push step tags only its own
+        # image — building the API context but tagging it `yaadegar-web` would be the
+        # mismatch we are preventing. The colon after the repo name disambiguates
+        # `yaadegar:` from `yaadegar-web:`.
+        env:
+          ALL_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          api="$(printf '%s\n' "$ALL_TAGS" | grep "^${IMAGE}:" || true)"
+          web="$(printf '%s\n' "$ALL_TAGS" | grep "^${WEB_IMAGE}:" || true)"
+          if [ -z "$api" ] || [ -z "$web" ]; then
+            echo "tag split produced an empty list for one image (#268): api=[$api] web=[$web] — the matched pair cannot be published half-tagged"
+            exit 1
+          fi
+          {
+            echo "api<<TAGS_EOF"; printf '%s\n' "$api"; echo "TAGS_EOF"
+            echo "web<<TAGS_EOF"; printf '%s\n' "$web"; echo "TAGS_EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
@@ -90,23 +128,17 @@ jobs:
           fi
           echo "resolved release version is semver-shaped: $RESOLVED_VERSION"
 
-      # Verify the publish workflow still forwards VERSION into the build BEFORE
-      # anything is pushed (#193). The resolved-value gate above checks the version
-      # string; the post-push read below checks the shipped binary — but neither
-      # notices if this workflow stops forwarding VERSION into the build: the
-      # resolved value stays fine, and the shipped-binary read fires only once
-      # `latest` has already moved. This step builds single-arch with the real
-      # publish build-args and reads the stamp back off the loaded image, so a
-      # dropped build-arg fails here instead of after shipping. Native amd64 +
-      # load only (no QEMU, no push); the layer feeds the gha cache the multi-arch
-      # push below reuses, so the extra cost is one amd64 build on releases only.
-      # This exercises the production build path but supplies its own build-arg, so
-      # it cannot observe whether the push step below still forwards VERSION — that
-      # is the publish-forwards-version job in ci.yml, which reads this file and
-      # asserts the push step keeps its forwarding. Complementary guards: this one
-      # proves the stamp works, that one proves the push step still passes it.
-      # Shape check, release-only, for the same reasons as the two asserts around it.
-      - name: Build single-arch and verify the version stamp before publishing
+      # --- Verify phase (release only): both images' stamps round-trip BEFORE any
+      # push. Each builds single-arch, loads, and reads the stamp back out of the
+      # loaded image; either failure exits the job before the push steps below run,
+      # so a dropped build-arg or broken stamp on EITHER image blocks BOTH pushes.
+      # This is what makes "neither pushed until both verify" true (#268). Native
+      # amd64 + load only (no QEMU, no push); the layers feed the gha cache the
+      # multi-arch pushes reuse, so the extra cost is one amd64 build per image on
+      # releases only. Neither observes whether the push steps still forward VERSION
+      # — that is the publish-forwards-version job in ci.yml, which reads this file.
+
+      - name: Build the API image single-arch and verify its version stamp
         if: github.event_name == 'release'
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
@@ -119,19 +151,51 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Assert the pre-publish image reports a semver version
+      - name: Assert the pre-publish API image reports a semver version
         if: github.event_name == 'release'
         env:
           IMAGE_REF: ${{ env.IMAGE }}:verify-stamp
         run: |
           got="$(docker run --rm "$IMAGE_REF" version)"
           if ! printf '%s\n' "$got" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
-            echo "pre-publish image reports '$got', which is not a semver version (#193): the publish workflow is no longer forwarding VERSION into the build — refusing to push a mislabelled image"
+            echo "pre-publish API image reports '$got', which is not a semver version (#193): the publish workflow is no longer forwarding VERSION into the build — refusing to push a mislabelled image"
             exit 1
           fi
-          echo "pre-publish image reports semver version: $got"
+          echo "pre-publish API image reports semver version: $got"
 
-      - name: Build and push
+      - name: Build the web image single-arch and verify its version stamp
+        if: github.event_name == 'release'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: ./web
+          platforms: linux/amd64
+          load: true
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+          tags: ${{ env.WEB_IMAGE }}:verify-stamp
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Assert the pre-publish web image reports a semver version
+        if: github.event_name == 'release'
+        env:
+          IMAGE_REF: ${{ env.WEB_IMAGE }}:verify-stamp
+        run: |
+          # The web image is a server, not a CLI: read the baked stamp the way the
+          # running server does, off process.env, by overriding the CMD with node.
+          got="$(docker run --rm "$IMAGE_REF" node -e 'process.stdout.write(process.env.YAADEGAR_VERSION || "")')"
+          if ! printf '%s\n' "$got" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
+            echo "pre-publish web image reports '$got', which is not a semver version (#268): the publish workflow is no longer forwarding VERSION into the web build — refusing to push a mismatched pair"
+            exit 1
+          fi
+          echo "pre-publish web image reports semver version: $got"
+
+      # --- Push phase: both images verified above, now build multi-arch and push.
+      # Kept as two adjacent steps so the window between the two pushes is a single
+      # transient-infra failure at worst; the stamp mismatch this ADR targets is
+      # already excluded by the verify phase above.
+
+      - name: Build and push the API image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
@@ -144,25 +208,53 @@ jobs:
           # on a main push it is "main". The Dockerfile defaults it to "dev".
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ steps.tags.outputs.api }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # End-to-end confirmation, after push: read the version back out of the
-      # published image and assert it is semver-shaped (#190). The pre-build gate
-      # above already blocked a bad *resolved value* before publishing; this asks
-      # the different question of whether the stamp carried that value through the
-      # link flags into the shipped binary end to end. Release only, and shape
-      # rather than equality to the tag, for the same reasons as the gate above.
-      - name: Assert the released image reports a semver version
+      - name: Build and push the web image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: ./web
+          platforms: linux/amd64,linux/arm64
+          push: true
+          # Same resolved version as the API push above (#268): the web image bakes
+          # it into YAADEGAR_VERSION as the value the server reports, so a matched
+          # pair carries one version on both. Defaults to "dev" for a source build.
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+          tags: ${{ steps.tags.outputs.web }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # End-to-end confirmation, after push: read the version back out of each
+      # published image and assert it is semver-shaped (#190). The pre-build gates
+      # above already blocked a bad *resolved value* before publishing; these ask
+      # the different question of whether the stamp carried that value through to
+      # the shipped image end to end. Release only, and shape rather than equality
+      # to the tag, for the same reasons as the gates above.
+      - name: Assert the released API image reports a semver version
         if: github.event_name == 'release'
         env:
           IMAGE_REF: ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}
         run: |
           got="$(docker run --rm "$IMAGE_REF" version)"
           if ! printf '%s\n' "$got" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
-            echo "released image reports '$got', which is not a semver version (#190): the resolved publish version is wrong"
+            echo "released API image reports '$got', which is not a semver version (#190): the resolved publish version is wrong"
             exit 1
           fi
-          echo "released image reports semver version: $got"
+          echo "released API image reports semver version: $got"
+
+      - name: Assert the released web image reports a semver version
+        if: github.event_name == 'release'
+        env:
+          IMAGE_REF: ${{ env.WEB_IMAGE }}:${{ steps.meta.outputs.version }}
+        run: |
+          got="$(docker run --rm "$IMAGE_REF" node -e 'process.stdout.write(process.env.YAADEGAR_VERSION || "")')"
+          if ! printf '%s\n' "$got" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
+            echo "released web image reports '$got', which is not a semver version (#268): the resolved publish version did not carry into the web image"
+            exit 1
+          fi
+          echo "released web image reports semver version: $got"
