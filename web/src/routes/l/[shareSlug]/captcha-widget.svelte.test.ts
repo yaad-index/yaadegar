@@ -85,6 +85,15 @@ describe('CaptchaWidget', () => {
 		expect(hidden).toHaveAttribute('type', 'hidden');
 	});
 
+	it('explains the check in action-neutral terms, not just reserve (#251)', () => {
+		// The widget gates both reserve and pledge (#250), so while unverified its notice
+		// must not name only reserve — a visitor who opened "Chip in instead" reads it too.
+		render(CaptchaWidget, { provider: 'hcaptcha', siteKey: 'sk' });
+		const notice = screen.getByText(/complete the anti-bot check/i);
+		expect(notice).toBeInTheDocument();
+		expect(notice.textContent?.toLowerCase()).not.toContain('reserve');
+	});
+
 	it('renders nothing for an unknown provider', () => {
 		render(CaptchaWidget, { provider: 'nope', siteKey: 'sk' });
 		expect(screen.queryByTestId('captcha-widget')).not.toBeInTheDocument();

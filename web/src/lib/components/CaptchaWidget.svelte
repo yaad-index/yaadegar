@@ -167,7 +167,9 @@
 	<div class="mt-4" data-testid="captcha-widget" data-provider={provider}>
 		{#if !token}
 			<p class="mb-2 font-ui text-ui text-ink-muted">
-				Please complete the anti-bot check to reserve.
+				<!-- Action-neutral: this widget gates both reserve and pledge (#250/#251), so a
+				     visitor chipping in reads this notice too — it must not name only reserve. -->
+				Please complete the anti-bot check to continue.
 			</p>
 		{/if}
 		<div bind:this={container}></div>
