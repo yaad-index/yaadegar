@@ -21,6 +21,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Build version of the running API
+         * @description Reports the running API build version — the same value the `version` subcommand and the startup log emit. Unauthenticated and instance-level (not tenant-scoped). It lives under /api/v1/ so it is reachable through the web service's public passthrough (which returns 404 for any path outside that prefix, while the backend port is unpublished), letting a monitoring check poll it to detect a frontend/backend version mismatch (ADR-0014 §3). Distinct from /healthz, which stays a text/plain liveness probe.
+         */
+        get: operations["getVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -937,6 +957,13 @@ export interface components {
             /** @description The tenant's canonical owner-login URL (its subdomain under the base domain). On a custom domain — where both methods are false — the frontend redirects owners here. Empty when the base domain is unset. */
             login_url: string;
         };
+        VersionInfo: {
+            /**
+             * @description The running API build version: a release semver on a published build, a short VCS commit on a source build (with a "-dirty" suffix when the tree was modified), or "unknown" when neither is available. The same value the `version` subcommand and the startup log report.
+             * @example 0.13.0
+             */
+            version: string;
+        };
         NullableBool: boolean | null;
         NullableInt: number | null;
         NullableString: string | null;
@@ -1301,6 +1328,26 @@ export interface operations {
                 };
                 content: {
                     "text/plain": string;
+                };
+            };
+        };
+    };
+    getVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The running API build version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionInfo"];
                 };
             };
         };

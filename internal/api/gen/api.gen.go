@@ -849,6 +849,12 @@ type User struct {
 // UserRole The account's tenant role (ADR-0009): owner ⊇ giver (an owner may give, a giver owns no lists). The frontend uses it to land a giver on their reserver dashboard rather than the owner "your lists" page (ADR-0012).
 type UserRole string
 
+// VersionInfo defines model for VersionInfo.
+type VersionInfo struct {
+	// Version The running API build version: a release semver on a published build, a short VCS commit on a source build (with a "-dirty" suffix when the tree was modified), or "unknown" when neither is available. The same value the `version` subcommand and the startup log report.
+	Version string `json:"version"`
+}
+
 // ItemId defines model for ItemId.
 type ItemId = string
 
@@ -1127,6 +1133,9 @@ type ServerInterface interface {
 	// UpdateTenantSettings Update the owner's tenant settings
 	// (PATCH /api/v1/settings)
 	UpdateTenantSettings(w http.ResponseWriter, r *http.Request)
+	// GetVersion Build version of the running API
+	// (GET /api/v1/version)
+	GetVersion(w http.ResponseWriter, r *http.Request)
 	// GetHealthz Liveness probe
 	// (GET /healthz)
 	GetHealthz(w http.ResponseWriter, r *http.Request)
@@ -1983,6 +1992,20 @@ func (siw *ServerInterfaceWrapper) UpdateTenantSettings(w http.ResponseWriter, r
 	handler.ServeHTTP(w, r)
 }
 
+// GetVersion operation middleware
+func (siw *ServerInterfaceWrapper) GetVersion(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetVersion(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetHealthz operation middleware
 func (siw *ServerInterfaceWrapper) GetHealthz(w http.ResponseWriter, r *http.Request) {
 
@@ -2386,6 +2409,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	}
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/healthz", wrapper.GetHealthz)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/version", wrapper.GetVersion)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/login", wrapper.Login)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/auth/methods", wrapper.GetAuthMethods)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/public/captcha/challenge", wrapper.GetCaptchaChallenge)
@@ -4677,6 +4701,27 @@ func (response UpdateTenantSettings403ApplicationProblemPlusJSONResponse) VisitU
 	return err
 }
 
+type GetVersionRequestObject struct {
+}
+
+type GetVersionResponseObject interface {
+	VisitGetVersionResponse(w http.ResponseWriter) error
+}
+
+type GetVersion200JSONResponse VersionInfo
+
+func (response GetVersion200JSONResponse) VisitGetVersionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetHealthzRequestObject struct {
 }
 
@@ -5525,6 +5570,9 @@ type StrictServerInterface interface {
 	// UpdateTenantSettings Update the owner's tenant settings
 	// (PATCH /api/v1/settings)
 	UpdateTenantSettings(ctx context.Context, request UpdateTenantSettingsRequestObject) (UpdateTenantSettingsResponseObject, error)
+	// GetVersion Build version of the running API
+	// (GET /api/v1/version)
+	GetVersion(ctx context.Context, request GetVersionRequestObject) (GetVersionResponseObject, error)
 	// GetHealthz Liveness probe
 	// (GET /healthz)
 	GetHealthz(ctx context.Context, request GetHealthzRequestObject) (GetHealthzResponseObject, error)
@@ -6603,6 +6651,30 @@ func (sh *strictHandler) UpdateTenantSettings(w http.ResponseWriter, r *http.Req
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateTenantSettingsResponseObject); ok {
 		if err := validResponse.VisitUpdateTenantSettingsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetVersion operation middleware
+func (sh *strictHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
+	var request GetVersionRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetVersion(ctx, request.(GetVersionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetVersion")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetVersionResponseObject); ok {
+		if err := validResponse.VisitGetVersionResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

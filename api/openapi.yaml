@@ -56,6 +56,27 @@ paths:
             text/plain:
               schema: { type: string, example: "ok" }
 
+  /api/v1/version:
+    get:
+      operationId: getVersion
+      tags: [ops]
+      summary: Build version of the running API
+      description: >
+        Reports the running API build version — the same value the `version`
+        subcommand and the startup log emit. Unauthenticated and instance-level
+        (not tenant-scoped). It lives under /api/v1/ so it is reachable through the
+        web service's public passthrough (which returns 404 for any path outside
+        that prefix, while the backend port is unpublished), letting a monitoring
+        check poll it to detect a frontend/backend version mismatch (ADR-0014 §3).
+        Distinct from /healthz, which stays a text/plain liveness probe.
+      security: []
+      responses:
+        "200":
+          description: The running API build version.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VersionInfo" }
+
   /api/v1/auth/login:
     post:
       operationId: login
@@ -1588,6 +1609,19 @@ components:
             The tenant's canonical owner-login URL (its subdomain under the base
             domain). On a custom domain — where both methods are false — the
             frontend redirects owners here. Empty when the base domain is unset.
+
+    VersionInfo:
+      type: object
+      required: [version]
+      properties:
+        version:
+          type: string
+          description: >
+            The running API build version: a release semver on a published build, a
+            short VCS commit on a source build (with a "-dirty" suffix when the tree
+            was modified), or "unknown" when neither is available. The same value the
+            `version` subcommand and the startup log report.
+          example: "0.13.0"
 
     # Three-state nullable wrappers for PATCH override fields (#111): they map to
     # oapi-codegen/nullable.Nullable[T], which distinguishes an absent field (leave

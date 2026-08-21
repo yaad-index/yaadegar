@@ -17,11 +17,16 @@ import (
 func (s *Server) resolveTenant(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// /healthz is host-agnostic ops; /admin is the instance-level admin surface
-		// and is deliberately NOT tenant-scoped (ADR-0010). The OAuth
-		// endpoints (ADR-0008) are host-agnostic too: start/callback run on the fixed
-		// redirect host (no tenant) and carry their tenant in the signed state, then
-		// the ticket — so they resolve the tenant themselves, not from the Host.
+		// and is deliberately NOT tenant-scoped (ADR-0010). /api/v1/version is
+		// instance-level too (the build version is the same for every tenant), so it
+		// skips resolution — a monitoring poll must not need a configured tenant host,
+		// and it lives under /api/v1/ only so the web passthrough forwards it
+		// (ADR-0014 §3). The OAuth endpoints (ADR-0008) are host-agnostic too:
+		// start/callback run on the fixed redirect host (no tenant) and carry their
+		// tenant in the signed state, then the ticket — so they resolve the tenant
+		// themselves, not from the Host.
 		if r.URL.Path == "/healthz" ||
+			r.URL.Path == "/api/v1/version" ||
 			strings.HasPrefix(r.URL.Path, "/admin/") ||
 			strings.HasPrefix(r.URL.Path, "/api/v1/auth/oauth/") {
 			next.ServeHTTP(w, r)
@@ -105,6 +110,7 @@ func (s *Server) tenantForHost(ctx context.Context, host string) (storage.Tenant
 func (s *Server) requireOwner(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/api/v1/") ||
+			r.URL.Path == "/api/v1/version" ||
 			strings.HasPrefix(r.URL.Path, "/api/v1/auth/") ||
 			strings.HasPrefix(r.URL.Path, "/api/v1/public/") {
 			next.ServeHTTP(w, r)

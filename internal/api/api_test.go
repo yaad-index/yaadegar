@@ -85,14 +85,20 @@ type captchaConfig struct {
 // newHarnessCaptcha builds a harness with a captcha verifier configured, for the
 // low-trust reserve-gate tests.
 func newHarnessCaptcha(t *testing.T, cc captchaConfig) *harness {
-	return newHarnessFull(t, nil, false, "", cc)
+	return newHarnessFull(t, nil, false, "", cc, "")
 }
 
 func newHarnessOpts(t *testing.T, limiter auth.Limiter, trustForwardedHost bool, registrationPolicy storage.RegistrationPolicy) *harness {
-	return newHarnessFull(t, limiter, trustForwardedHost, registrationPolicy, captchaConfig{})
+	return newHarnessFull(t, limiter, trustForwardedHost, registrationPolicy, captchaConfig{}, "")
 }
 
-func newHarnessFull(t *testing.T, limiter auth.Limiter, trustForwardedHost bool, registrationPolicy storage.RegistrationPolicy, cc captchaConfig) *harness {
+// newHarnessVersion builds a harness whose API reports a set build version, for the
+// GET /api/v1/version tests (ADR-0014 §3).
+func newHarnessVersion(t *testing.T, version string) *harness {
+	return newHarnessFull(t, nil, false, "", captchaConfig{}, version)
+}
+
+func newHarnessFull(t *testing.T, limiter auth.Limiter, trustForwardedHost bool, registrationPolicy storage.RegistrationPolicy, cc captchaConfig, version string) *harness {
 	t.Helper()
 	ctx := context.Background()
 	dsn := "file:" + filepath.Join(t.TempDir(), "api.db")
@@ -128,6 +134,7 @@ func newHarnessFull(t *testing.T, limiter auth.Limiter, trustForwardedHost bool,
 		Captcha:            cc.verifier,
 		CaptchaProvider:    cc.provider,
 		CaptchaSiteKey:     cc.siteKey,
+		Version:            version,
 	})
 	return &harness{t: t, h: h, store: store, tenant: tenant, owner: owner, email: fake, clk: clk, preview: pf, resolver: fr, authSvc: authSvc}
 }
