@@ -15,6 +15,12 @@
 # and not the other is exactly the mismatched pair ADR-0014 exists to prevent, so
 # the verify-both-then-push-both ordering is the requirement, not an optimisation.
 #
+# The publish itself moves the pinnable tags on both images or neither (#272): both
+# are pushed by digest first (layers up, no human-readable tag moved), then the
+# pinnable tags are applied to each digest last, back to back — a manifest write, no
+# build or upload between them. A failure before both digests are up leaves every
+# pinnable tag on the previous release. See the push-phase comment for the details.
+#
 # Auth is the built-in GITHUB_TOKEN against ghcr.io — no PAT or extra secret.
 
 name: docker-publish
@@ -151,17 +157,24 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Assert the pre-publish API image reports a semver version
+      - name: Assert the pre-publish API image reports the resolved version
         if: github.event_name == 'release'
         env:
           IMAGE_REF: ${{ env.IMAGE }}:verify-stamp
+          RESOLVED_VERSION: ${{ steps.meta.outputs.version }}
         run: |
+          # Equality, not shape (#276): a well-formed stamp can still be the WRONG
+          # version — an image tagged 0.13.0 that reports 0.9.9 is semver-shaped and
+          # is exactly the mislabelling this pipeline exists to catch. The stamp must
+          # equal the version the image will be tagged with. (The resolved value was
+          # already shape-checked above; that gate asks the different question of
+          # whether tag resolution produced something usable at all.)
           got="$(docker run --rm "$IMAGE_REF" version)"
-          if ! printf '%s\n' "$got" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
-            echo "pre-publish API image reports '$got', which is not a semver version (#193): the publish workflow is no longer forwarding VERSION into the build — refusing to push a mislabelled image"
+          if [ "$got" != "$RESOLVED_VERSION" ]; then
+            echo "pre-publish API image reports '$got', not the resolved release version '$RESOLVED_VERSION' (#276/#193): VERSION was not forwarded correctly into the build — refusing to push a mislabelled image"
             exit 1
           fi
-          echo "pre-publish API image reports semver version: $got"
+          echo "pre-publish API image reports the resolved version: $got"
 
       - name: Build the web image single-arch and verify its version stamp
         if: github.event_name == 'release'
@@ -176,31 +189,55 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Assert the pre-publish web image reports a semver version
+      - name: Assert the pre-publish web image reports the resolved version
         if: github.event_name == 'release'
         env:
           IMAGE_REF: ${{ env.WEB_IMAGE }}:verify-stamp
+          RESOLVED_VERSION: ${{ steps.meta.outputs.version }}
         run: |
           # The web image is a server, not a CLI: read the baked stamp the way the
           # running server does, off process.env, by overriding the CMD with node.
+          # Equality, not shape (#276): the web stamp must equal the resolved version
+          # so a matched pair carries the SAME correct version on both images, not
+          # merely two independently well-formed ones.
           got="$(docker run --rm "$IMAGE_REF" node -e 'process.stdout.write(process.env.YAADEGAR_VERSION || "")')"
-          if ! printf '%s\n' "$got" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
-            echo "pre-publish web image reports '$got', which is not a semver version (#268): the publish workflow is no longer forwarding VERSION into the web build — refusing to push a mismatched pair"
+          if [ "$got" != "$RESOLVED_VERSION" ]; then
+            echo "pre-publish web image reports '$got', not the resolved release version '$RESOLVED_VERSION' (#276/#268): VERSION was not forwarded correctly into the web build — refusing to push a mismatched pair"
             exit 1
           fi
-          echo "pre-publish web image reports semver version: $got"
+          echo "pre-publish web image reports the resolved version: $got"
 
-      # --- Push phase: both images verified above, now build multi-arch and push.
-      # Kept as two adjacent steps so the window between the two pushes is a single
-      # transient-infra failure at worst; the stamp mismatch this ADR targets is
-      # already excluded by the verify phase above.
+      # --- Push phase (#272): both images verified above, now build multi-arch and
+      # publish them so the pinnable tags (:latest, :X.Y.Z) move on BOTH or NEITHER.
+      #
+      # The two images live in separate GHCR repositories, so a registry has no
+      # cross-repo transaction — a truly atomic pair-publish is not on offer. What IS
+      # on offer, and what a naive two-step `push: true` gave up, is keeping the
+      # *pinnable tag move* last and cheap: previously a transient failure of the web
+      # push AFTER the API push had already moved :latest/:X.Y.Z left a half-published
+      # pair (API advanced, web did not). So instead:
+      #
+      #   1. Push BOTH images by digest (push-by-digest=true). This uploads every
+      #      layer + a content-addressed manifest but moves NO human-readable tag —
+      #      nothing an operator pulls by :latest or :X.Y.Z changes yet. If the web
+      #      digest push fails after the API one, the API repo has only unreferenced
+      #      blobs (garbage-collected), and every pinnable tag still points at the
+      #      previous release. Both-or-neither holds at the layer where it matters.
+      #   2. Apply the pinnable tags to each pushed digest LAST, back to back. The
+      #      layers are already in GHCR, so each is a near-instant manifest write with
+      #      no build and no upload. That two-manifest-write window is the single
+      #      irreducible residual (no cross-repo transaction), down from a full
+      #      multi-arch build+push between the two tag moves.
 
-      - name: Build and push the API image
+      - name: Build and push the API image by digest
+        id: build_api
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: true
+          # push-by-digest: upload layers + a digest-addressed manifest, apply no tag
+          # (the pinnable tags are applied together in the tag-move step below, #272).
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
           # Stamp the resolved version into the binary at link time (#190) so the
           # image reports its build via the `version` subcommand and startup log
           # instead of "dev". On a release this is the version derived from the tag
@@ -208,53 +245,81 @@ jobs:
           # on a main push it is "main". The Dockerfile defaults it to "dev".
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
-          tags: ${{ steps.tags.outputs.api }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build and push the web image
+      - name: Build and push the web image by digest
+        id: build_web
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: ./web
           platforms: linux/amd64,linux/arm64
-          push: true
+          outputs: type=image,name=${{ env.WEB_IMAGE }},push-by-digest=true,name-canonical=true,push=true
           # Same resolved version as the API push above (#268): the web image bakes
           # it into YAADEGAR_VERSION as the value the server reports, so a matched
           # pair carries one version on both. Defaults to "dev" for a source build.
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
-          tags: ${{ steps.tags.outputs.web }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # End-to-end confirmation, after push: read the version back out of each
-      # published image and assert it is semver-shaped (#190). The pre-build gates
-      # above already blocked a bad *resolved value* before publishing; these ask
-      # the different question of whether the stamp carried that value through to
-      # the shipped image end to end. Release only, and shape rather than equality
-      # to the tag, for the same reasons as the gates above.
-      - name: Assert the released API image reports a semver version
+      # Tag move — the last and cheapest operation (#272). Both digests are already
+      # in GHCR from the steps above, so applying the pinnable tags is a manifest
+      # write per image with no build and no layer upload. Ordered API-then-web with
+      # nothing between them, so the both-or-neither window is these two writes.
+      - name: Apply the pinnable tags to the pushed API digest
+        env:
+          TAGS: ${{ steps.tags.outputs.api }}
+          DIGEST: ${{ steps.build_api.outputs.digest }}
+        run: |
+          args=()
+          while IFS= read -r t; do
+            [ -n "$t" ] && args+=(--tag "$t")
+          done <<< "$TAGS"
+          docker buildx imagetools create "${args[@]}" "${IMAGE}@${DIGEST}"
+
+      - name: Apply the pinnable tags to the pushed web digest
+        env:
+          TAGS: ${{ steps.tags.outputs.web }}
+          DIGEST: ${{ steps.build_web.outputs.digest }}
+        run: |
+          args=()
+          while IFS= read -r t; do
+            [ -n "$t" ] && args+=(--tag "$t")
+          done <<< "$TAGS"
+          docker buildx imagetools create "${args[@]}" "${WEB_IMAGE}@${DIGEST}"
+
+      # End-to-end confirmation, after the tags are applied: pull each pinnable tag
+      # and assert the image it now resolves to reports EXACTLY the resolved release
+      # version (#276). Shape is not the question worth asking here — an image tagged
+      # :0.13.0 that reports 0.9.9 is semver-shaped and is precisely the mislabelled
+      # release this must catch. The pre-build gate already blocked an unusable
+      # resolved *value*; these confirm the pinnable tag an operator pulls resolves to
+      # an image stamped with that same value, end to end. Release only.
+      - name: Assert the released API image reports the resolved version
         if: github.event_name == 'release'
         env:
           IMAGE_REF: ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}
+          RESOLVED_VERSION: ${{ steps.meta.outputs.version }}
         run: |
           got="$(docker run --rm "$IMAGE_REF" version)"
-          if ! printf '%s\n' "$got" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
-            echo "released API image reports '$got', which is not a semver version (#190): the resolved publish version is wrong"
+          if [ "$got" != "$RESOLVED_VERSION" ]; then
+            echo "released API image ($IMAGE_REF) reports '$got', not '$RESOLVED_VERSION' (#276/#190): the pinnable tag resolves to a mislabelled image"
             exit 1
           fi
-          echo "released API image reports semver version: $got"
+          echo "released API image reports the resolved version: $got"
 
-      - name: Assert the released web image reports a semver version
+      - name: Assert the released web image reports the resolved version
         if: github.event_name == 'release'
         env:
           IMAGE_REF: ${{ env.WEB_IMAGE }}:${{ steps.meta.outputs.version }}
+          RESOLVED_VERSION: ${{ steps.meta.outputs.version }}
         run: |
           got="$(docker run --rm "$IMAGE_REF" node -e 'process.stdout.write(process.env.YAADEGAR_VERSION || "")')"
-          if ! printf '%s\n' "$got" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
-            echo "released web image reports '$got', which is not a semver version (#268): the resolved publish version did not carry into the web image"
+          if [ "$got" != "$RESOLVED_VERSION" ]; then
+            echo "released web image ($IMAGE_REF) reports '$got', not '$RESOLVED_VERSION' (#276/#268): the resolved publish version did not carry into the web image"
             exit 1
           fi
-          echo "released web image reports semver version: $got"
+          echo "released web image reports the resolved version: $got"

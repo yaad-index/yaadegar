@@ -222,7 +222,7 @@ jobs:
           # spaces) and are kept. `index()` matches the full step name, and the two
           # names differ past their shared prefix, so each matches only its own step.
           fail=0
-          for step in "Build and push the API image" "Build and push the web image"; do
+          for step in "Build and push the API image by digest" "Build and push the web image by digest"; do
             block="$(awk -v want="$step" '
               /^      - name: / { instep = (index($0, want) > 0) ? 1 : 0 }
               /^      #/        { instep = 0 }
