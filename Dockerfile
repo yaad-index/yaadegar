@@ -16,21 +16,28 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-# VERSION stamps the release semver at link time (the publish workflow passes it as a
-# build-arg on a tagged release). Left EMPTY for a source build (e.g. a
-# `docker compose up --build` deployment), which then reports its embedded VCS commit
-# instead of a placeholder — the `.git` copied into THIS builder stage carries it via
-# Go's -buildvcs, and the runtime stage below copies only the binary, so `.git` never
-# reaches the final image (#225).
+# VERSION stamps the version at link time. The publish workflow passes it as a
+# build-arg on a tagged release (a pure semver); a non-empty arg is used verbatim, so
+# the release path keeps emitting exactly that. Left EMPTY for a source build (e.g. a
+# `docker compose up --build` deployment), where it is derived below from the `.git`
+# copied into THIS builder stage. The runtime stage copies only the binary, so `.git`
+# never reaches the final image (#225).
 ARG VERSION=
-# go build reads the commit from the .git in the build context; mark it a safe
+# go build and `git describe` read from the .git in the build context; mark it a safe
 # directory so git does not refuse it as dubious-ownership under the build user.
 RUN git config --global --add safe.directory /src
 # CGO off → a fully static binary (modernc sqlite and pgx are pure Go), so it runs
-# on the distroless static base. -s -w strips debug info to keep it small;
-# -X main.version stamps VERSION (empty on a source build, so main.version — the var
-# in ./cmd/yaadegar — falls back to the embedded VCS commit; "unknown" if neither).
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o /out/yaadegar ./cmd/yaadegar
+# on the distroless static base. -s -w strips debug info to keep it small.
+# On a source build (VERSION empty), derive the nearest release tag so the instance
+# reports a legible version — 0.12.0 at a tag, 0.12.0-3-gabc1234 ahead of one, with a
+# -dirty suffix when the built tree was modified — instead of a bare commit (#259).
+# --match keeps it to release tags (yaadegar-v*) and the prefix is stripped to a pure
+# semver; --always still yields the bare commit when no tag is reachable (a shallow
+# `--depth 1` clone has none), which reads as distinct-from-a-version rather than
+# misleading. A non-empty VERSION (the publish path) wins untouched.
+RUN VERSION="${VERSION:-$(git describe --tags --always --dirty --match 'yaadegar-v*' 2>/dev/null)}"; \
+    VERSION="${VERSION#yaadegar-v}"; \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o /out/yaadegar ./cmd/yaadegar
 
 # --- runtime ---
 # gcr.io/distroless/static-debian12:nonroot
