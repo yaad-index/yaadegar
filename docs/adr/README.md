@@ -89,8 +89,11 @@ supersedes the old one (and mark the old one `Superseded by ADR-XXXX`).
   the API's distroless single-binary runtime and the unambiguous `exec app yaadegar`
   seeding path; both images built and pushed in one workflow run from one metadata step
   so a matched pair is the default, with the #190/#193 stamp guards extended to the web
-  image and neither pushed until both verify; a `version` field on `/healthz` plus a
-  startup read in the web service so skew is loud rather than silent (logs, does not
-  refuse to start); and a docs compose that CI stands up and asserts serves a site, with
-  the backend port left unpublished because ADR-0004 §7's forwarded-host trust depends on
-  it. Closes #258's design, unblocks #236. **Status: Proposed.**
+  image and neither pushed until both verify; a new unauthenticated `/version` route
+  (deliberately not a field on the `text/plain` `/healthz`, which would be a content-type
+  break for operator probes) that the web service reads at startup so skew is loud rather
+  than silent and externally pollable afterwards, logging rather than refusing to start;
+  and a docs compose that CI stands up and asserts serves a site, with the backend port
+  left unpublished because ADR-0004 §7's forwarded-host trust depends on it. Also keeps an
+  API-only deployment expressible. Closes #258's design, unblocks #236.
+  **Status: Proposed.**
