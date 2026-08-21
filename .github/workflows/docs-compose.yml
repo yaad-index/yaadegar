@@ -12,10 +12,12 @@
 # FIXED, not retried away: a quick start that passes only on a re-run is not one an
 # operator can trust.
 #
-# Tag note (#270): the docs pin a version tag, but no release carries the web image
-# yet, so this proves the WIRING against the rolling :main tag published on each main
-# push. Switching the assertion to the pinned release tag is a follow-up tied to the
-# first release that publishes the web image.
+# Tag note (#275): the 0.13.0 release publishes BOTH images, so this now runs the
+# compose exactly as the docs hand it to a self-hoster — against the pinned version
+# tag its default names (currently :0.13.0), not a rolling :main stand-in. CI thus
+# proves the specific artifact an operator would pull. The pinned default trails the
+# most-recent release until bumped, so on a release event it resolves to an
+# already-published tag rather than the one that release is still publishing.
 
 name: docs-compose
 
@@ -38,9 +40,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       COMPOSE: docker compose -f docs/docker-compose.yml
-      # The docs name a pinned version tag; until a release carries the web image,
-      # prove the wiring against the rolling :main tag (see the header note).
-      YAADEGAR_IMAGE_TAG: main
+      # No YAADEGAR_IMAGE_TAG override (#275): let the compose use its own pinned
+      # default, so CI pulls the exact tag the docs name (see the header note).
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
