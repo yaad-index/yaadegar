@@ -84,3 +84,13 @@ supersedes the old one (and mark the old one `Superseded by ADR-XXXX`).
   frontend widget shown only when enabled and the tier is low-trust; and a bounded
   fail-closed 5s verify timeout. Fills the `captchaGate` seam, depends on ADR-0007,
   closes #45's design (Altcha PoW deferred to a follow-up cut). **Status: Accepted.**
+- [ADR-0014: Publishing the web image](0014-publish-web-image.md) — publish a second
+  image (`yaadegar-web`) from the `web/` context instead of combining the two, keeping
+  the API's distroless single-binary runtime and the unambiguous `exec app yaadegar`
+  seeding path; both images built and pushed in one workflow run from one metadata step
+  so a matched pair is the default, with the #190/#193 stamp guards extended to the web
+  image and neither pushed until both verify; a `version` field on `/healthz` plus a
+  startup read in the web service so skew is loud rather than silent (logs, does not
+  refuse to start); and a docs compose that CI stands up and asserts serves a site, with
+  the backend port left unpublished because ADR-0004 §7's forwarded-host trust depends on
+  it. Closes #258's design, unblocks #236. **Status: Proposed.**
