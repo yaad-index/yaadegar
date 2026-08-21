@@ -99,6 +99,63 @@ jobs:
           fi
           echo "version stamp round-trips: $got"
 
+  # A source build (no VERSION build-arg) must report the nearest release tag, not a
+  # bare commit (#259). Both cases are asserted against a real image build: with tags
+  # reachable it derives the tag (fetch-depth: 0 pulls them — the default shallow
+  # checkout has none), and with no matching tags — the shallow `git clone --depth 1`
+  # case an operator actually hits — it falls back to a bare commit that reads as
+  # distinct-from-a-version rather than a misleading one. The published release path
+  # still emits a pure semver: that is the version-stamp job above, which passes
+  # VERSION explicitly and so never reaches this derivation.
+  derived-version-stamp:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout with full history and tags
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The default shallow checkout carries no tags, which is exactly the
+          # no-tag case exercised further down — so pull everything here to make the
+          # with-tags assertion non-vacuous.
+          fetch-depth: 0
+
+      - name: Build with no version build-arg
+        run: docker build --build-arg VERSION= --tag yaadegar:derived-tag .
+
+      - name: Assert the source build reports the nearest release tag
+        run: |
+          # Re-derive the expected value exactly as the Dockerfile does, from the same
+          # checkout, so the assertion tracks the build rather than hard-coding a value.
+          want="$(git describe --tags --always --dirty --match 'yaadegar-v*')"
+          want="${want#yaadegar-v}"
+          # Guard against a vacuous pass: if no release tag is reachable, `want` would
+          # be a bare commit and the equality below would hold without testing the tag
+          # path at all. A derived version starts with a digit after the prefix strip.
+          case "$want" in
+            [0-9]*) : ;;
+            *) echo "no release tag reachable in this checkout — fetch-depth: 0 not applied? (#259)"; exit 1 ;;
+          esac
+          got="$(docker run --rm yaadegar:derived-tag version)"
+          if [ "$got" != "$want" ]; then
+            echo "source build reported '$got', want '$want': the nearest-release-tag derivation is broken (#259)"
+            exit 1
+          fi
+          echo "source build reports the release-derived version: $got"
+
+      - name: Assert a build with no reachable tags falls back to a bare commit
+        run: |
+          # Drop the release tags and rebuild: the derivation must fall back to the
+          # bare commit (git describe --always), distinct from a semver rather than a
+          # zero-ish placeholder that would read like a real release.
+          git tag -l 'yaadegar-v*' | xargs -r git tag -d
+          docker build --build-arg VERSION= --tag yaadegar:derived-notag .
+          got="$(docker run --rm yaadegar:derived-notag version)"
+          if printf '%s' "$got" | grep -Eq '^[0-9a-f]{7,40}(-dirty)?$'; then
+            echo "no-tag source build falls back to a bare commit: $got"
+          else
+            echo "no-tag source build reported '$got', want a bare commit hash (#259): the shallow-clone fallback is wrong"
+            exit 1
+          fi
+
   # Observe that the publish workflow still forwards VERSION into the multi-arch
   # build (#193). The release-only pre-publish gate in docker-publish.yml builds
   # its own single-arch image to prove the stamp works end to end, but it supplies

@@ -8,16 +8,28 @@
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	// When self-registration is off (#253) the page shows a not-enabled notice instead
+	// of the form, so the title and heading must stop naming an action the instance
+	// won't perform — "Create an account" over "Registration isn't enabled" reads as a
+	// broken page rather than a closed door. Same condition as the notice branch below,
+	// covering both the loader signal and the action's 403 fallback.
+	const registrationClosed = $derived(form?.disabled || !data.registrationEnabled);
+	const authHeading = $derived(registrationClosed ? 'Registration' : 'Create an account');
 </script>
 
-<svelte:head><title>Create an account · Yaadegar</title></svelte:head>
+<svelte:head><title>{authHeading} · Yaadegar</title></svelte:head>
 
-<AuthPanel heading="Create an account">
+<AuthPanel heading={authHeading}>
 	{#if form?.sent}
 		<p class="rounded-card bg-green-50 px-3 py-2 font-ui text-ui text-green-700" role="status">
 			Check your email to verify your account. The link expires soon and can be used once.
 		</p>
-	{:else if form?.disabled}
+	{:else if registrationClosed}
+		<!-- Shown both up front, when the loader reports the instance policy disables
+		     self-registration (#253), and as the action's 403 fallback — one message so a
+		     visitor who reaches /register by a link, bookmark, or typed path is told the
+		     same thing without first filling a form that can only be refused. -->
 		<p class="rounded-card bg-red-50 px-3 py-2 font-ui text-ui text-red-700" role="alert">
 			Registration isn't enabled on this instance.
 		</p>
@@ -65,7 +77,7 @@
 					? `${resolve('/login')}?return_to=${encodeURIComponent(data.returnTo)}`
 					: resolve('/login')}
 			>
-				Back to sign in
+				Back to log in
 			</a>
 			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		</p>
