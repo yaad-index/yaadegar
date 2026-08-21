@@ -72,18 +72,45 @@ logs in at `http://alice.localhost:3000`.
 > **Never** reuse them for a real deployment — see [Configuration](#configuration)
 > for the values you must override.
 
-### Using the prebuilt image
+### Deploy from the published images (no source checkout)
 
-Multi-arch images (`linux/amd64`, `linux/arm64`) are published to GHCR on each
-release and each push to `main`:
+Two multi-arch images (`linux/amd64`, `linux/arm64`) are published to GHCR as a
+**matched pair** on each release — the API (`ghcr.io/yaad-index/yaadegar`) and the
+web frontend (`ghcr.io/yaad-index/yaadegar-web`). Both carry the same version tag
+for a release, so pinning one version pins a coherent pair (ADR-0014). An
+images-only deployment that ran the API alone would start healthy and serve no
+site, so the frontend is published alongside it rather than left to a source build.
+
+[`docs/docker-compose.yml`](docker-compose.yml) brings up all three services from
+those published images — a source-free quick start:
 
 ```sh
-docker pull ghcr.io/yaad-index/yaadegar:latest
+docker compose -f docs/docker-compose.yml up -d
 ```
 
-To run a published image instead of building locally, point the `app` service's
-`image:` at the tag you want (`vX.Y.Z`, `X.Y`, `latest`, or a short-sha tag) in
-place of `build: .`.
+Pin the release with `YAADEGAR_IMAGE_TAG` (both images move together); it defaults
+to a pinned version in the file:
+
+```sh
+YAADEGAR_IMAGE_TAG=0.13.0 docker compose -f docs/docker-compose.yml up -d
+```
+
+> `YAADEGAR_IMAGE_TAG` selects the image tag only. Do **not** rename it to
+> `YAADEGAR_VERSION` — that is the web image's own build stamp, which the
+> frontend/backend version-skew check reads; overriding it would make that check
+> report the value you set instead of the image's real version.
+
+Seed the first tenant and owner through that same compose (see
+[Bootstrap](#bootstrap-the-first-tenant-owner-and-admin) for the full sequence):
+
+```sh
+docker compose -f docs/docker-compose.yml exec app yaadegar create-tenant --subdomain alice
+```
+
+As with the bundled dev compose, the `app` backend port stays **unpublished** —
+`web` is its sole trusted proxy (ADR-0004 §7) — and the shipped secrets are
+DEV-ONLY placeholders you must override for anything real (see
+[Configuration](#configuration)).
 
 ## Configuration
 
