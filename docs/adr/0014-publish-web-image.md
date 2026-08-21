@@ -78,22 +78,34 @@ Lockstep tagging is a convention that nothing currently enforces: an operator is
 `:latest` on one image and a version on the other, and today nothing would say so. There is a
 `/healthz` endpoint but **no version surface at all**.
 
-- **A new unauthenticated `GET /version` endpoint** reports the API's version, from the same stamp
-  the `version` subcommand reads.
-- **It is deliberately a new route rather than a field on `/healthz`.** `/healthz` returns
-  `text/plain` `ok`; giving it a version field means turning it into JSON, which is a **content-type
-  break** for any operator health check that reads the body, not an additive change. Breaking
-  self-hosters' monitoring to fix a self-hosting bug is the wrong trade, and a liveness probe that
-  also carries build metadata is doing two jobs.
+- **A new unauthenticated `GET /api/v1/version`** on the API reports its version, from the same
+  stamp the `version` subcommand reads.
+- **It is a new route, not a field on `/healthz`.** `/healthz` returns `text/plain` `ok`; giving it
+  a version field means turning it into JSON, which is a **content-type break** for any operator
+  probe that reads the body, not an additive change. Breaking self-hosters' monitoring to fix a
+  self-hosting bug is the wrong trade, and a liveness probe that also carries build metadata is
+  doing two jobs.
+- **It sits under `/api/v1/` because that prefix is what is reachable.** The web service is the only
+  public edge, its passthrough refuses any path outside `/api/v1/` with a 404, and the backend port
+  is unpublished by design (ADR-0004 §7). A bare `/version` would therefore be invisible from
+  outside the compose network and useless to exactly the monitoring that needs it.
 - The **web service reads it once at startup** and, on mismatch with its own stamp, logs an explicit
   error naming both versions.
-- **It logs and continues; it does not refuse to start.** Refusing would convert a cosmetic mismatch
-  during a staged rollout into an outage. The complaint this ADR answers is silence, not tolerance.
-- **A startup log line alone would not be enough**, because it is written once, to a stream nobody
-  may be reading. `/version` is the part that makes skew *externally* observable: an operator's
-  existing uptime check can poll both services and compare, with no access to container logs. The
-  log line is the loud signal at the moment of the mistake; the endpoint is what can be monitored
-  continuously afterwards.
+- **It logs and continues; it does not refuse to start.** Refusing would convert a mismatch during a
+  staged rollout into a hard outage. The complaint this ADR answers is silence, not tolerance.
+- **A startup log line alone is not enough**, because it is written once to a stream nobody may be
+  reading. So the **web service also serves `GET /version`, reporting both its own version and the
+  backend's as a pair.** One unauthenticated poll from an existing uptime check then shows skew
+  directly, rather than requiring an operator to fetch two endpoints and compare them by eye.
+
+### 3a. Skew is a functional failure, not a wrong label
+
+Worth stating plainly, because it sets how loudly this deserves to be treated: the web service is
+not merely a static frontend, it is **the public edge for the API** (#145). A mismatched pair is
+therefore a **contract** mismatch — a frontend calling endpoints the backend no longer serves the
+same way yields broken server-rendered pages, not a cosmetic version string. That raises the value
+of detection and is the reason §3 spends a route on it, while leaving the log-and-continue choice
+intact: a rollout window is still better served by a loud instance than by a dead one.
 
 ### 4. The documented compose is executed before it is published
 
@@ -130,11 +142,13 @@ A quick-start compose is copy-pasted rather than read, so it has to be **run**, 
   consumer is the `health` CLI subcommand used as the container healthcheck, and it reads only the
   status code — but operators' own probes are not in this repository and may well read the body,
   which is why the version surface is a separate route.
-- **`/version` is a new unauthenticated surface that discloses the running build**, which narrows an
-  attacker's search for applicable vulnerabilities. Accepted deliberately: the endpoint exists to be
-  polled by monitoring that holds no credentials, so gating it behind auth would defeat its purpose,
-  and the project is open-source and self-hosted, where the running version is largely inferable
-  anyway. It carries the version and nothing else.
+- **The version endpoints are unauthenticated and disclose the running build**, which narrows an
+  attacker's search for applicable vulnerabilities. Accepted deliberately: they exist to be polled
+  by monitoring that holds no credentials, so gating them behind auth defeats the purpose, and the
+  running version of an open-source self-hosted project is largely inferable anyway. Both carry a
+  version and nothing else. The exposure is also bounded by the topology rather than only by intent:
+  the backend is not externally reachable at all, so what an outsider can see is whatever the web
+  edge chooses to serve.
 - The generated TypeScript client is committed and drift-guarded, so the web image build needs no
   access to the OpenAPI spec and no ordering against the API build.
 - **Any future non-web client inherits `/version` as its compatibility check.** The bundled frontend
