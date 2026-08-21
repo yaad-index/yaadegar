@@ -69,7 +69,7 @@
 					? `${resolve('/login')}?return_to=${encodeURIComponent(data.returnTo)}`
 					: resolve('/login')}
 			>
-				Back to sign in
+				Back to log in
 			</a>
 			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		</p>

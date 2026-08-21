@@ -13,9 +13,9 @@
 	const { form, errors, message, enhance, submitting } = superForm(data.form);
 </script>
 
-<svelte:head><title>Sign in · Yaadegar</title></svelte:head>
+<svelte:head><title>Log in · Yaadegar</title></svelte:head>
 
-<AuthPanel heading="Sign in">
+<AuthPanel heading="Log in">
 	{#if data.oauthError}
 		<!-- Rendered as text: Svelte escapes interpolation, so a crafted oauth_error
 		     value can never inject markup (reflected-XSS guard). -->
@@ -71,7 +71,7 @@
 				bind:value={$form.password}
 				error={$errors.password?.[0]}
 			/>
-			<Button type="submit" full disabled={$submitting}>Sign in</Button>
+			<Button type="submit" full disabled={$submitting}>Log in</Button>
 		</form>
 	{/if}
 
