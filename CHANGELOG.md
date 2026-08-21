@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.13.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.12.0...yaadegar-v0.13.0) (2026-08-21)
+
+
+### Features
+
+* **build:** report the nearest release tag on a source build ([#259](https://github.com/yaad-index/yaadegar/issues/259)) ([6ac1691](https://github.com/yaad-index/yaadegar/commit/6ac169112bbbd1707048939335ee034755e91a84))
+* publish the web image as a matched pair ([#268](https://github.com/yaad-index/yaadegar/issues/268)) ([#271](https://github.com/yaad-index/yaadegar/issues/271)) ([8413408](https://github.com/yaad-index/yaadegar/commit/8413408cf0a0678c934ebbf704067a2053c50cb8))
+* self-hosting compose that CI proves serves a site ([#270](https://github.com/yaad-index/yaadegar/issues/270)) ([#274](https://github.com/yaad-index/yaadegar/issues/274)) ([5fd3aa8](https://github.com/yaad-index/yaadegar/commit/5fd3aa866c2895e693303eb8b446cfa05a8bbc48))
+* version endpoints so a mismatched image pair says so ([#269](https://github.com/yaad-index/yaadegar/issues/269)) ([#273](https://github.com/yaad-index/yaadegar/issues/273)) ([377e63e](https://github.com/yaad-index/yaadegar/commit/377e63ee689413f561b1e2f76747dce3b352d792))
+
+
+### Bug Fixes
+
+* **web:** call the app's own login action "Log in", not "Sign in" ([#204](https://github.com/yaad-index/yaadegar/issues/204)) ([224418c](https://github.com/yaad-index/yaadegar/commit/224418c1f8a6de60a0ce754eb896be9aa3b8fd3c))
+* **web:** read "Registration" when self-registration is off, not "Create an account" ([eff05e9](https://github.com/yaad-index/yaadegar/commit/eff05e9cec8db05839e3400a6559ad7ee379e065))
+* **web:** show a not-enabled state on /register when self-registration is disabled ([#253](https://github.com/yaad-index/yaadegar/issues/253)) ([ab1505b](https://github.com/yaad-index/yaadegar/commit/ab1505b9a4b2c2739c1ed207dc4a12c128051478))
+* **web:** word the anti-bot notice for both reserve and pledge ([#251](https://github.com/yaad-index/yaadegar/issues/251)) ([214c2d3](https://github.com/yaad-index/yaadegar/commit/214c2d3700859f9bc503c6f229a43eb4c08739bc))
+
 ## [0.12.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.11.0...yaadegar-v0.12.0) (2026-08-20)
 
 
