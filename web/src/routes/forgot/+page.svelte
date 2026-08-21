@@ -34,7 +34,7 @@
 
 	{#snippet links()}
 		<p>
-			<a class="text-primary-hover hover:underline" href={resolve('/login')}>Back to sign in</a>
+			<a class="text-primary-hover hover:underline" href={resolve('/login')}>Back to log in</a>
 		</p>
 	{/snippet}
 </AuthPanel>

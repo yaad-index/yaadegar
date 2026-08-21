@@ -37,7 +37,7 @@
 	</form>
 	<p class="mt-1 text-xs text-gray-500">
 		The user is created with no password and emailed a single-use link to set one (or they can sign
-		in with Google). The link expires; a fresh one is available from the sign-in page’s “forgot
+		in with Google). The link expires; a fresh one is available from the log-in page’s “forgot
 		password”.
 	</p>
 </section>
