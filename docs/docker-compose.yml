@@ -1,0 +1,85 @@
+# Self-hosting quick start for Yaadegar, using the PUBLISHED images (#270,
+# ADR-0014 §4) — copy, run, no source checkout. It brings up all three services
+# (web, app, db) from ghcr.io images pinned to one release, so a matched pair
+# (ADR-0014) is what you get by default.
+#
+#   docker compose -f docs/docker-compose.yml up -d
+#   docker compose -f docs/docker-compose.yml exec app yaadegar create-tenant --subdomain alice
+#   docker compose -f docs/docker-compose.yml exec app yaadegar create-owner \
+#     --tenant alice --username alice --password '<initial-password>'
+#
+# Then browse http://alice.localhost:3000. Full guide: docs/self-hosting.md.
+#
+# ⚠️  QUICK START, NOT a hardened production config. The secrets below are
+# intentionally weak, committed placeholders for a local first run — never reuse
+# them for anything real. See docs/self-hosting.md → Configuration for the values
+# you must override (JWT signing secret, Postgres password, base domain, TLS).
+#
+# Pin both images to one release with YAADEGAR_IMAGE_TAG (defaults below). It is
+# deliberately NOT called YAADEGAR_VERSION: that name is the web image's own build
+# stamp, which the frontend/backend skew check reads (ADR-0014 §3). Exporting it to
+# pick a tag would leak into the container and make the mismatch detector report the
+# value you injected instead of the image's real version. Keep the two separate.
+
+services:
+  db:
+    image: postgres:17.2-alpine
+    environment:
+      POSTGRES_USER: yaadegar
+      POSTGRES_PASSWORD: dev-only-postgres-password # DEV ONLY
+      POSTGRES_DB: yaadegar
+    volumes:
+      - yaadegar-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U yaadegar -d yaadegar"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    image: ghcr.io/yaad-index/yaadegar:${YAADEGAR_IMAGE_TAG:-0.13.0}
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      YAADEGAR_STORAGE_DRIVER: postgres
+      YAADEGAR_STORAGE_DSN: postgres://yaadegar:dev-only-postgres-password@db:5432/yaadegar?sslmode=disable
+      # DEV ONLY — a throwaway signing secret so the instance starts locally.
+      YAADEGAR_AUTH_JWT_SECRET: dev-only-insecure-jwt-signing-secret-change-me
+      YAADEGAR_AUTH_PASSWORD_ENABLED: "true"
+      YAADEGAR_BASE_DOMAIN: ${YAADEGAR_BASE_DOMAIN:-localhost}
+      YAADEGAR_HTTP_ADDR: ":8080"
+      # Safe ONLY because the backend port is unpublished and web is its sole
+      # trusted proxy (ADR-0004 §7). Do NOT add a ports: mapping to this service —
+      # publishing 8080 makes X-Forwarded-Host client-spoofable and silently breaks
+      # the tenant-isolation trust model while everything still appears to work.
+      YAADEGAR_TRUST_FORWARDED_HOST: "true"
+    # Intentionally no published ports: the backend is reachable only on the
+    # internal compose network. Seed with `docker compose ... exec app yaadegar ...`.
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/yaadegar", "health"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+      start_period: 5s
+
+  web:
+    image: ghcr.io/yaad-index/yaadegar-web:${YAADEGAR_IMAGE_TAG:-0.13.0}
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      # The backend, over the internal compose network.
+      BACKEND_ORIGIN: http://app:8080
+      # The public origin the browser uses; must match the host you browse to
+      # (SvelteKit CSRF). Override for a real domain.
+      ORIGIN: ${ORIGIN:-http://localhost:3000}
+      PORT: "3000"
+      HOST: 0.0.0.0
+    # The web origin is the only published port — it serves the UI and proxies the
+    # REST API at /api/v1/* through to app.
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+
+volumes:
+  yaadegar-db:

@@ -1,0 +1,107 @@
+# Prove the documented self-hosting compose actually serves a site (#270,
+# ADR-0014 §4). A quick-start compose is copy-pasted rather than read, so it has to
+# be RUN, not reviewed — and asserting that containers merely start is exactly the
+# signal that cannot tell #258 (a healthy API serving no website) apart from a
+# working instance. So this stands up docs/docker-compose.yml end to end and asserts
+# the web service renders a real page and proxies the API.
+#
+# Cost, accepted with eyes open (ADR-0014 §4): this pulls two images, waits on
+# Postgres and the app health gate, and asserts on a rendered response, so it is the
+# slowest and least deterministic job here. It runs only on a release and on changes
+# to the compose or either Dockerfile — not on every push — and a flake here gets
+# FIXED, not retried away: a quick start that passes only on a re-run is not one an
+# operator can trust.
+#
+# Tag note (#270): the docs pin a version tag, but no release carries the web image
+# yet, so this proves the WIRING against the rolling :main tag published on each main
+# push. Switching the assertion to the pinned release tag is a follow-up tied to the
+# first release that publishes the web image.
+
+name: docs-compose
+
+on:
+  release:
+    types: [published]
+  pull_request:
+    paths:
+      - 'docs/docker-compose.yml'
+      - 'Dockerfile'
+      - 'web/Dockerfile'
+      - '.github/workflows/docs-compose.yml'
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  serves-a-site:
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE: docker compose -f docs/docker-compose.yml
+      # The docs name a pinned version tag; until a release carries the web image,
+      # prove the wiring against the rolling :main tag (see the header note).
+      YAADEGAR_IMAGE_TAG: main
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Stand up the documented compose end to end
+        run: |
+          $COMPOSE pull
+          # --wait blocks until the db and app health gates pass (web has no gate and
+          # is only required to be running); a gate that never passes fails the job.
+          $COMPOSE up -d --wait --wait-timeout 150
+
+      - name: Assert the compose serves a site, not just healthy containers
+        run: |
+          # Seed a tenant so the web SSR has one to render for (the documented step).
+          $COMPOSE exec -T app yaadegar create-tenant --subdomain alice
+
+          # The site: the web service must render a real page for the tenant. Asserting
+          # a 200 alone is not enough — an error page is also a 200-shaped body — so
+          # grep the rendered HTML for a marker only a real page carries. curl -f also
+          # fails the job on a non-2xx. Host: routes the tenant through the web edge.
+          html="$(curl -fsS -H 'Host: alice.localhost' http://localhost:3000/login)"
+          if ! printf '%s' "$html" | grep -qi 'yaadegar'; then
+            echo "web served no recognisable page for the tenant (#258/#270): the compose starts but does not serve a site"
+            printf '%s\n' "$html" | head -20
+            exit 1
+          fi
+          echo "web renders a site for the tenant"
+
+          # The public API door: web must proxy /api/v1/* through to the unpublished
+          # app. This is the surface an images-only compose leaves dead when the web
+          # image is missing (#258), so it is asserted, not assumed.
+          curl -fsS -H 'Host: alice.localhost' http://localhost:3000/api/v1/auth/methods >/dev/null
+          echo "web proxies the API through to app"
+
+      # ORDERING-DEPENDENT — keep this step AFTER the site assert above. It infers a
+      # closed port from a failed curl, which would ALSO pass with the whole stack
+      # down; it is sound only because the site assert already proved the stack is up
+      # and fails the job otherwise. Reordering this before that assert would make it
+      # vacuous without looking any different.
+      - name: Assert the backend port is not published
+        run: |
+          # ADR-0004 §7 / ADR-0014 §4: the app port must be reachable only on the
+          # internal compose network. A stray ports: mapping that exposed 8080 would
+          # silently break the forwarded-host trust model, so fail if it is reachable.
+          if curl -fsS --max-time 5 http://localhost:8080/healthz >/dev/null 2>&1; then
+            echo "the app backend answered on a published :8080 (#270): the backend port must stay unpublished"
+            exit 1
+          fi
+          echo "backend port is not published"
+
+      - name: Compose logs on failure
+        if: failure()
+        run: $COMPOSE logs --no-color --tail 100
+
+      - name: Tear down
+        if: always()
+        run: $COMPOSE down -v
