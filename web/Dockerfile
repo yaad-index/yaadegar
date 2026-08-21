@@ -20,6 +20,15 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOST=0.0.0.0
+# Build version, stamped in at build time and reported by the running server
+# (ADR-0014 §2), mirroring the API's -X main.version link-time stamp. The publish
+# workflow passes the resolved release version as this build-arg; a source or local
+# build (docker compose, contributor path) leaves it "dev", which the skew check
+# treats as unstamped rather than as a mismatched release. Not "" — an empty default
+# would make a dropped build-arg indistinguishable from a real build in the
+# round-trip check, the same trap the API's default guards against.
+ARG VERSION=dev
+ENV YAADEGAR_VERSION=${VERSION}
 # The adapter-node server, the pruned production deps, and the manifest it reads.
 COPY --from=build /app/build ./build
 COPY --from=build /app/node_modules ./node_modules

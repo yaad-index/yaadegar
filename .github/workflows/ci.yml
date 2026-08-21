@@ -99,6 +99,38 @@ jobs:
           fi
           echo "version stamp round-trips: $got"
 
+  # The web image's counterpart to version-stamp above (#268): the publish workflow
+  # bakes the resolved version into YAADEGAR_VERSION via a VERSION build-arg, and the
+  # running server reports it off process.env. docker-publish.yml verifies this too,
+  # but only on a release (its verify phase is release-gated), so this asserts it at
+  # PR time — the change that drops the web build-arg fails here, not after a release.
+  web-version-stamp:
+    runs-on: ubuntu-latest
+    env:
+      # Same sentinel rationale as version-stamp: NOT "dev" (the Dockerfile default),
+      # so a dropped build-arg reports "dev" and fails here rather than round-tripping
+      # dev-to-dev and passing while proving nothing.
+      STAMP_VERSION: v0.0.0-citest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Plain single-platform build so the image loads locally and can be run here.
+      # Same accepted Hub-rate-limit flake mode as version-stamp above.
+      - name: Build the web image with an injected version
+        run: docker build --build-arg VERSION="$STAMP_VERSION" --tag yaadegar-web:version-stamp-test ./web
+
+      - name: Assert the web server reports the injected version
+        run: |
+          # Read the stamp the way the running server does — off process.env, by
+          # overriding the CMD with node (the web image is a server, not a CLI).
+          got="$(docker run --rm yaadegar-web:version-stamp-test node -e 'process.stdout.write(process.env.YAADEGAR_VERSION || "")')"
+          if [ "$got" != "$STAMP_VERSION" ]; then
+            echo "web image reports '$got', want '$STAMP_VERSION': the VERSION build-arg no longer bakes into YAADEGAR_VERSION (#268)"
+            exit 1
+          fi
+          echo "web version stamp round-trips: $got"
+
   # A source build (no VERSION build-arg) must report the nearest release tag, not a
   # bare commit (#259). Both cases are asserted against a real image build: with tags
   # reachable it derives the tag (fetch-depth: 0 pulls them — the default shallow
@@ -156,51 +188,58 @@ jobs:
             exit 1
           fi
 
-  # Observe that the publish workflow still forwards VERSION into the multi-arch
-  # build (#193). The release-only pre-publish gate in docker-publish.yml builds
-  # its own single-arch image to prove the stamp works end to end, but it supplies
-  # its own build-arg — so it cannot notice if the *publish* step stops forwarding
-  # the value. Deleting the publish step's build-args block leaves that gate green
-  # (it builds a different image), the resolved-value gate green (it validates a
-  # string), and only the post-push read notices, once `latest` has moved: the
-  # exact after-the-fact shape #193 removes. The two guards are complementary —
-  # the pre-publish gate exercises the production build path, this one observes the
-  # push step keeps its forwarding — and each leaves the other's hole open alone.
-  # This is a text check on the workflow file, scoped to the publish step (the one
-  # named "Build and push") so the pre-publish gate's own build-args block cannot
-  # mask a deleted one. It runs on every PR, failing the change that drops the
-  # forwarding rather than a release.
+  # Observe that BOTH publish steps still forward VERSION into their multi-arch
+  # builds (#193, extended to the matched pair in #268). The release-only pre-publish
+  # gates in docker-publish.yml build their own single-arch images to prove each stamp
+  # works end to end, but they supply their own build-arg — so they cannot notice if a
+  # *publish* step stops forwarding the value. Deleting a publish step's build-args
+  # block leaves that gate green (it builds a different image), the resolved-value gate
+  # green (it validates a string), and only the post-push read notices, once `latest`
+  # has moved: the exact after-the-fact shape #193 removes. The guards are
+  # complementary — the pre-publish gates exercise the production build path, this one
+  # observes the push steps keep their forwarding — and each leaves the other's hole
+  # open alone. This is a text check on the workflow file, scoped to the two push
+  # steps by name so the pre-publish gates' own build-args blocks cannot mask a deleted
+  # one, and it asserts EACH forwards VERSION — a grep that passed on either alone
+  # would let one image ship dev-stamped while the other is correct, which is the
+  # mismatched pair #268 prevents. It runs on every PR, failing the change that drops
+  # the forwarding rather than a release.
   publish-forwards-version:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Assert the publish step forwards the resolved version build-arg
+      - name: Assert both publish steps forward the resolved version build-arg
         run: |
           wf=.github/workflows/docker-publish.yml
-          # Isolate the "Build and push" step: from its `- name:` header until the
-          # next step boundary. That boundary is the next `- name:` header OR the
-          # next step's leading comment (a `#` at the 6-space step indent) — stopping
-          # at the comment too matters here, because comments at this level explain
-          # the forwarding, so over-running into the next step's comment could let a
-          # stray `VERSION=` there satisfy the check. Step-body comments sit deeper
-          # (8+ spaces) and are kept.
-          block="$(awk '
-            /^      - name: / { instep = ($0 ~ /Build and push/) ? 1 : 0 }
-            /^      #/        { instep = 0 }
-            instep           { print }
-          ' "$wf")"
-          if [ -z "$block" ]; then
-            echo "could not locate the publish step (- name: Build and push) in $wf (#193): rename? the forwarding check can no longer find its target"
-            exit 1
-          fi
-          if ! printf '%s\n' "$block" | grep -q 'build-args:'; then
-            echo "publish step has no build-args block — the resolved version is no longer forwarded (#193)"
-            exit 1
-          fi
-          if ! printf '%s\n' "$block" | grep -Eq 'VERSION=.*steps\.meta\.outputs\.version'; then
-            echo "publish step no longer forwards the resolved version as a VERSION build-arg set to steps.meta.outputs.version (#193): a dev-stamped image would ship and only the post-push assert would notice"
-            exit 1
-          fi
-          echo "publish step forwards the resolved version: OK"
+          # Check each named push step independently. Isolate a step: from its
+          # `- name:` header until the next step boundary — the next `- name:` header
+          # OR the next step's leading comment (a `#` at the 6-space step indent).
+          # Stopping at the comment matters because comments at this level explain the
+          # forwarding, so over-running into the next step's comment could let a stray
+          # `VERSION=` there satisfy the check. Step-body comments sit deeper (8+
+          # spaces) and are kept. `index()` matches the full step name, and the two
+          # names differ past their shared prefix, so each matches only its own step.
+          fail=0
+          for step in "Build and push the API image" "Build and push the web image"; do
+            block="$(awk -v want="$step" '
+              /^      - name: / { instep = (index($0, want) > 0) ? 1 : 0 }
+              /^      #/        { instep = 0 }
+              instep            { print }
+            ' "$wf")"
+            if [ -z "$block" ]; then
+              echo "could not locate the publish step (- name: $step) in $wf (#268): renamed? the matched-pair forwarding check can no longer find its target"
+              fail=1; continue
+            fi
+            if ! printf '%s\n' "$block" | grep -q 'build-args:'; then
+              echo "publish step '$step' has no build-args block — the resolved version is no longer forwarded (#193/#268)"
+              fail=1; continue
+            fi
+            if ! printf '%s\n' "$block" | grep -Eq 'VERSION=.*steps\.meta\.outputs\.version'; then
+              echo "publish step '$step' no longer forwards the resolved version as a VERSION build-arg set to steps.meta.outputs.version (#193/#268): a dev-stamped image would ship and only the post-push assert would notice"
+              fail=1; continue
+            fi
+            echo "publish step '$step' forwards the resolved version: OK"
+          done
+          exit "$fail"
