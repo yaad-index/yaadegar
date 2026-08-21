@@ -22,6 +22,7 @@ import (
 type Server struct {
 	store              storage.Store
 	baseDomain         string
+	version            string
 	email              email.Sender
 	clock              clock.Clock
 	previewer          *preview.Previewer
@@ -140,6 +141,11 @@ type Options struct {
 	// SDK and the site key renders it. Empty when captcha is disabled.
 	CaptchaProvider string
 	CaptchaSiteKey  string
+	// Version is the running build version (main's reportedVersion): the release
+	// semver on a published build, else the VCS commit, else "unknown". Served
+	// unauthenticated at GET /api/v1/version so the web edge and monitoring can detect
+	// a mismatched image pair (ADR-0014 §3). Empty is reported as "unknown".
+	Version string
 }
 
 // NewHandler builds the full HTTP handler: the generated strict router wrapped in
@@ -152,6 +158,7 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 	s := &Server{
 		store:               store,
 		baseDomain:          opts.BaseDomain,
+		version:             opts.Version,
 		email:               opts.Email,
 		clock:               opts.Clock,
 		previewer:           opts.Previewer,

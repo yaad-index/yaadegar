@@ -277,6 +277,7 @@ func (c *ServeCmd) Run(cli *CLI) error {
 		Captcha:             captchaVerifier,
 		CaptchaProvider:     c.CaptchaProvider,
 		CaptchaSiteKey:      c.CaptchaSiteKey,
+		Version:             reportedVersion(),
 	})
 
 	// Run the reservation-decay sweeper on a ticker alongside the server.
