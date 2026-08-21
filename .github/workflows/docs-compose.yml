@@ -27,7 +27,10 @@
 # fails on the release event the instant the pinned default no longer names the current
 # release. Auto-bumping the pin instead would make the pulling job race the publish it
 # depends on (the fresh tag is applied late by imagetools), so the split is deliberate:
-# a trailing pin for the job that pulls, a non-pulling assert for currency.
+# a trailing pin for the job that pulls, a non-pulling assert for currency. Consequence,
+# and it is expected: pin-is-current goes red on every release until a follow-up bump PR
+# updates the pin — that red is the signal to open the bump PR, not a check to silence
+# (see the job's own note before touching it).
 
 name: docs-compose
 
@@ -131,6 +134,13 @@ jobs:
   # a release that forgets to bump the docs pin fails loudly on the spot rather than
   # waiting for someone to happen to edit one of the four path-filtered files; and on
   # pull_request, so the bump PR that fixes it can go green.
+  #
+  # EXPECTED, not a flake: this job goes RED on every release event and stays red until a
+  # follow-up PR bumps docs/docker-compose.yml's pin to the just-released version — the
+  # pin must trail for the job that pulls (serves-a-site) yet be current for this one, so
+  # the two are in tension for exactly one bump cycle per release. That red IS the signal
+  # to open the bump PR; it is not a spurious failure. Do not silence it by deleting the
+  # job or loosening the assert — the bump PR is the intended and only correct response.
   pin-is-current:
     runs-on: ubuntu-latest
     steps:
@@ -145,12 +155,17 @@ jobs:
         run: |
           set -euo pipefail
           # The tag the docs SHOULD pin: the release that fired this event, or — on a
-          # pull_request, which carries no release payload — the latest published
-          # release. Release tags are yaadegar-vX.Y.Z; strip the prefix to the bare
-          # semver the compose default carries.
+          # pull_request, which carries no release payload — the latest published release.
+          # Select on isLatest, NOT the top of the list: gh release list includes drafts
+          # and pre-releases by default, so a draft sitting at the top would become the
+          # wanted version and the assert would demand the pin name a tag that does not
+          # exist — a contributor following the message would then pin a phantom tag and
+          # break the pulling job on the next release. isLatest is GitHub's own
+          # latest-stable designation and is never a draft or pre-release. Release tags
+          # are yaadegar-vX.Y.Z; strip the prefix to the bare semver the compose carries.
           tag="$RELEASE_TAG"
           if [ -z "$tag" ]; then
-            tag="$(gh release list --limit 1 --json tagName --jq '.[0].tagName // ""')"
+            tag="$(gh release list --limit 100 --json tagName,isLatest --jq 'map(select(.isLatest)) | .[0].tagName // ""')"
           fi
           if [ -z "$tag" ]; then
             echo "no published release yet — nothing for the pin to be stale against; skipping"
