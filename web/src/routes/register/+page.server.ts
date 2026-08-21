@@ -7,8 +7,20 @@ import type { Actions, PageServerLoad } from './$types';
 // into the form action, and the action stashes it in a short-lived cookie so the later
 // email-verify step (a separate request with no query to ride) can land the new account
 // back on the list it started from.
-export const load: PageServerLoad = ({ url }) => {
-	return { returnTo: safeReturnTo(url.searchParams.get('return_to')) ?? '' };
+export const load: PageServerLoad = async ({ locals, url }) => {
+	// Agree with the instance policy up front (#253): when self-registration is disabled,
+	// the page renders a short not-enabled state instead of a form that can only 403. This
+	// reads the same registration_enabled signal the login page already uses to hide its
+	// "Sign up" entry point, so the entry point and the destination agree. The action's
+	// 403 handling stays as the authoritative server-side guard; this only stops
+	// presenting an action the instance will refuse. Defaults to disabled if the backend
+	// can't be reached, matching the login loader's own default.
+	const client = backendClient({ host: locals.host });
+	const { data: methods } = await client.GET('/api/v1/auth/methods');
+	return {
+		returnTo: safeReturnTo(url.searchParams.get('return_to')) ?? '',
+		registrationEnabled: methods?.registration_enabled ?? false
+	};
 };
 
 export const actions: Actions = {

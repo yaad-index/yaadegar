@@ -6,13 +6,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // backend reason on other failures, and catches a confirm mismatch client-side.
 
 const post = vi.fn();
-vi.mock('$lib/server/api', () => ({ backendClient: () => ({ POST: post }) }));
+const get = vi.fn();
+vi.mock('$lib/server/api', () => ({ backendClient: () => ({ POST: post, GET: get }) }));
 // Resolve the real returnTo module (safeReturnTo + returnToCookie) under its $lib
 // specifier, which vitest can't alias-resolve for a route test on its own. Using the
 // real module — not a hand-copied stub — so the test exercises the actual cookie
 // owner and can't drift from it (the whole point of #243).
 vi.mock('$lib/server/returnTo', async () => await import('../../lib/server/returnTo'));
-import { actions } from './+page.server';
+import { actions, load } from './+page.server';
 
 interface Cookies {
 	set: ReturnType<typeof vi.fn>;
@@ -125,5 +126,51 @@ describe('register action (ADR-0012 cut 1a)', () => {
 		);
 		await register(e);
 		expect(e.cookies.set).not.toHaveBeenCalled();
+	});
+});
+
+// #253: the loader reads the instance's registration_enabled (the same signal the login
+// page uses to hide its "Sign up" entry point) so the page can render a not-enabled state
+// up front instead of a form that can only 403.
+type LoadFn = (e: {
+	locals: { host: string };
+	url: URL;
+}) => Promise<{ registrationEnabled: boolean; returnTo: string }>;
+const loadRegister = load as unknown as LoadFn;
+
+function loadEv(returnTo?: string) {
+	const url = new URL('http://t.example/register');
+	if (returnTo) url.searchParams.set('return_to', returnTo);
+	return { locals: { host: 't.example' }, url };
+}
+
+describe('register load (#253)', () => {
+	beforeEach(() => {
+		get.mockReset();
+	});
+
+	it('reports registration disabled when the instance policy is off', async () => {
+		get.mockResolvedValue({ data: { registration_enabled: false } });
+		const res = await loadRegister(loadEv());
+		expect(get).toHaveBeenCalledWith('/api/v1/auth/methods');
+		expect(res.registrationEnabled).toBe(false);
+	});
+
+	it('reports registration enabled when the instance policy is on', async () => {
+		get.mockResolvedValue({ data: { registration_enabled: true } });
+		const res = await loadRegister(loadEv());
+		expect(res.registrationEnabled).toBe(true);
+	});
+
+	it('defaults to disabled when the backend cannot be reached', async () => {
+		get.mockResolvedValue({ data: undefined });
+		const res = await loadRegister(loadEv());
+		expect(res.registrationEnabled).toBe(false);
+	});
+
+	it('still carries a valid return path through (#170)', async () => {
+		get.mockResolvedValue({ data: { registration_enabled: true } });
+		const res = await loadRegister(loadEv('/reserve/abc'));
+		expect(res.returnTo).toBe('/reserve/abc');
 	});
 });
