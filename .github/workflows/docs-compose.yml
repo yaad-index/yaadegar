@@ -18,6 +18,10 @@
 # proves the specific artifact an operator would pull. The pinned default trails the
 # most-recent release until bumped, so on a release event it resolves to an
 # already-published tag rather than the one that release is still publishing.
+#
+# Caveat (#278): nothing bumps that pinned default automatically, so a release that
+# forgets to update it leaves this job passing on the previous version forever —
+# tracked as a follow-up (auto-bump the pin, or assert it equals the latest release).
 
 name: docs-compose
 
