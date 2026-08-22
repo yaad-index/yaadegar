@@ -491,6 +491,12 @@ type ItemPage struct {
 	Total  *int    `json:"total,omitempty"`
 }
 
+// ItemPreview One item's thumbnail for the list-summary preview cluster (#207). Carries only what the cluster renders — no reserver or availability data (the cluster shows the list's objects, not people). image_url is null when the item has no image of its own; the card then renders a gift glyph on the card's category-accent tint.
+type ItemPreview struct {
+	Id       *string `json:"id,omitempty"`
+	ImageUrl *string `json:"image_url,omitempty"`
+}
+
 // ItemUpdate defines model for ItemUpdate.
 type ItemUpdate struct {
 	AllowCobuy NullableBool `json:"allow_cobuy,omitempty"`
@@ -522,6 +528,9 @@ type List struct {
 	EventDate   *openapi_types.Date `json:"event_date,omitempty"`
 	Id          *string             `json:"id,omitempty"`
 	ItemCount   *int                `json:"item_count,omitempty"`
+
+	// ItemPreviews Up to the first three items' thumbnails for the dashboard card's preview cluster (#207), in the list's item display order (priority, then oldest first). Absent/empty on an empty list. The full item total is item_count; the card renders a "+N" overflow chip for the items beyond those previewed. Populated only on the list-index summary (GET /api/v1/lists), not on a single-list read.
+	ItemPreviews *[]ItemPreview `json:"item_previews,omitempty"`
 
 	// ReserverConfirmWindow The confirm-window override in minutes; null inherits the instance default.
 	ReserverConfirmWindow *int `json:"reserver_confirm_window,omitempty"`

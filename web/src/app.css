@@ -158,6 +158,17 @@ html {
 	--accent-gold-tint: #fdfaf3; /* gold icon chip background */
 	--accent-green: #8aa05a; /* green icon chip */
 	--accent-green-tint: #f7f8f3; /* green icon chip background */
+	/*
+	 * Item-preview placeholder tints (#207): the tile behind the gift glyph when a
+	 * previewed item has no image of its own. A deeper step of each accent than the
+	 * icon chip above — the accent at 15% on white (the chip tints are the same
+	 * accents at ~7%). Hardcoded from the measured design export rather than
+	 * color-mix, which rounds the green red-channel to 237 (#edf1e6) where the
+	 * export measures 238.
+	 */
+	--primary-preview: #f2e6e8; /* rose placeholder tile */
+	--accent-gold-preview: #fbf4e5; /* gold placeholder tile */
+	--accent-green-preview: #eef1e6; /* green placeholder tile */
 	--text: #2e2824; /* body copy */
 	--text-heading: #3a342e; /* headings */
 	--text-muted: #aea69f; /* subtitles, helper text */

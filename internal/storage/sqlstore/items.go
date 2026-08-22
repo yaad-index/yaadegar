@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 
 	"github.com/yaad-index/yaadegar/internal/storage"
 )
@@ -277,6 +278,63 @@ func (r itemRepo) FundedAmountsByList(ctx context.Context, listID string) (map[s
 			return nil, err
 		}
 		out[itemID] = storage.Money{AmountMinor: amount, Currency: currency.String}
+	}
+	return out, rows.Err()
+}
+
+// PreviewsByLists returns up to perList item previews per list in one query, the
+// batch feed for the dashboard preview cluster (#207). A window function ranks each
+// list's items by the item display order (priority DESC, created_at, id) — matching
+// ListByList — and the outer filter keeps the top perList, so the result is capped
+// at perList*len(listIDs) rows rather than a full per-list read. ROW_NUMBER() is
+// supported by both dialects (modernc SQLite and Postgres).
+func (r itemRepo) PreviewsByLists(ctx context.Context, listIDs []string, perList int) (map[string][]storage.ItemPreview, error) {
+	out := map[string][]storage.ItemPreview{}
+	if len(listIDs) == 0 || perList <= 0 {
+		return out, nil
+	}
+
+	// Placeholders for the IN list; args are tenant, then each list id, then the
+	// per-list cap — the textual order of the ? marks, which is how rebind numbers
+	// them for the Postgres dialect.
+	ph := make([]string, len(listIDs))
+	args := make([]any, 0, len(listIDs)+2)
+	args = append(args, r.tenantID)
+	for i, id := range listIDs {
+		ph[i] = "?"
+		args = append(args, id)
+	}
+	args = append(args, perList)
+
+	rows, err := r.db.QueryContext(ctx, r.rb(
+		`SELECT list_id, id, image_url FROM (
+		   SELECT list_id, id, image_url,
+		          ROW_NUMBER() OVER (PARTITION BY list_id
+		                             ORDER BY priority DESC, created_at, id) AS rn
+		     FROM items
+		    WHERE tenant_id = ? AND list_id IN (`+strings.Join(ph, ", ")+`)
+		 ) ranked
+		 WHERE rn <= ?
+		 ORDER BY list_id, rn`), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var (
+			listID string
+			p      storage.ItemPreview
+			img    sql.NullString
+		)
+		if err := rows.Scan(&listID, &p.ID, &img); err != nil {
+			return nil, err
+		}
+		if img.Valid {
+			s := img.String
+			p.ImageURL = &s
+		}
+		out[listID] = append(out[listID], p)
 	}
 	return out, rows.Err()
 }

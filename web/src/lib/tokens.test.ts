@@ -9,6 +9,7 @@ describe('category accents', () => {
 		for (const accent of categoryAccents) {
 			expect(accent.icon).toMatch(/^text-/);
 			expect(accent.chip).toMatch(/^bg-/);
+			expect(accent.placeholder).toMatch(/^bg-/);
 		}
 	});
 
