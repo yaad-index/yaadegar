@@ -15,6 +15,10 @@ import (
 // limit is about characters, not bytes.
 const maxListDescriptionLen = 2000
 
+// previewsPerCard is how many item thumbnails the dashboard list card previews
+// before the "+N" overflow chip (#207): the delivered design shows up to three.
+const previewsPerCard = 3
+
 func (s *Server) CreateList(ctx context.Context, req gen.CreateListRequestObject) (gen.CreateListResponseObject, error) {
 	ts, _, ok := s.tenantStore(ctx)
 	owner, ok2 := ownerFromContext(ctx)
@@ -77,8 +81,20 @@ func (s *Server) ListLists(ctx context.Context, req gen.ListListsRequestObject) 
 	if err != nil {
 		return nil, err
 	}
+	// Feed the dashboard card preview cluster (#207) in one batch read, not an N+1
+	// per card. Previews live on the summary only: the single-list reads (Get) have
+	// no cluster, so ListRepo.List leaves them nil and we fill them here.
+	ids := make([]string, len(lists))
+	for i, l := range lists {
+		ids[i] = l.ID
+	}
+	previews, err := ts.Items().PreviewsByLists(ctx, ids, previewsPerCard)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]gen.List, 0, len(lists))
 	for _, l := range lists {
+		l.ItemPreviews = previews[l.ID]
 		out = append(out, toGenList(l))
 	}
 	return gen.ListLists200JSONResponse(gen.ListPage{

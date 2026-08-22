@@ -90,8 +90,23 @@ func toGenList(l storage.List) gen.List {
 		Description:           ptr(l.Description),             // owner-editable list description (#143)
 		Active:                ptr(l.Active),
 		ItemCount:             ptr(l.ItemCount),
+		ItemPreviews:          toGenItemPreviews(l.ItemPreviews), // nil except on the list-index summary (#207)
 		CreatedAt:             ptr(l.CreatedAt),
 	}
+}
+
+// toGenItemPreviews maps the list-summary preview cluster (#207). It returns nil
+// (the field is omitted) when there are no previews — an empty list, or any read
+// other than the list index — so the single-list responses stay unchanged.
+func toGenItemPreviews(ps []storage.ItemPreview) *[]gen.ItemPreview {
+	if len(ps) == 0 {
+		return nil
+	}
+	out := make([]gen.ItemPreview, 0, len(ps))
+	for _, p := range ps {
+		out = append(out, gen.ItemPreview{Id: ptr(p.ID), ImageUrl: p.ImageURL})
+	}
+	return &out
 }
 
 // parseReserverTier validates and maps the request's reserver_tier override. nil

@@ -1022,6 +1022,8 @@ export interface components {
             description?: string;
             active?: boolean;
             item_count?: number;
+            /** @description Up to the first three items' thumbnails for the dashboard card's preview cluster (#207), in the list's item display order (priority, then oldest first). Absent/empty on an empty list. The full item total is item_count; the card renders a "+N" overflow chip for the items beyond those previewed. Populated only on the list-index summary (GET /api/v1/lists), not on a single-list read. */
+            item_previews?: components["schemas"]["ItemPreview"][];
             /** Format: date-time */
             created_at?: string;
         };
@@ -1094,6 +1096,12 @@ export interface components {
             allow_cobuy?: boolean | null;
             /** @description The per-item thank-you override (#22), owner view: null inherits the list default, "" is a per-item opt-out, any other value overrides the body. */
             thank_you_template?: string | null;
+        };
+        /** @description One item's thumbnail for the list-summary preview cluster (#207). Carries only what the cluster renders — no reserver or availability data (the cluster shows the list's objects, not people). image_url is null when the item has no image of its own; the card then renders a gift glyph on the card's category-accent tint. */
+        ItemPreview: {
+            id?: string;
+            /** Format: uri */
+            image_url?: string | null;
         };
         ItemPage: {
             items?: components["schemas"]["Item"][];
