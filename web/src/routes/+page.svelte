@@ -1,11 +1,13 @@
 <script lang="ts">
-	// The public marketing landing (#236), the site root for a signed-out visitor. This
-	// first pass is the header + hero + trust strip; the remaining sections (how it works,
-	// built differently, self-hosting, closing CTA, footer) land in later passes. Copy is
-	// what the project actually does TODAY (maintainer decision): self-hosted, Docker
-	// Compose, SQLite for dev / Postgres for production — no one-click-deploy promise the
-	// repo has no artifact for.
+	// The public marketing landing (#236), the site root for a signed-out visitor. All
+	// eight sections are now here: header, hero, trust strip, how-it-works, built-
+	// differently, pull quote, a second product mockup, self-hosting, the closing CTA, and
+	// the footer. Copy is what the project actually does TODAY (maintainer decision):
+	// self-hosted, Docker Compose, SQLite for dev / Postgres for production — no one-click
+	// or Fly.io/Railway promise the repo has no artifact for, and no theming claim the app
+	// doesn't yet support.
 	import { resolve } from '$app/paths';
+	import GiftGlyph from '$lib/components/GiftGlyph.svelte';
 
 	// The canonical source repo (the Go module path — already public throughout the tree).
 	const REPO_URL = 'https://github.com/yaad-index/yaadegar';
@@ -49,6 +51,68 @@
 			n: 4,
 			title: 'Surprise stays safe',
 			body: 'When you look at your own wishlist, everything looks active. No spoilers, ever.'
+		}
+	];
+
+	// The "take a look inside" section is a SECOND hand-built REPLICA (same rule as the
+	// hero: invented content, no real handle, name, or address on a public page). It's a
+	// giver's view of a shared list, so it speaks the app's real vocabulary — "Reserved" /
+	// "Available" and the "Wants N" quantity — never a word the product doesn't use
+	// (the app has no "Claimed" or "Desired"). Item images are the app's gift-glyph
+	// placeholder on a category-accent preview tint (the #207 tints), not stock photos:
+	// a public page shouldn't carry licensed photography, and this leaves the
+	// glyph-vs-photo question open rather than settling it with real images.
+	const showcaseItems = [
+		{
+			name: 'The Winter Poems Anthology',
+			note: 'Hardcover collection of deep, nature-soaked verse.',
+			price: '$32',
+			reserved: true,
+			wants: 1,
+			tint: 'bg-primary-preview',
+			icon: 'text-primary'
+		},
+		{
+			name: 'Wooden Balance Desk Lamp',
+			note: 'Warm, glowing ambient light for late-night journaling.',
+			price: '$89',
+			reserved: false,
+			wants: 1,
+			tint: 'bg-gold-preview',
+			icon: 'text-gold'
+		},
+		{
+			name: 'Linen Bound Sketchbook',
+			note: 'Lay-flat blank heavy paper. Beautiful texture.',
+			price: '$18',
+			reserved: false,
+			wants: 2,
+			tint: 'bg-green-preview',
+			icon: 'text-green'
+		}
+	];
+
+	// Footer link columns. Every href points at something that exists TODAY, checked
+	// against the repo: the container image lives on GHCR (the page must not say "Docker
+	// Hub", where nothing is published); GitHub Discussions is not enabled, so the
+	// community column links the issue tracker and the self-hosting guide rather than a
+	// dead Discussions tab; and the licence is the MIT LICENSE file GitHub now detects.
+	const footerColumns = [
+		{
+			heading: 'Project',
+			links: [
+				{ label: 'Source Code', href: REPO_URL },
+				{ label: 'Container Image', href: `${REPO_URL}/pkgs/container/yaadegar` },
+				{ label: 'Releases', href: `${REPO_URL}/releases` }
+			]
+		},
+		{
+			heading: 'Community',
+			links: [
+				{ label: 'Issue Tracker', href: `${REPO_URL}/issues` },
+				{ label: 'Self-hosting Guide', href: `${REPO_URL}/blob/main/docs/self-hosting.md` },
+				{ label: 'MIT License', href: `${REPO_URL}/blob/main/LICENSE` }
+			]
 		}
 	];
 </script>
@@ -460,6 +524,322 @@
 	</figure>
 </section>
 
+<!-- Take a look inside: a second product mockup (guest view of a shared list). Same
+     replica rules as the hero — invented content, gift-glyph placeholders, app-true
+     wording. -->
+<section class="bg-surface-alt py-20">
+	<div class="mx-auto max-w-7xl px-6">
+		<div class="text-center">
+			<span
+				class="inline-block rounded-full bg-primary-tint px-3 py-1 font-ui text-chip font-semibold uppercase tracking-wide text-primary"
+			>
+				Take a look inside
+			</span>
+			<h2 class="landing-section-title mt-5 font-display text-ink-heading">
+				Handcrafted visual elegance
+			</h2>
+			<!-- Copy names only what the app does today: no theming claim (the app has no
+			     customizable themes yet), so "customizable cozy themes" from the design comes out. -->
+			<p class="mx-auto mt-4 max-w-2xl font-ui text-[18px] leading-[1.6] text-ink-muted">
+				We built the wishlist you'll actually want to share. Elegant card design, simple responsive
+				layouts, and a clean, readable card for every gift.
+			</p>
+		</div>
+
+		<!-- Browser-chrome replica. Invented handle/list; the URL uses the RFC-reserved
+		     .example domain, like the hero, so no real address ships on a public page. -->
+		<div class="mt-14 overflow-hidden rounded-2xl border border-line bg-surface-accent shadow-xl">
+			<div class="flex items-center gap-2 border-b border-divider bg-surface px-4 py-3">
+				<span class="flex gap-1.5" aria-hidden="true">
+					<span class="h-3 w-3 rounded-full bg-primary"></span>
+					<span class="h-3 w-3 rounded-full bg-gold"></span>
+					<span class="h-3 w-3 rounded-full bg-green"></span>
+				</span>
+				<span
+					class="mx-auto flex items-center gap-1.5 rounded-md bg-surface-alt px-3 py-1 font-ui text-chip text-ink-muted"
+				>
+					<svg
+						width="11"
+						height="11"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						aria-hidden="true"
+					>
+						<rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
+					</svg>
+					wishes.example/cozy-winter-warmth
+				</span>
+				<svg
+					width="15"
+					height="15"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+					class="text-ink-muted"
+				>
+					<circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle
+						cx="18"
+						cy="19"
+						r="3"
+					/><path d="m8.6 13.5 6.8 4M15.4 6.5 8.6 10.5" />
+				</svg>
+			</div>
+
+			<div class="p-6 sm:p-8">
+				<div class="flex flex-wrap items-end justify-between gap-4">
+					<div class="min-w-0">
+						<p class="flex items-center gap-2 font-ui text-ui font-medium text-primary">
+							<span
+								class="flex h-6 w-6 items-center justify-center rounded-full bg-primary-tint text-primary"
+								aria-hidden="true"
+							>
+								<svg
+									width="13"
+									height="13"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle
+										cx="12"
+										cy="7"
+										r="4"
+									/>
+								</svg>
+							</span>
+							@julian_reads
+						</p>
+						<p class="mt-1 font-display text-[30px] font-semibold leading-tight text-ink-heading">
+							Cozy Winter Reading List
+						</p>
+					</div>
+					<!-- Decorative marketing labels, not real controls: hidden from assistive tech so
+					     they aren't announced as buttons a reader could press. -->
+					<div class="flex shrink-0 items-center gap-3" aria-hidden="true">
+						<span
+							class="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-surface px-4 font-ui text-ui font-medium text-ink"
+						>
+							<svg
+								width="15"
+								height="15"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
+								<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /><path
+									d="M16 6l-4-4-4 4M12 2v13"
+								/>
+							</svg>
+							Share
+						</span>
+						<span
+							class="inline-flex h-10 items-center rounded-full bg-primary px-4 font-ui text-ui font-medium text-white"
+						>
+							Reserve secretly
+						</span>
+					</div>
+				</div>
+
+				<ul class="mt-6 grid gap-5 sm:grid-cols-3">
+					{#each showcaseItems as item (item.name)}
+						<li class="flex flex-col rounded-2xl border border-line bg-surface p-3">
+							<!-- Gift-glyph placeholder on the item's accent tint — no stock photo. -->
+							<div
+								class={`flex aspect-[4/3] items-center justify-center rounded-xl ${item.tint} ${item.icon}`}
+								aria-hidden="true"
+							>
+								<GiftGlyph size={40} />
+							</div>
+							<div class="mt-3 flex items-start justify-between gap-2">
+								<h3 class="font-display text-title font-semibold leading-tight text-ink-heading">
+									{item.name}
+								</h3>
+								<span class="shrink-0 font-display text-title font-semibold text-primary"
+									>{item.price}</span
+								>
+							</div>
+							<p class="mt-1 font-ui text-ui leading-[1.5] text-ink-muted">{item.note}</p>
+							<div
+								class="mt-3 flex items-center justify-between border-t border-line-subtle pt-3 font-ui text-chip"
+							>
+								<span class="text-ink-muted">Wants {item.wants}</span>
+								{#if item.reserved}
+									<span class="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700"
+										>Reserved</span
+									>
+								{:else}
+									<span class="rounded-full bg-green-tint px-2 py-0.5 font-medium text-green"
+										>Available</span
+									>
+								{/if}
+							</div>
+						</li>
+					{/each}
+				</ul>
+			</div>
+		</div>
+	</div>
+</section>
+
+<!-- Self-hosting. Bounded by #258: an images-only compose starts the API and serves NO
+     site, so the code block shows the working clone-and-build path (which builds the web
+     service too and serves it on :3000), not a snippet that starts nothing a visitor sees.
+     Copy states what is true today — Docker Compose, SQLite for dev / Postgres for prod —
+     with no Fly.io/Railway one-click promise the repo has no artifact for. -->
+<section id="self-hosting" class="bg-surface-accent py-20">
+	<div class="mx-auto grid max-w-7xl gap-12 px-6 lg:grid-cols-2 lg:items-center">
+		<div>
+			<span
+				class="inline-block rounded-full bg-primary-tint px-3 py-1 font-ui text-chip font-semibold uppercase tracking-wide text-primary"
+			>
+				Self-hosted
+			</span>
+			<h2 class="landing-section-title mt-5 font-display text-ink-heading">
+				Sovereign infrastructure for sovereign celebrations
+			</h2>
+			<p class="mt-5 max-w-xl font-ui text-[18px] leading-[1.6] text-ink-muted">
+				Yaadegar is a Go backend and a SvelteKit front end that run together under Docker Compose.
+				Clone the repository, build it, and the whole stack is yours — SQLite to get started,
+				PostgreSQL for production. No third-party host, no lock-in.
+			</p>
+			<dl class="mt-8 flex gap-8">
+				<div>
+					<dt class="font-display text-[26px] font-semibold text-primary">Compose</dt>
+					<dd class="mt-1 font-ui text-ui text-ink-muted">One command to run</dd>
+				</div>
+				<div class="border-l border-line pl-8">
+					<dt class="font-display text-[26px] font-semibold text-primary">SQLite</dt>
+					<dd class="mt-1 font-ui text-ui text-ink-muted">or PostgreSQL for production</dd>
+				</div>
+			</dl>
+		</div>
+
+		<!-- The dark panel is the design's terminal; its contents are the honest, runnable
+		     sequence from the README, not the design's images-only compose (#258). -->
+		<div class="overflow-hidden rounded-2xl bg-ink shadow-xl">
+			<div class="flex items-center gap-2 border-b border-white/10 px-4 py-3">
+				<span class="flex gap-1.5" aria-hidden="true">
+					<span class="h-3 w-3 rounded-full bg-primary"></span>
+					<span class="h-3 w-3 rounded-full bg-gold"></span>
+					<span class="h-3 w-3 rounded-full bg-green"></span>
+				</span>
+				<span class="mx-auto font-mono text-chip text-white/40">bash</span>
+			</div>
+			<pre class="overflow-x-auto px-5 py-5 font-mono text-[13px] leading-[1.7] text-white/90"><code
+					><span class="text-white/40"
+						># clone and build — serves the web UI on http://localhost:3000</span
+					>
+<span class="text-primary-hover">$</span> git clone https://github.com/yaad-index/yaadegar
+<span class="text-primary-hover">$</span> cd yaadegar
+<span class="text-primary-hover">$</span> docker compose up --build</code
+				></pre>
+		</div>
+	</div>
+</section>
+
+<!-- Closing call to action. -->
+<section class="bg-surface py-20">
+	<div class="mx-auto max-w-3xl px-6 text-center">
+		<svg
+			class="mx-auto h-10 w-10 text-gold"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="1.6"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+			aria-hidden="true"
+		>
+			<path d="M12 3l1.8 6.2L20 11l-6.2 1.8L12 19l-1.8-6.2L4 11l6.2-1.8L12 3z" /><path
+				d="M19 4v3M20.5 5.5h-3"
+			/>
+		</svg>
+		<h2 class="landing-cta-title mt-6 font-display text-ink-heading">
+			Bring back the genuine delight of giving
+		</h2>
+		<p class="mx-auto mt-5 max-w-xl font-ui text-[18px] leading-[1.6] text-ink-muted">
+			Setup Yaadegar in seconds, coordinate gifts in secrecy, and share clean wishlists with those
+			you love. Absolutely free, forever open source.
+		</p>
+		<div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+			<a
+				class="inline-flex h-12 items-center justify-center rounded-full bg-primary px-7 font-ui text-body font-medium text-white transition-colors hover:bg-primary-hover"
+				href={resolve('/login')}>Create your wishlist</a
+			>
+			<!-- eslint-disable svelte/no-navigation-without-resolve -- same-page anchor to the
+			     self-hosting section, which resolve() can't express. -->
+			<a
+				class="inline-flex h-12 items-center justify-center rounded-full border border-primary bg-surface px-6 font-ui text-body font-medium text-primary transition-colors hover:bg-primary-tint"
+				href="#self-hosting">Deploy self-hosted</a
+			>
+			<!-- eslint-enable svelte/no-navigation-without-resolve -->
+		</div>
+	</div>
+</section>
+
+<!-- Footer: wordmark + two link columns, all pointing at resources that exist today. -->
+<footer class="border-t border-divider bg-surface-alt">
+	<div class="mx-auto max-w-7xl px-6 py-14">
+		<div class="flex flex-col gap-10 md:flex-row md:justify-between">
+			<div class="max-w-sm">
+				<p class="flex items-center gap-2 font-display text-display-sm font-semibold text-primary">
+					<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+						<path d="M12 3l1.8 6.2L20 11l-6.2 1.8L12 19l-1.8-6.2L4 11l6.2-1.8L12 3z" />
+					</svg>
+					Yaadegar
+				</p>
+				<p class="mt-3 font-ui text-ui leading-[1.6] text-ink-muted">
+					The cozy, open-source gift-list manager built to protect surprise and personal privacy.
+				</p>
+			</div>
+
+			<!-- eslint-disable svelte/no-navigation-without-resolve -- external links to the source
+			     repository and its GitHub resources; none is a SvelteKit route resolve() can express. -->
+			<div class="flex gap-16">
+				{#each footerColumns as col (col.heading)}
+					<div>
+						<p class="font-ui text-chip font-semibold uppercase tracking-wide text-ink-heading">
+							{col.heading}
+						</p>
+						<ul class="mt-4 space-y-3 font-ui text-ui text-ink-muted">
+							{#each col.links as link (link.label)}
+								<li>
+									<a
+										class="transition-colors hover:text-ink"
+										href={link.href}
+										rel="noreferrer"
+										target="_blank">{link.label}</a
+									>
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{/each}
+			</div>
+			<!-- eslint-enable svelte/no-navigation-without-resolve -->
+		</div>
+
+		<div
+			class="mt-12 flex flex-col gap-2 border-t border-divider pt-6 font-ui text-chip text-ink-muted sm:flex-row sm:justify-between"
+		>
+			<span>© 2026 Yaadegar Project · Released under the MIT License.</span>
+			<span>Built with love by AI agents for sovereign gift-giving.</span>
+		</div>
+	</div>
+</footer>
+
 <style>
 	/* Landing-LOCAL display type (#236 D2): the hero sits above the app's 40px top rung
 	   and is used nowhere else, so it lives here rather than growing the shared scale with
@@ -486,6 +866,22 @@
 	@media (max-width: 640px) {
 		.landing-section-title {
 			font-size: 30px;
+		}
+	}
+
+	/* Landing-local closing-CTA type: 48px/600, a display size used only here. It sits
+	   between the section titles (40px) and the hero (54px); measured against the export
+	   by line ink-extent (~47px) and stem width (matches the 600 cut, not the 700 hero).
+	   Landing-local like the rest of this scale — it does NOT touch the shared app rungs,
+	   which is the type-scale decision left open on #236. */
+	.landing-cta-title {
+		font-size: 48px;
+		font-weight: 600;
+		line-height: 1.15;
+	}
+	@media (max-width: 640px) {
+		.landing-cta-title {
+			font-size: 34px;
 		}
 	}
 
