@@ -218,6 +218,14 @@ type ItemRepo interface {
 	// FundedAmountsByList returns funded amount per item for every item on a list,
 	// in one query. Items with no contributions are absent from the map.
 	FundedAmountsByList(ctx context.Context, listID string) (map[string]Money, error)
+
+	// PreviewsByLists returns up to perList item previews per list, for every list
+	// id given, in a single query — the batch form the dashboard summary uses to
+	// render the card preview cluster (#207) without an N+1 read per card. Ordering
+	// within a list follows the item display order (priority DESC, created_at, id),
+	// so the previews match the list's own item order. Lists with no items are
+	// absent from the map; an empty listIDs or perList <= 0 returns an empty map.
+	PreviewsByLists(ctx context.Context, listIDs []string, perList int) (map[string][]ItemPreview, error)
 }
 
 // ReservationRepo persists reservations within the bound tenant.

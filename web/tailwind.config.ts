@@ -12,9 +12,9 @@ import type { Config } from 'tailwindcss';
  *   --surface{,-alt,-accent} -> surface{,.alt,.accent}
  *   --border{,-subtle}       -> line{,.subtle}     (border-line, border-line-subtle)
  *   --divider                -> divider            (border-divider)
- *   --primary{,-hover,-tint} -> primary{,.hover,.tint}
- *   --accent-gold{,-tint}    -> gold{,.tint}
- *   --accent-green{,-tint}   -> green{,.tint}
+ *   --primary{,-hover,-tint,-preview} -> primary{,.hover,.tint,.preview}
+ *   --accent-gold{,-tint,-preview}    -> gold{,.tint,.preview}
+ *   --accent-green{,-tint,-preview}   -> green{,.tint,.preview}
  *   --text{,-heading,-muted} -> ink{,.heading,.muted}
  *
  * Spacing is deliberately NOT re-declared: Tailwind's default 4px-based scale
@@ -39,15 +39,18 @@ export default {
 				primary: {
 					DEFAULT: 'var(--primary)',
 					hover: 'var(--primary-hover)',
-					tint: 'var(--primary-tint)'
+					tint: 'var(--primary-tint)',
+					preview: 'var(--primary-preview)'
 				},
 				gold: {
 					DEFAULT: 'var(--accent-gold)',
-					tint: 'var(--accent-gold-tint)'
+					tint: 'var(--accent-gold-tint)',
+					preview: 'var(--accent-gold-preview)'
 				},
 				green: {
 					DEFAULT: 'var(--accent-green)',
-					tint: 'var(--accent-green-tint)'
+					tint: 'var(--accent-green-tint)',
+					preview: 'var(--accent-green-preview)'
 				},
 				ink: {
 					DEFAULT: 'var(--text)',

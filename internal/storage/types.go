@@ -240,6 +240,20 @@ type List struct {
 	// ItemCount is a derived read field: the number of items on the list. It is
 	// populated by reads (Get/GetBySlug/List) and left zero by Create.
 	ItemCount int
+	// ItemPreviews holds up to the first few items' thumbnails for the list-summary
+	// preview cluster (#207), in item display order (priority DESC, created_at, id).
+	// It is populated only by the List (index) read — the dashboard summary — and is
+	// left nil by Get/GetBySlug/Create, which have no preview cluster to feed.
+	ItemPreviews []ItemPreview
+}
+
+// ItemPreview is one item's thumbnail for the list-summary preview cluster (#207):
+// its id and its own image URL (nil = the item has no image, so the card renders an
+// accent-tinted placeholder glyph). It deliberately carries no reserver or
+// availability data — the cluster shows the list's objects, never who reserved them.
+type ItemPreview struct {
+	ID       string
+	ImageURL *string
 }
 
 // ReserverTier is the identity level a giver must meet to reserve on a list

@@ -4,13 +4,14 @@
 	// (top bar, 800px column, single main) is the (app) layout's (#205). The empty
 	// state is rendered INLINE in place of the list region (the banner, heading and
 	// create row stay), NOT through PageShell's isEmpty, because the empty copy
-	// points at the create form above it. Item-preview thumbnails from the design
-	// are omitted here: the list summary does not expose them (a backend change,
-	// tracked separately).
+	// points at the create form above it. Each card previews its items on the right
+	// (#207) via ItemPreviewCluster, fed by the summary's item_previews.
 	import { superForm } from 'sveltekit-superforms';
 	import { resolve } from '$app/paths';
 	import Button from '$lib/components/Button.svelte';
 	import Card from '$lib/components/Card.svelte';
+	import GiftGlyph from '$lib/components/GiftGlyph.svelte';
+	import ItemPreviewCluster from '$lib/components/ItemPreviewCluster.svelte';
 	import { accentFor } from '$lib/tokens';
 	import type { PageData } from './$types';
 
@@ -23,21 +24,7 @@
 <svelte:head><title>Your lists · Yaadegar</title></svelte:head>
 
 {#snippet cardGift()}
-	<svg
-		width="20"
-		height="20"
-		viewBox="0 0 24 24"
-		fill="none"
-		stroke="currentColor"
-		stroke-width="2"
-		stroke-linecap="round"
-		stroke-linejoin="round"
-		aria-hidden="true"
-	>
-		<rect x="3" y="8" width="18" height="4" rx="1" />
-		<path d="M12 8v13M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" />
-		<path d="M12 8S9.5 3.5 7.5 4.5 7 8 12 8Zm0 0s2.5-4.5 4.5-3.5S17 8 12 8Z" />
-	</svg>
+	<GiftGlyph />
 {/snippet}
 
 <!-- Welcome banner. The greeting is subordinate to the page's own title ("Your
@@ -132,20 +119,27 @@
 								{list.item_count ?? 0} items
 							</span>
 						</div>
-						<svg
-							class="shrink-0 text-ink-muted"
-							width="20"
-							height="20"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							aria-hidden="true"
-						>
-							<path d="M9 18l6-6-6-6" />
-						</svg>
+						<div class="flex shrink-0 items-center gap-3">
+							<ItemPreviewCluster
+								previews={list.item_previews ?? []}
+								total={list.item_count ?? 0}
+								accent={accentFor(i)}
+							/>
+							<svg
+								class="text-ink-muted"
+								width="20"
+								height="20"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								aria-hidden="true"
+							>
+								<path d="M9 18l6-6-6-6" />
+							</svg>
+						</div>
 					</div>
 				</Card>
 			</li>
@@ -156,21 +150,7 @@
 		<div
 			class="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary-tint text-primary"
 		>
-			<svg
-				width="32"
-				height="32"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="2"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-				aria-hidden="true"
-			>
-				<rect x="3" y="8" width="18" height="4" rx="1" />
-				<path d="M12 8v13M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" />
-				<path d="M12 8S9.5 3.5 7.5 4.5 7 8 12 8Zm0 0s2.5-4.5 4.5-3.5S17 8 12 8Z" />
-			</svg>
+			<GiftGlyph size={32} />
 		</div>
 		<h3 class="font-display text-title text-ink-heading">No lists yet</h3>
 		<p class="mt-2 max-w-sm font-ui text-body text-ink-muted">

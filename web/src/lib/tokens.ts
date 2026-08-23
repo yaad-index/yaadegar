@@ -11,12 +11,24 @@ export type CategoryAccent = {
 	icon: string;
 	/** Icon-chip background utility — the light tint paired with the tone. */
 	chip: string;
+	/**
+	 * Item-preview placeholder background (#207): the tile behind the gift glyph
+	 * when a previewed item has no image. A deeper step of the accent than `chip`
+	 * (the accent at 15% on white vs the chip's ~7%), so the same accent governs
+	 * the preview cluster too, not just the icon chip.
+	 */
+	placeholder: string;
 };
 
 export const categoryAccents: readonly CategoryAccent[] = [
-	{ name: 'rose', icon: 'text-primary', chip: 'bg-primary-tint' },
-	{ name: 'gold', icon: 'text-gold', chip: 'bg-gold-tint' },
-	{ name: 'green', icon: 'text-green', chip: 'bg-green-tint' }
+	{
+		name: 'rose',
+		icon: 'text-primary',
+		chip: 'bg-primary-tint',
+		placeholder: 'bg-primary-preview'
+	},
+	{ name: 'gold', icon: 'text-gold', chip: 'bg-gold-tint', placeholder: 'bg-gold-preview' },
+	{ name: 'green', icon: 'text-green', chip: 'bg-green-tint', placeholder: 'bg-green-preview' }
 ] as const;
 
 /**
