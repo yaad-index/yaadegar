@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.14.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.13.0...yaadegar-v0.14.0) (2026-08-24)
+
+
+### Features
+
+* list-summary item previews for the dashboard card cluster ([5f54a9c](https://github.com/yaad-index/yaadegar/commit/5f54a9cde0320d21606d3e606cf457265916a60c))
+* **web:** complete the landing page — mockup, self-hosting, CTA, footer ([#236](https://github.com/yaad-index/yaadegar/issues/236)) ([#283](https://github.com/yaad-index/yaadegar/issues/283)) ([36af6ec](https://github.com/yaad-index/yaadegar/commit/36af6ecebefd85cdce1dfbef622f280b40ee65a1))
+* **web:** instance-supplied landing page via YAADEGAR_ROOT_PAGE ([#256](https://github.com/yaad-index/yaadegar/issues/256)) ([#291](https://github.com/yaad-index/yaadegar/issues/291)) ([24dc437](https://github.com/yaad-index/yaadegar/commit/24dc437a872797e5122db8f3adc155f6a5110bcf))
+
 ## [0.13.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.12.0...yaadegar-v0.13.0) (2026-08-21)
 
 
