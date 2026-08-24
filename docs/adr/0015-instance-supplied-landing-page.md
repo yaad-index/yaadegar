@@ -151,6 +151,17 @@ tag.
 
 The recommendation is **B**, for reasons beyond the failure mode above:
 
+- It follows from **what the two services are**, not how they happen to be wired.
+  ADR-0014 §1 deliberately keeps an **API-only deployment** expressible — an
+  operator running the backend behind their own client, a mobile app say, with no
+  website at all. Such an instance has no landing page and no use for a landing
+  setting; a backend-owned key would drag root-page behaviour into the
+  configuration surface that operator is obliged to reason about, for a page they
+  never serve. A web-service setting keeps the concern with the service whose job
+  the page is, and leaves the API-only deployment's config surface unburdened by
+  it. This is the most durable reason here, because it rests on the services'
+  responsibilities rather than on current tooling or wiring — which the reasons
+  below, sound as they are, ultimately do.
 - It **fits how the web service is already configured.** `ORIGIN`,
   `BACKEND_ORIGIN`, `PORT` and `HOST` are operator environment on the web image
   today; none of them lives in `config.example.yaml` and none is drift-guarded,
