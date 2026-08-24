@@ -72,8 +72,16 @@ that names the outcome directly never poses the question.
 The `custom` value is realised as a fixed, named set of text slots the bundled
 layout already contains — headline, sub-headline, the primary call-to-action's
 label and destination, and the trust-strip line. Each is inserted as text or as
-an attribute value through the framework's normal escaping, **never as raw
-HTML**, so the mechanism has no injection surface at all.
+an attribute value through the framework's normal escaping, **never as raw HTML**.
+The text slots therefore carry no injection surface. The one attribute slot — the
+call-to-action's destination — is URL-valued, so it carries a *bounded* one:
+attribute-escaping keeps a value from breaking out of the attribute, but a
+`javascript:` or `data:` scheme is still a live vector when the link is clicked,
+which the build closes with an allowlist — `http`/`https` and site-relative paths
+only, everything else rejected. That is a small, closeable check on a single field,
+categorically unlike the open-ended same-origin-authority surface that operator
+markup opens (§3). The distinction the choice turns on is that difference in kind,
+not a claim that strings have no surface whatsoever.
 
 This covers what #256 is mostly asking for once "a page for their family" is
 separated from "a second implementation of the page": the shipped design, the
@@ -200,9 +208,9 @@ cross-service call.
   need use a reverse proxy today, and a later ADR can add a deliberately-trusted
   asset mechanism if the need is demonstrated. This is deliberate under the
   narrow-first rule, and the cost is borne by the least-common need.
-- **No injection surface is created.** The string slots are text, not markup, and
-  the trust decision that a raw-HTML path would force is therefore not on the
-  table here.
+- **No open-ended injection surface is created.** The text slots are text, not
+  markup; the one URL-valued slot takes a bounded scheme allowlist (§2), not the
+  same-origin-authority trust decision a raw-HTML path would force.
 - The web service gains its first *operator-facing feature* configuration, beyond
   transport wiring. That argues for a documented web-config surface
   (`web/.env.example` or equivalent) the web image does not have yet — a small new
