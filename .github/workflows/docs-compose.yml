@@ -46,7 +46,6 @@ on:
 permissions:
   contents: read
   packages: read
-  issues: write # pin-reconcile opens/closes a single tracking issue
 
 jobs:
   serves-a-site:
@@ -147,6 +146,22 @@ jobs:
   # job id is unchanged (pin-is-current) so any required-check-by-name keeps resolving.
   pin-is-current:
     runs-on: ubuntu-latest
+    # Only this job touches issues; serves-a-site does not. Scope the write here rather
+    # than workflow-wide, so serves-a-site does not inherit an unused issues:write.
+    permissions:
+      contents: read
+      issues: write
+    # Serialize reconcile runs. release:published and push:main fire ~10s apart for the
+    # same release and BOTH run this job while the pin is stale (the normal post-release
+    # window, and push:main has no path filter so it always runs). Without serialization
+    # the list-then-create is a race: two runs each see no open issue and both open one —
+    # a duplicate under the same label that the close path (which targets a single issue)
+    # can leave permanently open, the quieter always-red this design exists to prevent. A
+    # fixed group with cancel-in-progress:false queues them, so the second run sees the
+    # first's issue and updates it instead of creating a second.
+    concurrency:
+      group: docs-pin-reconcile
+      cancel-in-progress: false
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
