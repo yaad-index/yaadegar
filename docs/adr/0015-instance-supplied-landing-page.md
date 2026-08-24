@@ -1,6 +1,6 @@
 # ADR-0015: Instance-supplied landing page
 
-**Status:** Proposed
+**Status:** Accepted
 
 ## Context
 
