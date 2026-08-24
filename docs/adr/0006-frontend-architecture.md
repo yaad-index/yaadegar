@@ -1,6 +1,6 @@
 # ADR-0006: Frontend architecture
 
-**Status:** Proposed
+**Status:** Accepted
 
 ## Context
 

@@ -1,6 +1,6 @@
 # ADR-0008: Owner login via Google OAuth / OIDC
 
-**Status:** Proposed
+**Status:** Accepted
 
 ## Context
 

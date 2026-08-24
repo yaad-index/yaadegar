@@ -1,6 +1,6 @@
 # ADR-0014: Publishing the web image (two images, released as a matched pair)
 
-**Status:** Proposed
+**Status:** Accepted
 
 ## Context
 

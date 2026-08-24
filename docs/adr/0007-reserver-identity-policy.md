@@ -1,6 +1,6 @@
 # ADR-0007: Reserver-identity policy
 
-**Status:** Proposed
+**Status:** Accepted
 
 ## Context
 
