@@ -1,6 +1,6 @@
 # ADR-0005: Owner authentication
 
-**Status:** Proposed
+**Status:** Accepted
 
 ## Context
 

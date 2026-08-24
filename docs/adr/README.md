@@ -6,8 +6,15 @@ here first, then the code is built against them.
 
 Each ADR is a short markdown file, numbered sequentially (`NNNN-title.md`), with a
 lightweight structure: **Context**, **Decision**, **Status**, and **Consequences**.
-An ADR is immutable once accepted; to change a decision, add a new ADR that
-supersedes the old one (and mark the old one `Superseded by ADR-XXXX`).
+The **Status** field records where a decision stands, not whether it has shipped:
+
+- **Proposed** — the decision is still under consideration.
+- **Accepted** — the maintainer has decided. Implementation may not have landed
+  yet; build status is tracked by the linked issue and PR, not by this field.
+
+An Accepted ADR is immutable: change a decision by adding a new ADR that supersedes
+the old one (and mark the old one `Superseded by ADR-XXXX`), never by silently
+editing it.
 
 ## Index
 
@@ -30,20 +37,20 @@ supersedes the old one (and mark the old one `Superseded by ADR-XXXX`).
   owner surface (public capability-token surface unchanged), three operator-configurable
   login methods (password, Google OAuth, magic-link) converging on one session issuer,
   fail-closed at-least-one-method startup invariant, superadmin/owner/guest roles,
-  multi-owner-capable lists. **Status: Proposed.**
+  multi-owner-capable lists. **Status: Accepted.**
 - [ADR-0006: Frontend architecture](0006-frontend-architecture.md) — SvelteKit + TS
   under `web/`, SSR public share pages, one route-segmented app (owner + public giver),
   TypeScript API client generated from the spec with a CI drift-guard, use-mature-libraries
   principle (component lib / superforms+zod / TanStack Query / httpOnly-cookie sessions),
-  node-adapter container. **Status: Proposed.**
+  node-adapter container. **Status: Accepted.**
 - [ADR-0007: Reserver-identity policy](0007-reserver-identity-policy.md) — the three
   reserver tiers (full_guest / email_confirmed / registered), per-list override, and
-  the email-confirmation flow (#19). **Status: Proposed.**
+  the email-confirmation flow (#19). **Status: Accepted.**
 - [ADR-0008: Owner login via Google OAuth / OIDC](0008-owner-oauth.md) — OIDC
   auth-code + PKCE, one fixed redirect_uri with tenant-in-state and a one-time-ticket
   cross-host session handoff, link-only-by-verified-email account model, per-tenant
   toggle over one instance-level client (refines ADR-0005 §3), env config (#21).
-  **Status: Proposed.**
+  **Status: Accepted.**
 - [ADR-0009: Unified identity, roles, and registration](0009-identity-roles-and-registration.md)
   — two orthogonal axes (per-tenant owner/giver role + an instance-admin capability),
   first-class giver accounts that make the `registered` reserve tier real (alongside the
@@ -54,7 +61,7 @@ supersedes the old one (and mark the old one `Superseded by ADR-XXXX`).
   account (one login is both owner and admin) instead of a separate admin identity;
   retires the separate admin login, session cookie, and superadmin env credential;
   `requireAdmin` becomes a per-request capability load with tenant-scoped tokens and
-  instance-wide reach confined to `/admin`; refines ADR-0009 §3. **Status: Proposed.**
+  instance-wide reach confined to `/admin`; refines ADR-0009 §3. **Status: Accepted.**
 - [ADR-0011: Password lifecycle](0011-password-lifecycle.md) — a per-user
   `credential_version` claim checked in `requireOwner` so every password mutation
   immediately revokes prior sessions (an eyes-open trade against ADR-0005 §1's
@@ -100,7 +107,7 @@ supersedes the old one (and mark the old one `Superseded by ADR-XXXX`).
   and a docs compose that CI stands up and asserts serves a site, with the backend port
   left unpublished because ADR-0004 §7's forwarded-host trust depends on it. Also keeps an
   API-only deployment expressible. Closes #258's design, unblocks #236.
-  **Status: Proposed.**
+  **Status: Accepted.**
 - [ADR-0015: Instance-supplied landing page](0015-instance-supplied-landing-page.md) —
   one root-page key (`bundled` default / `login` / `custom`) deciding what a signed-out
   visitor sees, replacing an on/off toggle that was never built; `custom` is overridable
@@ -112,4 +119,4 @@ supersedes the old one (and mark the old one `Superseded by ADR-XXXX`).
   backend's and would be read by the wrong process) so the root stays backend-independent,
   the drift-guard gap closed honestly with a web-config surface rather than a key on the
   wrong service. Refines #256; touches neither the backend nor the API surface.
-  **Status: Proposed.**
+  **Status: Accepted.**

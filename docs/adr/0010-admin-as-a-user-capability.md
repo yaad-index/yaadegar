@@ -1,6 +1,6 @@
 # ADR-0010: Admin as a per-user capability
 
-**Status:** Proposed
+**Status:** Accepted
 
 **Refines** [ADR-0009](0009-identity-roles-and-registration.md) §3 (and the admin
 mechanics its Cut 1 shipped). ADR-0009 remains authoritative for everything else:
