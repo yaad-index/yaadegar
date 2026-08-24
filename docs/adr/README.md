@@ -101,3 +101,15 @@ supersedes the old one (and mark the old one `Superseded by ADR-XXXX`).
   left unpublished because ADR-0004 §7's forwarded-host trust depends on it. Also keeps an
   API-only deployment expressible. Closes #258's design, unblocks #236.
   **Status: Proposed.**
+- [ADR-0015: Instance-supplied landing page](0015-instance-supplied-landing-page.md) —
+  one root-page key (`bundled` default / `login` / `custom`) deciding what a signed-out
+  visitor sees, replacing an on/off toggle that was never built; `custom` is overridable
+  strings over the bundled layout, not operator markup, because HTML at the root is
+  same-origin with an authenticated session and its credentialed same-origin fetches carry
+  app authority (httpOnly bounds token theft, not action) — raw-HTML/template-dir deferred
+  under narrow-first, with a reverse proxy the existing operator answer for a bespoke page;
+  the setting lives on the **web** service's env (not `config.example.yaml`, which is the
+  backend's and would be read by the wrong process) so the root stays backend-independent,
+  the drift-guard gap closed honestly with a web-config surface rather than a key on the
+  wrong service. Refines #256; touches neither the backend nor the API surface.
+  **Status: Proposed.**
