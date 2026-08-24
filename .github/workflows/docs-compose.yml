@@ -19,24 +19,23 @@
 # most-recent release until bumped, so on a release event it resolves to an
 # already-published tag rather than the one that release is still publishing.
 #
-# Staleness guard (#278): serves-a-site keeps the pin TRAILING (above), so nothing here
-# forces it forward — a release could leave the docs naming the previous version with
-# this job still green on it forever, and an operator copying the file would get a stale
-# pair. The pin-is-current job below closes that WITHOUT disturbing the trailing pin: it
-# pulls no image, so it cannot race docker-publish the way a fresh pin would, and it
-# fails on the release event the instant the pinned default no longer names the current
-# release. Auto-bumping the pin instead would make the pulling job race the publish it
-# depends on (the fresh tag is applied late by imagetools), so the split is deliberate:
-# a trailing pin for the job that pulls, a non-pulling assert for currency. Consequence,
-# and it is expected: pin-is-current goes red on every release until a follow-up bump PR
-# updates the pin — that red is the signal to open the bump PR, not a check to silence
-# (see the job's own note before touching it).
+# Staleness reconcile (#278): serves-a-site keeps the pin TRAILING (above), so nothing
+# here forces it forward — a release leaves the docs naming the previous version until a
+# small bump PR moves the pin. The pin-is-current job below closes that gap WITHOUT
+# disturbing the trailing pin and WITHOUT a red on every release: it pulls no image (so it
+# cannot race docker-publish the way a fresh pin would), it hard-fails a wrong pin only on
+# a pull_request, and on a release or a main push it keeps a single self-closing tracking
+# issue in sync instead of failing. Auto-bumping the pin itself would make the pulling job
+# race the publish (the fresh tag is applied late by imagetools), which is why the bump
+# stays manual — the reason lives at the pin in docs/docker-compose.yml and in #275.
 
 name: docs-compose
 
 on:
   release:
     types: [published]
+  push:
+    branches: [main]
   pull_request:
     paths:
       - 'docs/docker-compose.yml'
@@ -47,9 +46,14 @@ on:
 permissions:
   contents: read
   packages: read
+  issues: write # pin-reconcile opens/closes a single tracking issue
 
 jobs:
   serves-a-site:
+    # release and compose-touching PRs only. The push:main trigger exists for the
+    # pin-reconcile job below, which is a cheap non-pulling check; this job pulls two
+    # images and stands up a stack, so it must NOT run on every merge to main.
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     env:
       COMPOSE: docker compose -f docs/docker-compose.yml
@@ -120,52 +124,53 @@ jobs:
         if: always()
         run: $COMPOSE down -v
 
-  # Non-pulling companion to serves-a-site (#278). serves-a-site deliberately keeps the
-  # compose pin TRAILING (see the header note and #275) so it only ever pulls an already
-  # published tag and never races docker-publish. The price of that safety is that
-  # nothing drives the pin forward: after a release, docs/docker-compose.yml goes on
-  # naming the PREVIOUS version and serves-a-site stays green on it, so an operator
-  # copying the file gets a stale pair while CI looks happy.
+  # Keep the docs compose pin naming the current release WITHOUT a red on every release
+  # (#278). The pin cannot be correct at release time — serves-a-site above pulls it, and a
+  # pin bumped to the releasing version would name a tag docker-publish has not applied yet
+  # (imagetools moves the pinnable tags last), so the pin trails one release until a small
+  # bump PR lands. A hard failure on that guaranteed-stale state taught readers that red is
+  # normal on release day, which is exactly how a genuinely stale pin would then hide.
   #
-  # This job closes that gap without reintroducing the race. It reads no image — it only
-  # compares the pinned default in the compose file against the release that should be
-  # named — so it is immune to the publish-ordering race that keeps serves-a-site on the
-  # trailing pin. It runs on release: published, the exact moment the pin goes stale, so
-  # a release that forgets to bump the docs pin fails loudly on the spot rather than
-  # waiting for someone to happen to edit one of the four path-filtered files; and on
-  # pull_request, so the bump PR that fixes it can go green.
+  # So this job RECONCILES rather than asserts, by event:
+  #   - pull_request: a wrong pin is a HARD ERROR. This is the tooth worth keeping — it
+  #     catches a typo (pinning 0.12.0) or a bump PR naming the wrong version, and makes the
+  #     bump PR prove it set the pin to the current release.
+  #   - release / push to main: the pin legitimately trails, so it does NOT fail. It keeps a
+  #     single tracking issue in sync instead — opened/updated while the pin is stale, and
+  #     CLOSED the moment the pin matches (a main push after the bump PR merges). One issue,
+  #     reused by label, that closes itself: a stale pin stays visible and actionable
+  #     without a red, and cannot decay into a permanent open issue that is just a quieter
+  #     always-red.
   #
-  # EXPECTED, not a flake: this job goes RED on every release event and stays red until a
-  # follow-up PR bumps docs/docker-compose.yml's pin to the just-released version — the
-  # pin must trail for the job that pulls (serves-a-site) yet be current for this one, so
-  # the two are in tension for exactly one bump cycle per release. That red IS the signal
-  # to open the bump PR; it is not a spurious failure. Do not silence it by deleting the
-  # job or loosening the assert — the bump PR is the intended and only correct response.
+  # It reads no image, so it never races docker-publish. The bump itself stays manual and
+  # the reason it is not auto-moved lives at the pin in docs/docker-compose.yml (#275). The
+  # job id is unchanged (pin-is-current) so any required-check-by-name keeps resolving.
   pin-is-current:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Assert the docs compose pin names the current release
+      - name: Reconcile the docs compose pin against the current release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # On a release event this is the tag that just published; empty on a PR.
+          # On a release this is the tag that just published; empty on push / PR.
           RELEASE_TAG: ${{ github.event.release.tag_name }}
+          EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          # The tag the docs SHOULD pin: the release that fired this event, or — on a
-          # pull_request, which carries no release payload — the latest published release.
-          # Select on isLatest, NOT the top of the list: gh release list includes drafts
-          # and pre-releases by default, so a draft sitting at the top would become the
-          # wanted version and the assert would demand the pin name a tag that does not
-          # exist — a contributor following the message would then pin a phantom tag and
-          # break the pulling job on the next release. isLatest is GitHub's own
-          # latest-stable designation and is never a draft or pre-release. Release tags
-          # are yaadegar-vX.Y.Z; strip the prefix to the bare semver the compose carries.
+
+          # The version the docs SHOULD pin: the release that fired this event, or — on a
+          # push or pull_request, which carry no release payload — the latest published
+          # release. Select on isLatest, NOT the top of the list: gh release list includes
+          # drafts and pre-releases, so a draft at the top would make the pin chase a tag
+          # that does not exist. isLatest is GitHub's own latest-stable designation and is
+          # never a draft or pre-release. Tags are yaadegar-vX.Y.Z; strip to bare semver.
           tag="$RELEASE_TAG"
           if [ -z "$tag" ]; then
-            tag="$(gh release list --limit 100 --json tagName,isLatest --jq 'map(select(.isLatest)) | .[0].tagName // ""')"
+            tag="$(gh release list --repo "$REPO" --limit 100 --json tagName,isLatest \
+              --jq 'map(select(.isLatest)) | .[0].tagName // ""')"
           fi
           if [ -z "$tag" ]; then
             echo "no published release yet — nothing for the pin to be stale against; skipping"
@@ -173,24 +178,64 @@ jobs:
           fi
           want="${tag#yaadegar-v}"
 
-          # The pinned default(s) baked into the compose. app and web both default the
-          # shared YAADEGAR_IMAGE_TAG, so there must be exactly one distinct value across
-          # the pair — a mismatch is its own bug (one image bumped, the other not).
+          # The pinned default(s): app and web both default the shared YAADEGAR_IMAGE_TAG,
+          # so there must be exactly one distinct value across the pair — a mismatch is its
+          # own bug (one image bumped, the other not).
           pins="$(grep -oE '\$\{YAADEGAR_IMAGE_TAG:-[^}]+\}' docs/docker-compose.yml \
             | sed -E 's/.*:-([^}]+)\}/\1/' | sort -u || true)"
           n="$(printf '%s' "$pins" | grep -c . || true)"
-          if [ "$n" -eq 0 ]; then
-            echo "found no \${YAADEGAR_IMAGE_TAG:-...} default in docs/docker-compose.yml (#278): the pin this job guards has moved or been renamed"
-            exit 1
-          fi
           if [ "$n" -ne 1 ]; then
-            echo "the app and web images pin different defaults ($(printf '%s' "$pins" | tr '\n' ' ')) (#278): the pair must move together"
+            echo "expected exactly one \${YAADEGAR_IMAGE_TAG:-...} default in docs/docker-compose.yml, found: [$(printf '%s' "$pins" | tr '\n' ' ')] (#278) — the pin this job guards has moved, been renamed, or the pair diverged"
             exit 1
           fi
           got="$pins"
 
-          if [ "$got" != "$want" ]; then
-            echo "docs/docker-compose.yml pins :$got but the current release is $want (#278): bump the pinned default so the docs name the release an operator would actually pull"
+          # One reused tracking issue, found by a fixed label so exactly one is ever open.
+          # Create the label idempotently first, so the --label filter never errors.
+          LABEL="docs-pin-stale"
+          gh label create "$LABEL" --repo "$REPO" --color ededed \
+            --description "docs/docker-compose.yml pin trails the latest release" 2>/dev/null || true
+          open_issue="$(gh issue list --repo "$REPO" --state open --label "$LABEL" --limit 1 \
+            --json number --jq '.[0].number // ""')"
+
+          if [ "$got" = "$want" ]; then
+            echo "docs compose pin names the current release: $got"
+            # Close the tracking issue only when the match is on main — a push or the
+            # release event. A pull_request only PROPOSES the correct pin; closing on an
+            # unmerged (or later abandoned) PR would clear the reminder for a change that
+            # has not landed. The push:main after the bump PR merges does the close.
+            if [ -n "$open_issue" ] && [ "$EVENT" != "pull_request" ]; then
+              gh issue close "$open_issue" --repo "$REPO" \
+                --comment "The docs compose pin now names $want; closing automatically." \
+                || echo "::warning::could not close tracking issue #$open_issue (non-fatal)"
+              echo "closed tracking issue #$open_issue"
+            fi
+            exit 0
+          fi
+
+          # got != want: the pin is stale.
+          if [ "$EVENT" = "pull_request" ]; then
+            # HARD ERROR on a PR — a wrong pin must not merge. Catches a typo and makes a
+            # bump PR prove it names the current release.
+            echo "docs/docker-compose.yml pins :$got but the current release is $want (#278): set the \${YAADEGAR_IMAGE_TAG:-...} default to $want on both image lines"
             exit 1
           fi
-          echo "docs compose pin names the current release: $got"
+
+          # On a release or a main push the pin legitimately trails — surface it as the one
+          # tracking issue instead of a red, and stay green.
+          title="Bump docs compose pin to $want"
+          body="$(printf '%s\n' \
+            "The self-hosting quick start (\`docs/docker-compose.yml\`) pins an older release." \
+            "" \
+            "Bump the \`\${YAADEGAR_IMAGE_TAG:-...}\` default from **$got** to **$want** on both image lines, so the docs name the release an operator would actually pull." \
+            "" \
+            "Expected after every release, not a defect: the pin trails deliberately (auto-bumping it would race docker-publish — see the pin comment in the file and #275). This issue closes itself once the pin matches (#278).")"
+          if [ -n "$open_issue" ]; then
+            gh issue edit "$open_issue" --repo "$REPO" --title "$title" --body "$body" \
+              || echo "::warning::could not update tracking issue #$open_issue (non-fatal)"
+            echo "updated tracking issue #$open_issue -> $want"
+          else
+            gh issue create --repo "$REPO" --title "$title" --body "$body" --label "$LABEL" \
+              || echo "::warning::could not open tracking issue (non-fatal)"
+            echo "opened tracking issue for $want"
+          fi
