@@ -57,17 +57,32 @@ function nonEmpty(v: string | undefined): string | undefined {
  * attribute escaping stops a value breaking out of the attribute, but not a live scheme
  * on click, so this is where that is closed (ADR-0015 §2/§3).
  */
+const RELATIVE_BASE = 'http://internal.invalid/';
+
 export function sanitizeCtaHref(raw: string | undefined, fallback: string): string {
 	const v = nonEmpty(raw);
 	if (!v) return fallback;
-	// Site-relative: a single leading slash, but not protocol-relative "//host".
-	if (v.startsWith('/') && !v.startsWith('//')) return v;
-	// Absolute: http/https only.
+	// Absolute URL (has its own scheme): http/https pass; javascript:/data:/mailto:/ftp:
+	// and every other scheme are rejected.
+	let absolute: URL | undefined;
 	try {
-		const u = new URL(v);
-		if (u.protocol === 'http:' || u.protocol === 'https:') return v;
+		absolute = new URL(v);
 	} catch {
-		// not a parseable absolute URL — fall through to the fallback
+		// not absolute — a relative reference, handled below
+	}
+	if (absolute) {
+		return absolute.protocol === 'http:' || absolute.protocol === 'https:' ? v : fallback;
+	}
+	// A relative reference: resolve it with the SAME URL machinery a browser uses, against
+	// a placeholder base, and accept it only if no authority was smuggled in — i.e. it
+	// stayed same-origin. A raw string-prefix check ("/ but not //") misses the backslash
+	// forms: for a special scheme the parser treats "\" as "/" in the authority state, so
+	// "/\evil" and "/\/evil" resolve to host "evil" exactly as "//evil" does.
+	try {
+		const u = new URL(v, RELATIVE_BASE);
+		if (u.origin === new URL(RELATIVE_BASE).origin) return v;
+	} catch {
+		// unparseable even against a base — fall through
 	}
 	return fallback;
 }

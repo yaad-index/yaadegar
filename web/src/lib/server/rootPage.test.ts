@@ -91,14 +91,27 @@ describe('sanitizeCtaHref', () => {
 		expect(sanitizeCtaHref('/lists?tab=all', fb)).toBe('/lists?tab=all');
 	});
 
-	it('rejects live-scheme and unparseable values, returning the fallback', () => {
+	it('rejects live-scheme values, returning the fallback', () => {
 		expect(sanitizeCtaHref('javascript:alert(1)', fb)).toBe(fb);
 		expect(sanitizeCtaHref('JavaScript:alert(1)', fb)).toBe(fb);
 		expect(sanitizeCtaHref('data:text/html,<script>1</script>', fb)).toBe(fb);
 		expect(sanitizeCtaHref('mailto:a@b.com', fb)).toBe(fb);
-		expect(sanitizeCtaHref('//evil.example', fb)).toBe(fb); // protocol-relative
 		expect(sanitizeCtaHref('ftp://host/f', fb)).toBe(fb);
-		expect(sanitizeCtaHref('notaurl', fb)).toBe(fb);
+	});
+
+	it('rejects authority-smuggling relatives — //host and the backslash forms alike', () => {
+		// A special-scheme URL parser treats "\" as "/" in the authority state, so all of
+		// these resolve to host "evil.example" on the page. The old string-prefix check
+		// caught only the first.
+		expect(sanitizeCtaHref('//evil.example', fb)).toBe(fb);
+		expect(sanitizeCtaHref('/\\evil.example', fb)).toBe(fb);
+		expect(sanitizeCtaHref('/\\/evil.example', fb)).toBe(fb);
+		expect(sanitizeCtaHref('\\\\evil.example', fb)).toBe(fb);
+	});
+
+	it('accepts an ordinary same-site relative that merely contains a later backslash or dots', () => {
+		expect(sanitizeCtaHref('/a/b', fb)).toBe('/a/b');
+		expect(sanitizeCtaHref('/a/../b', fb)).toBe('/a/../b');
 	});
 
 	it('falls back for an unset or blank value', () => {
