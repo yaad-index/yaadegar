@@ -8,6 +8,14 @@
 	// doesn't yet support.
 	import { resolve } from '$app/paths';
 	import GiftGlyph from '$lib/components/GiftGlyph.svelte';
+	import type { PageData } from './$types';
+
+	// `custom` is populated only when the operator set YAADEGAR_ROOT_PAGE=custom (#256):
+	// the hero headline, sub-head, CTA, and the trust line then come from operator strings,
+	// already escaped/allowlisted server-side (ADR-0015). In bundled and login modes it is
+	// absent, so the page renders its shipped copy byte-for-byte.
+	let { data }: { data: PageData } = $props();
+	const custom = $derived(data.custom ?? null);
 
 	// The canonical source repo (the Go module path — already public throughout the tree).
 	const REPO_URL = 'https://github.com/yaad-index/yaadegar';
@@ -194,21 +202,24 @@
 			</p>
 
 			<h1 class="landing-hero-title mt-5 font-display text-ink-heading">
-				Wishes worth keeping<br />— surprises kept safe
+				{#if custom}{custom.headline}{:else}Wishes worth keeping<br />— surprises kept safe{/if}
 			</h1>
 
 			<p class="mt-6 max-w-xl font-ui text-[18px] leading-[1.6] text-ink-muted">
-				Yaadegar is a friendly, self-hosted gift list web app. Share your wishlist with friends and
-				family without ruining the magic — givers can coordinate and reserve secretly, while you
-				stay blissfully in the dark.
+				{#if custom}{custom.subhead}{:else}Yaadegar is a friendly, self-hosted gift list web app.
+					Share your wishlist with friends and family without ruining the magic — givers can
+					coordinate and reserve secretly, while you stay blissfully in the dark.{/if}
 			</p>
 
 			<div class="mt-8 flex flex-wrap items-center gap-3">
+				<!-- eslint-disable svelte/no-navigation-without-resolve -- the CTA href is operator-configured
+				     in custom mode (allowlisted to http/https/site-relative server-side) and the source-repo
+				     link is external; neither is a route resolve() can express. -->
 				<a
 					class="inline-flex h-12 items-center justify-center rounded-full bg-primary px-7 font-ui text-body font-medium text-white transition-colors hover:bg-primary-hover"
-					href={resolve('/login')}>Create your list</a
+					href={custom ? custom.ctaHref : resolve('/login')}
+					>{custom ? custom.ctaLabel : 'Create your list'}</a
 				>
-				<!-- eslint-disable svelte/no-navigation-without-resolve -- external source-repo link. -->
 				<a
 					class="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-line bg-surface px-6 font-ui text-body font-medium text-ink transition-colors hover:bg-surface-alt"
 					href={REPO_URL}
@@ -329,7 +340,9 @@
 				</svg>
 				No tracking. No third-party data sales.
 			</span>
-			<span class="font-medium text-ink">Free &amp; Open Source</span>
+			<span class="font-medium text-ink"
+				>{#if custom}{custom.trustLine}{:else}Free &amp; Open Source{/if}</span
+			>
 			<span class="flex items-center gap-2">
 				<svg
 					width="15"

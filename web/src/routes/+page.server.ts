@@ -1,12 +1,19 @@
 import { redirect } from '@sveltejs/kit';
+import { env } from '$env/dynamic/private';
 import type { PageServerLoad } from './$types';
+import { resolveRootPage } from '$lib/server/rootPage';
 
-// The public marketing landing (#236). It is the site root, so it must render for a
-// signed-OUT visitor rather than the old redirect-to-login. An authenticated visitor is
-// sent straight on to their app — the dashboard at /lists, which itself re-routes a
-// giver to their reserver view — so role-routing stays in one place and the marketing
-// page only ever shows to signed-out visitors.
+// The site root (#236, #256). An authenticated visitor is always sent on to their app
+// — the dashboard at /lists, which re-routes a giver onward — so role-routing stays in
+// one place and this loader only ever decides what a SIGNED-OUT visitor sees. That
+// decision is the operator's, via YAADEGAR_ROOT_PAGE (ADR-0015): the bundled marketing
+// landing (default, unchanged), a redirect to /login, or the bundled layout with the
+// operator's own words. Unset behaves exactly as today.
 export const load: PageServerLoad = ({ locals }) => {
 	if (locals.token) redirect(303, '/lists');
-	return {};
+
+	const root = resolveRootPage(env);
+	if (root.mode === 'login') redirect(303, '/login');
+	// bundled → undefined (the page renders its shipped copy); custom → the strings.
+	return { custom: root.mode === 'custom' ? root.strings : undefined };
 };
