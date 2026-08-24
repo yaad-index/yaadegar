@@ -20,6 +20,16 @@
 # stamp, which the frontend/backend skew check reads (ADR-0014 §3). Exporting it to
 # pick a tag would leak into the container and make the mismatch detector report the
 # value you injected instead of the image's real version. Keep the two separate.
+#
+# This default is bumped MANUALLY after each release (a small follow-up PR), NOT
+# auto-moved by release-please, and that is deliberate rather than a gap. The
+# docs-compose `serves-a-site` CI job pulls THIS pinned tag on the release event, and
+# auto-bumping it to the releasing version would name a tag that does not exist yet —
+# docker-publish.yml applies the pinnable tags LAST, via imagetools, so the pull would
+# race the publish. So the pin trails the newest release until its bump PR lands; the
+# docs-compose `pin-is-current` job flags when it is stale. Change the pin here, not in
+# release-please-config.json (which is strict JSON and cannot hold this note). See #275
+# and the docs-compose.yml header before touching this.
 
 services:
   db:
@@ -37,7 +47,7 @@ services:
       retries: 20
 
   app:
-    image: ghcr.io/yaad-index/yaadegar:${YAADEGAR_IMAGE_TAG:-0.13.0}
+    image: ghcr.io/yaad-index/yaadegar:${YAADEGAR_IMAGE_TAG:-0.14.0}
     depends_on:
       db:
         condition: service_healthy
@@ -64,7 +74,7 @@ services:
       start_period: 5s
 
   web:
-    image: ghcr.io/yaad-index/yaadegar-web:${YAADEGAR_IMAGE_TAG:-0.13.0}
+    image: ghcr.io/yaad-index/yaadegar-web:${YAADEGAR_IMAGE_TAG:-0.14.0}
     depends_on:
       app:
         condition: service_healthy
