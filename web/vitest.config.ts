@@ -39,7 +39,12 @@ export default defineConfig({
 						'$app/navigation': new URL('./src/lib/testing/app-stubs/navigation.ts', import.meta.url)
 							.pathname,
 						'$app/paths': new URL('./src/lib/testing/app-stubs/paths.ts', import.meta.url).pathname,
-						'$app/state': new URL('./src/lib/testing/app-stubs/state.ts', import.meta.url).pathname
+						'$app/state': new URL('./src/lib/testing/app-stubs/state.ts', import.meta.url).pathname,
+						// Read (not just resolved) by the root-page loader; the stub starts empty.
+						'$env/dynamic/private': new URL(
+							'./src/lib/testing/app-stubs/env-dynamic-private.ts',
+							import.meta.url
+						).pathname
 					}
 				},
 				test: {
