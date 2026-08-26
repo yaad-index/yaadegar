@@ -26,14 +26,18 @@ const passwordResetTTL = time.Hour
 const setPasswordInviteTTL = 72 * time.Hour
 
 // RequestPasswordReset starts the forgot-password flow (ADR-0011 cut 3). It is
-// enumeration-safe: the response is ALWAYS a 202 with no body, whether or not the
-// identifier resolves to an account. Three things keep existence from leaking:
+// enumeration-safe: under the rate limit the response is a 202 with no body, whether
+// or not the identifier resolves to an account, and over the limit it is a 429 —
+// applied identically regardless of existence (see resetKeys). Four things keep
+// existence from leaking:
+//   - the throttle keys, allow-check, and count all run before the lookup and never
+//     branch on found-ness, so the limiter state is not a tell (#289);
 //   - the token mint (crypto/rand + hash) runs on every request, found or not, so
 //     that constant work is not a tell;
 //   - the token persist AND the email send both run off the response path (one
 //     goroutine, ordered persist→send), so a found identifier does no extra
 //     synchronous DB work than an unknown one (#159) — the request path does the
-//     same work either way: mint, look up, maybe enqueue, return 202;
+//     same work either way: throttle, mint, look up, maybe enqueue, return 202;
 //   - failures inside the goroutine are logged, never surfaced.
 func (s *Server) RequestPasswordReset(ctx context.Context, req gen.RequestPasswordResetRequestObject) (gen.RequestPasswordResetResponseObject, error) {
 	ts, tenant, ok := s.tenantStore(ctx)
@@ -45,6 +49,21 @@ func (s *Server) RequestPasswordReset(ctx context.Context, req gen.RequestPasswo
 			BadRequestApplicationProblemPlusJSONResponse: badRequest("identifier is required"),
 		}, nil
 	}
+
+	// Throttle before any account work — and, critically, identically for every
+	// request regardless of whether the identifier resolves. The allow-check and the
+	// count both run here, ahead of the lookup, and neither branches on found-ness, so
+	// the limiter state stays a pure function of (IP, identifier, timing). If it
+	// varied with existence it would become exactly the oracle the constant 202 exists
+	// to deny. Over the limit every caller gets the same 429; the send path is
+	// unreachable, so it too reveals nothing.
+	ipKey, idKey := s.resetKeys(ctx, tenant.ID, req.Body.Identifier)
+	if !s.resetAllowed(ipKey, idKey) {
+		return gen.RequestPasswordReset429ApplicationProblemPlusJSONResponse{
+			TooManyRequestsApplicationProblemPlusJSONResponse: tooManyRequests(),
+		}, nil
+	}
+	s.resetRecord(ipKey, idKey)
 
 	// Mint the token up front so the same crypto work is spent on every request.
 	raw, hash, err := token.New()
@@ -59,6 +78,33 @@ func (s *Server) RequestPasswordReset(ctx context.Context, req gen.RequestPasswo
 
 	// Always the same: 202, no body, no hint about what happened.
 	return gen.RequestPasswordReset202Response{}, nil
+}
+
+// resetKeys returns the (ip, identity) rate-limit keys for a password-reset request,
+// mirroring login's keying (client IP plus tenant-scoped identity). They ride the
+// same limiter mechanism as login but under a distinct "pwreset:" namespace, so the
+// two surfaces throttle independently: a reset flood never consumes a login bucket,
+// and — the reason a shared key would be a bug, not just untidy — a successful login
+// (which clears its keys) can never refill a reset window, nor a reset a login one.
+// The identity key uses the SUBMITTED identifier verbatim: the same key is formed and
+// counted whether or not it resolves, which is what keeps the throttle existence-blind.
+func (s *Server) resetKeys(ctx context.Context, tenantID, identifier string) (ipKey, idKey string) {
+	return "pwreset:ip:" + clientIPFromContext(ctx), "pwreset:id:" + tenantID + ":" + identifier
+}
+
+// resetAllowed reports whether both the IP and the identifier are under their limits.
+func (s *Server) resetAllowed(ipKey, idKey string) bool {
+	return s.loginLimiter.Allow(ipKey) && s.loginLimiter.Allow(idKey)
+}
+
+// resetRecord counts one reset request against both keys. Unlike login there is no
+// success/failure distinction to record: every request counts (the limiter's
+// RecordFailure is used purely as "this attempt consumed one unit of the window"),
+// and success is never recorded — clearing on a resolved identifier would leak
+// existence. So the pwreset keys behave as a plain per-window request counter.
+func (s *Server) resetRecord(ipKey, idKey string) {
+	s.loginLimiter.RecordFailure(ipKey)
+	s.loginLimiter.RecordFailure(idKey)
 }
 
 // lookupResettable resolves an identifier (username or email) to an account that may
