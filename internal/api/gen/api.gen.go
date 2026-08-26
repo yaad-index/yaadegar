@@ -3190,6 +3190,22 @@ func (response RequestPasswordReset400ApplicationProblemPlusJSONResponse) VisitR
 	return err
 }
 
+type RequestPasswordReset429ApplicationProblemPlusJSONResponse struct {
+	TooManyRequestsApplicationProblemPlusJSONResponse
+}
+
+func (response RequestPasswordReset429ApplicationProblemPlusJSONResponse) VisitRequestPasswordResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type RegisterRequestObject struct {
 	Body *RegisterJSONRequestBody
 }

@@ -112,7 +112,7 @@ export interface paths {
         put?: never;
         /**
          * Request a password-reset email
-         * @description Starts the forgot-password flow (ADR-0011). When the identifier resolves to an account that has a password credential and a deliverable email, a single-use, short-lived reset link is emailed. The response is ALWAYS 202 and identical whether or not the account exists — status, body, and timing never reveal account existence (enumeration-safe). Unauthenticated; the tenant is resolved from the Host.
+         * @description Starts the forgot-password flow (ADR-0011). When the identifier resolves to an account that has a password credential and a deliverable email, a single-use, short-lived reset link is emailed. Under the rate limit the response is always 202 and identical whether or not the account exists — status, body, and timing never reveal account existence (enumeration-safe). Requests are throttled per client IP and per submitted identifier; over the limit the response is 429. The throttle is applied identically regardless of whether the identifier resolves, so it never leaks existence that the 202 withholds. Unauthenticated; the tenant is resolved from the Host.
          */
         post: operations["requestPasswordReset"];
         delete?: never;
@@ -1466,6 +1466,7 @@ export interface operations {
                 content?: never;
             };
             400: components["responses"]["BadRequest"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     confirmPasswordReset: {
