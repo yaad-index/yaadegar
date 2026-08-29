@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.14.0...yaadegar-v0.15.0) (2026-08-26)
+
+
+### Features
+
+* **api:** rate-limit password-reset requests, existence-blind ([#296](https://github.com/yaad-index/yaadegar/issues/296)) ([c26031b](https://github.com/yaad-index/yaadegar/commit/c26031b016f2a519fb9ba18683321dc7c26aeb2f)), closes [#289](https://github.com/yaad-index/yaadegar/issues/289)
+
 ## [0.14.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.13.0...yaadegar-v0.14.0) (2026-08-24)
 
 
