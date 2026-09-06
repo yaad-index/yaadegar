@@ -141,16 +141,26 @@ jobs:
   #     without a red, and cannot decay into a permanent open issue that is just a quieter
   #     always-red.
   #
-  # It reads no image, so it never races docker-publish. The bump itself stays manual and
-  # the reason it is not auto-moved lives at the pin in docs/docker-compose.yml (#275). The
-  # job id is unchanged (pin-is-current) so any required-check-by-name keeps resolving.
+  # It reads no image, so it never races docker-publish. The pin still TRAILS, and it is
+  # still a separate PR that moves it — the reason it is not auto-moved as part of the
+  # release lives at the pin in docs/docker-compose.yml (#275). What changed (#307) is
+  # only who opens that PR: this job does, instead of a person. The job id is unchanged
+  # (pin-is-current) so any required-check-by-name keeps resolving.
+  #
+  # Auto-bumping the pin inside the RELEASE PR remains wrong and is not what this does.
+  # That PR would name the version being cut, which is not published while it is open, so
+  # serves-a-site would pull a tag that does not exist yet and this job's own pull_request
+  # arm would hard-error on the release PR itself. The bump PR opened here is a separate
+  # PR raised AFTER the release, when the tag it names is already published.
   pin-is-current:
     runs-on: ubuntu-latest
-    # Only this job touches issues; serves-a-site does not. Scope the write here rather
-    # than workflow-wide, so serves-a-site does not inherit an unused issues:write.
+    # Scoped here rather than workflow-wide so serves-a-site does not inherit writes it
+    # has no use for. contents+pull-requests push the bump branch and open its PR; issues
+    # remains for the fallback below.
     permissions:
-      contents: read
+      contents: write
       issues: write
+      pull-requests: write
     # Serialize reconcile runs. release:published and push:main fire ~10s apart for the
     # same release and BOTH run this job while the pin is stale (the normal post-release
     # window, and push:main has no path filter so it always runs). Without serialization
@@ -165,10 +175,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Same token expression as release-please.yml, for the same reason: a PR
+          # opened with the built-in GITHUB_TOKEN does not fire pull_request, so its
+          # checks never run. With RELEASE_PLEASE_TOKEN present the bump PR is authored
+          # by that identity and gets CI like any other PR; without it the PR is still
+          # opened and needs one close/reopen to start its checks. See RELEASING.md.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Reconcile the docs compose pin against the current release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
           # On a release this is the tag that just published; empty on push / PR.
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           EVENT: ${{ github.event_name }}
@@ -236,15 +253,81 @@ jobs:
             exit 1
           fi
 
-          # On a release or a main push the pin legitimately trails — surface it as the one
-          # tracking issue instead of a red, and stay green.
+          # On a release or a main push the pin legitimately trails. Open the PR that
+          # moves it (#307) rather than asking a person to. The pin still trails and the
+          # bump is still its own PR reviewed like any other; only the typing is gone.
+          #
+          # The tag this PR names is already published, because the release event that
+          # triggers this fires after docker-publish has applied it — which is exactly
+          # why the bump is a separate PR and not part of the release PR.
+          branch="docs-pin/$want"
+
+          existing_pr="$(gh pr list --repo "$REPO" --head "$branch" --state open \
+            --json number --jq '.[0].number // ""')"
+          if [ -n "$existing_pr" ]; then
+            echo "bump PR #$existing_pr is already open for $want"
+            exit 0
+          fi
+
+          # Rewrite every pinned default. The `g` flag and the shared variable name keep
+          # the two image lines in step; a divergence between them is caught by the
+          # exactly-one-distinct-value check above on the next run.
+          sed -i -E "s|(\\\$\\{YAADEGAR_IMAGE_TAG:-)[^}]+(\\})|\\1$want\\2|g" docs/docker-compose.yml
+          if git diff --quiet -- docs/docker-compose.yml; then
+            echo "::warning::pin reported stale ($got vs $want) but rewriting changed nothing — the pin format may have moved"
+            exit 0
+          fi
+
+          git config user.name "yaadegar-bot"
+          git config user.email "yaadegar-bot@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add docs/docker-compose.yml
+          git commit -m "chore(docs): pin the compose quick start to $want" \
+            -m "The self-hosting quick start named $got while the current release is $want." \
+            -m "Opened automatically after the release (#307). The pin trails deliberately:" \
+            -m "auto-bumping it inside the release PR would name a tag that is not published" \
+            -m "while that PR is open (#275)."
+
+          # A PR body a stranger can act on: what changed, why it trails, and what to check.
+          pr_body="$(printf '%s\n' \
+            "Moves the \`\${YAADEGAR_IMAGE_TAG:-...}\` default in \`docs/docker-compose.yml\` from **$got** to **$want** on both image lines, so the quick start names the release an operator would actually pull." \
+            "" \
+            "Opened automatically after the $want release." \
+            "" \
+            "**Why this is a separate PR rather than part of the release.** The pin trails on purpose. \`serves-a-site\` stands up this compose file using its own pinned default, with no override, so that CI pulls the exact artifact the docs name. A pin bumped to the version being released would name a tag that docker-publish has not applied yet, and the pull would race the publish. So the pin names the previous release until this PR lands, and the tag it names here is already published." \
+            "" \
+            "**What CI proves here:** \`serves-a-site\` runs on this PR because it touches the compose file, and it stands the stack up against the newly pinned tag. \`pin-is-current\` runs too, and on a pull_request a wrong pin is a hard error — so this PR has to prove it names the current release.")"
+
+          if git push --quiet origin "$branch" \
+            && gh pr create --repo "$REPO" --head "$branch" --base main \
+                 --title "chore(docs): pin the compose quick start to $want" \
+                 --body "$pr_body"; then
+            echo "opened bump PR for $want"
+            # The PR supersedes the reminder; a leftover issue from before this job
+            # opened PRs would otherwise sit open forever with no one to close it.
+            if [ -n "$open_issue" ]; then
+              gh issue close "$open_issue" --repo "$REPO" \
+                --comment "Superseded by the bump PR for $want, which is opened automatically now." \
+                || echo "::warning::could not close superseded tracking issue #$open_issue (non-fatal)"
+            fi
+            exit 0
+          fi
+
+          # Fallback: if the PR could not be opened, a stale pin must still be visible
+          # and actionable rather than only a line in a log nobody reads (#278). Warn,
+          # and keep the tracking issue as the surface it always was.
+          # Name the likely cause: the short-circuit above only looks for an OPEN PR, so a
+          # bump PR that was closed unmerged leaves its branch behind and the push here is
+          # rejected as non-fast-forward. That is not a token or permission fault, and
+          # saying so keeps the next investigation off the wrong trail.
+          echo "::warning::could not open the bump PR for $want — falling back to the tracking issue. If branch $branch still exists from a closed bump PR, delete it and re-run; this is not necessarily a token problem."
           title="Bump docs compose pin to $want"
           body="$(printf '%s\n' \
             "The self-hosting quick start (\`docs/docker-compose.yml\`) pins an older release." \
             "" \
             "Bump the \`\${YAADEGAR_IMAGE_TAG:-...}\` default from **$got** to **$want** on both image lines, so the docs name the release an operator would actually pull." \
             "" \
-            "Expected after every release, not a defect: the pin trails deliberately (auto-bumping it would race docker-publish — see the pin comment in the file and #275). This issue closes itself once the pin matches (#278).")"
+            "This is normally opened as a PR automatically (#307); that failed on this run, so it is here instead. The pin trails deliberately — auto-bumping it inside the release PR would race docker-publish, see the pin comment in the file and #275. This issue closes itself once the pin matches (#278).")"
           if [ -n "$open_issue" ]; then
             gh issue edit "$open_issue" --repo "$REPO" --title "$title" --body "$body" \
               || echo "::warning::could not update tracking issue #$open_issue (non-fatal)"
