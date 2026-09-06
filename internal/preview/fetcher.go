@@ -1,11 +1,14 @@
 package preview
 
 import (
+	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -15,6 +18,10 @@ const (
 	fetchTimeout = 8 * time.Second
 	dialTimeout  = 5 * time.Second
 	userAgent    = "yaadegar-link-preview/1.0 (+https://github.com/yaad-index/yaadegar)"
+
+	// acceptHTML mirrors what a browser asks for. Some retailers vary their
+	// response on it and serve a reduced page to a bare Accept.
+	acceptHTML = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
 )
 
 // Fetcher retrieves the HTML body at a URL. The production implementation is
@@ -65,8 +72,7 @@ func (f *SafeFetcher) Fetch(ctx context.Context, rawURL string) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("Accept", "text/html,application/xhtml+xml")
+	setPreviewHeaders(req)
 
 	resp, err := f.client.Do(req)
 	if err != nil {
@@ -76,11 +82,74 @@ func (f *SafeFetcher) Fetch(ctx context.Context, rawURL string) ([]byte, error) 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("preview: upstream status %d", resp.StatusCode)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
-	if err != nil {
-		return nil, err
+	return readBody(resp)
+}
+
+// setPreviewHeaders pins every negotiated header explicitly instead of letting
+// the transport pick.
+//
+// Accept-Encoding matters most. http.Transport adds "gzip" on its own whenever
+// the caller leaves the header unset, and at least one major retailer varies its
+// response on that header — serving an anti-automation stub to the compressed
+// request and the real product page to the plain one. Asking for identity keeps
+// us on the page a browser would get. The extra bandwidth is already bounded by
+// maxBodyBytes.
+//
+// It has to be set to "identity" rather than merely left off: a server that sees
+// no Accept-Encoding at all is free to compress anyway, and observed behaviour
+// is that one does.
+func setPreviewHeaders(req *http.Request) {
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", acceptHTML)
+	req.Header.Set("Accept-Encoding", "identity")
+}
+
+// readBody reads at most maxBodyBytes of the response.
+//
+// Setting Accept-Encoding by hand switches off the transport's transparent
+// decompression, so a server that compresses regardless of what we asked for
+// would otherwise hand the parser gzip bytes and yield an empty draft. Trust the
+// response's own Content-Encoding rather than the request's.
+func readBody(resp *http.Response) ([]byte, error) {
+	r := io.LimitReader(resp.Body, maxBodyBytes)
+
+	switch enc := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Encoding"))); enc {
+	case "", "identity":
+		// Nothing is tolerated on this path. The size cap cannot produce a short
+		// read here — io.LimitReader signals its limit with a plain io.EOF, which
+		// io.ReadAll already reports as success — so an unexpected EOF means the
+		// connection dropped mid-download, and returning the partial HTML would
+		// be a silent success built on an incomplete page.
+		body, err := io.ReadAll(r)
+		if err != nil {
+			return nil, err
+		}
+		return body, nil
+
+	case "gzip":
+		zr, err := gzip.NewReader(r)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = zr.Close() }()
+
+		// Cap the decompressed side too, so a small body cannot expand without
+		// bound.
+		body, err := io.ReadAll(io.LimitReader(zr, maxBodyBytes))
+		// Only here is a truncated tail expected rather than exceptional: the cap
+		// can cut the compressed stream mid-way. The metadata sits in the head of
+		// the document, so keep what arrived.
+		if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
+			return nil, err
+		}
+		return body, nil
+
+	default:
+		// br, deflate, anything else. Without this the body reaches the parser as
+		// binary and fails as "no metadata found", which is indistinguishable
+		// from a page that genuinely publishes none.
+		return nil, fmt.Errorf("preview: unsupported content encoding %q", enc)
 	}
-	return body, nil
 }
 
 func allowedScheme(s string) bool { return s == "http" || s == "https" }
