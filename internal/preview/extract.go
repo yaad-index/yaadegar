@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"math"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -26,11 +27,16 @@ func extract(body []byte, sourceURL string) Draft {
 	meta := map[string]string{} // og:*/twitter:*/product:* → content (first wins)
 	var title string
 	var ldjson []string
+	var bestImg imgCandidate
 
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
 		if n.Type == html.ElementNode {
 			switch strings.ToLower(n.Data) {
+			case "img":
+				if c := largestImgCandidate(n); c.betterThan(bestImg) {
+					bestImg = c
+				}
 			case "meta":
 				key := attr(n, "property")
 				if key == "" {
@@ -62,7 +68,10 @@ func extract(body []byte, sourceURL string) Draft {
 	ldName, ldImage, ldAmount, ldCurrency := parseLDJSON(ldjson)
 
 	d.Name = firstNonEmpty(ldName, meta["og:title"], meta["twitter:title"], title)
-	d.ImageURL = firstNonEmpty(ldImage, meta["og:image"], meta["og:image:url"], meta["twitter:image"])
+	// The DOM candidate is deliberately last: a page that publishes a social-card
+	// image keeps using it, and the crawl only matters for pages that publish none.
+	d.ImageURL = firstNonEmpty(ldImage, meta["og:image"], meta["og:image:url"], meta["twitter:image"],
+		absoluteImageURL(bestImg.url, sourceURL))
 
 	amount, currency := ldAmount, ldCurrency
 	if amount == "" {
@@ -74,6 +83,137 @@ func extract(body []byte, sourceURL string) Draft {
 	d.Price = parsePrice(amount, currency)
 
 	return d
+}
+
+// minImageDim is the floor below which an <img> is treated as chrome — an icon,
+// a spacer, a rating star — rather than a picture of the product.
+const minImageDim = 200
+
+// imgCandidate is a product-image guess taken from the DOM, kept with its area so
+// competing candidates on the same page can be ranked.
+type imgCandidate struct {
+	url  string
+	area int
+}
+
+func (c imgCandidate) betterThan(other imgCandidate) bool {
+	return c.url != "" && c.area > other.area
+}
+
+// largestImgCandidate scores a single <img>.
+//
+// Some retailers publish no og:image, no twitter:image and no ld+json image, and
+// carry the product picture only in the DOM. The richest form is a JSON map of
+// URL to [width, height] in an attribute, which names every rendition at once and
+// so states its own dimensions; failing that, an element that declares explicit
+// width and height is usable. An <img> that declares no size is skipped rather
+// than guessed at — an unranked candidate would outrank nothing and could just as
+// easily be a banner.
+func largestImgCandidate(n *html.Node) imgCandidate {
+	var best imgCandidate
+
+	// These attribute names are a single large retailer's own markup convention,
+	// not a web standard and not something to generalise from — which is why they
+	// are tried first but nothing depends on them, and why the width/height path
+	// below stands on its own. Attribute values arrive unescaped from the parser,
+	// so the value is plain JSON.
+	for _, key := range []string{"data-a-dynamic-image", "data-dynamic-image"} {
+		raw := attr(n, key)
+		if raw == "" {
+			continue
+		}
+		var byURL map[string][]int
+		if err := json.Unmarshal([]byte(raw), &byURL); err != nil {
+			continue
+		}
+		for u, wh := range byURL {
+			if len(wh) != 2 || !usableImageURL(u) {
+				continue
+			}
+			if wh[0] < minImageDim || wh[1] < minImageDim {
+				continue
+			}
+			if c := (imgCandidate{url: u, area: wh[0] * wh[1]}); c.betterThan(best) {
+				best = c
+			}
+		}
+	}
+	if best.url != "" {
+		return best
+	}
+
+	src := firstNonEmptyString(attr(n, "src"), attr(n, "data-src"))
+	if !usableImageURL(src) {
+		return imgCandidate{}
+	}
+	w, errW := strconv.Atoi(strings.TrimSpace(attr(n, "width")))
+	h, errH := strconv.Atoi(strings.TrimSpace(attr(n, "height")))
+	if errW != nil || errH != nil || w < minImageDim || h < minImageDim {
+		return imgCandidate{}
+	}
+	return imgCandidate{url: src, area: w * h}
+}
+
+// usableImageURL rejects what cannot become an image_url worth storing: an empty
+// src, and anything carrying a scheme this package will not serve — data:, which
+// would embed a whole image in the field, but equally blob:, javascript:, mailto:
+// and every other scheme.
+//
+// The rejection has to happen here, while ranking, and not only at the end where
+// absoluteImageURL enforces the same http/https rule. A candidate that wins on
+// area and is discarded afterwards takes a smaller, perfectly good image down
+// with it, and the page ends up with no picture at all.
+//
+// A scheme-less src is kept: it is relative (or protocol-relative) and is
+// resolved against the page URL later, which is where it gets held to the rule.
+func usableImageURL(u string) bool {
+	u = strings.TrimSpace(u)
+	if u == "" {
+		return false
+	}
+	parsed, err := url.Parse(u)
+	if err != nil {
+		return false
+	}
+	return parsed.Scheme == "" || allowedScheme(parsed.Scheme)
+}
+
+// absoluteImageURL resolves a DOM-sourced src against the page it came from. A
+// relative src is common in markup and useless once stored, and the result is
+// held to the same http/https restriction as everything else here.
+func absoluteImageURL(raw, sourceURL string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	ref, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	if ref.IsAbs() {
+		if !allowedScheme(ref.Scheme) {
+			return ""
+		}
+		return ref.String()
+	}
+	base, err := url.Parse(sourceURL)
+	if err != nil || !base.IsAbs() {
+		return ""
+	}
+	abs := base.ResolveReference(ref)
+	if !allowedScheme(abs.Scheme) {
+		return ""
+	}
+	return abs.String()
+}
+
+func firstNonEmptyString(vals ...string) string {
+	for _, v := range vals {
+		if t := strings.TrimSpace(v); t != "" {
+			return t
+		}
+	}
+	return ""
 }
 
 func attr(n *html.Node, key string) string {
