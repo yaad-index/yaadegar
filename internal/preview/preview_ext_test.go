@@ -206,6 +206,24 @@ func TestExtract_EmptyIsUnfetchable(t *testing.T) {
 	assert.ErrorIs(t, err, preview.ErrUnfetchable)
 }
 
+// TestPreview_SiteNameOnlyIsUnfetchable covers the anti-automation stub: a 200
+// whose only usable content is the site's own name. Returning it would name the
+// user's item after a shop with nothing signalling a failed fetch.
+func TestPreview_SiteNameOnlyIsUnfetchable(t *testing.T) {
+	_, err := run(t, `<html><head><title>shop.example</title></head>
+<body>To discuss automated access, contact us.</body></html>`)
+	assert.ErrorIs(t, err, preview.ErrUnfetchable)
+}
+
+// TestPreview_RealProductOnSameHostStillWorks is the other direction: the guard
+// must not swallow a legitimate page served by that same host.
+func TestPreview_RealProductOnSameHostStillWorks(t *testing.T) {
+	d, err := run(t, `<html><head><title>shop.example Branded Mug</title></head></html>`)
+	require.NoError(t, err)
+	require.NotNil(t, d.Name)
+	assert.Equal(t, "shop.example Branded Mug", *d.Name)
+}
+
 func TestPreview_RejectsNonHTTPScheme(t *testing.T) {
 	p := preview.New(&preview.FakeFetcher{Body: []byte("<title>x</title>")})
 	_, err := p.Preview(context.Background(), "file:///etc/passwd")
