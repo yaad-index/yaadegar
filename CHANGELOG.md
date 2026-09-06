@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.15.0...yaadegar-v0.16.0) (2026-09-06)
+
+
+### Features
+
+* **web:** serve /privacy and /terms with a PLACE HOLDER until configured ([#301](https://github.com/yaad-index/yaadegar/issues/301)) ([a5b74be](https://github.com/yaad-index/yaadegar/commit/a5b74bed9861fd7113d616bdc1b7dbed6fbe763c)), closes [#300](https://github.com/yaad-index/yaadegar/issues/300)
+
 ## [0.15.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.14.0...yaadegar-v0.15.0) (2026-08-26)
 
 
