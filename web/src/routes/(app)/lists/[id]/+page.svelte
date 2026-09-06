@@ -169,7 +169,9 @@
 		<form
 			method="post"
 			action="?/settings"
-			use:formEnhance={() => ({ update }) => update({ reset: false })}
+			use:formEnhance={() =>
+				({ update }) =>
+					update({ reset: false })}
 			class="mt-4 space-y-4"
 		>
 			<label class="block">
