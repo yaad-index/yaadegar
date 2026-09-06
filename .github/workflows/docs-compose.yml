@@ -316,7 +316,11 @@ jobs:
           # Fallback: if the PR could not be opened, a stale pin must still be visible
           # and actionable rather than only a line in a log nobody reads (#278). Warn,
           # and keep the tracking issue as the surface it always was.
-          echo "::warning::could not open the bump PR for $want — falling back to the tracking issue"
+          # Name the likely cause: the short-circuit above only looks for an OPEN PR, so a
+          # bump PR that was closed unmerged leaves its branch behind and the push here is
+          # rejected as non-fast-forward. That is not a token or permission fault, and
+          # saying so keeps the next investigation off the wrong trail.
+          echo "::warning::could not open the bump PR for $want — falling back to the tracking issue. If branch $branch still exists from a closed bump PR, delete it and re-run; this is not necessarily a token problem."
           title="Bump docs compose pin to $want"
           body="$(printf '%s\n' \
             "The self-hosting quick start (\`docs/docker-compose.yml\`) pins an older release." \
