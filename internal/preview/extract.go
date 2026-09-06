@@ -112,7 +112,11 @@ func (c imgCandidate) betterThan(other imgCandidate) bool {
 func largestImgCandidate(n *html.Node) imgCandidate {
 	var best imgCandidate
 
-	// Attribute values arrive unescaped from the parser, so this is plain JSON.
+	// These attribute names are a single large retailer's own markup convention,
+	// not a web standard and not something to generalise from — which is why they
+	// are tried first but nothing depends on them, and why the width/height path
+	// below stands on its own. Attribute values arrive unescaped from the parser,
+	// so the value is plain JSON.
 	for _, key := range []string{"data-a-dynamic-image", "data-dynamic-image"} {
 		raw := attr(n, key)
 		if raw == "" {
@@ -151,13 +155,27 @@ func largestImgCandidate(n *html.Node) imgCandidate {
 }
 
 // usableImageURL rejects what cannot become an image_url worth storing: an empty
-// src, and an inline data: URI, which would embed a whole image in the field.
+// src, and anything carrying a scheme this package will not serve — data:, which
+// would embed a whole image in the field, but equally blob:, javascript:, mailto:
+// and every other scheme.
+//
+// The rejection has to happen here, while ranking, and not only at the end where
+// absoluteImageURL enforces the same http/https rule. A candidate that wins on
+// area and is discarded afterwards takes a smaller, perfectly good image down
+// with it, and the page ends up with no picture at all.
+//
+// A scheme-less src is kept: it is relative (or protocol-relative) and is
+// resolved against the page URL later, which is where it gets held to the rule.
 func usableImageURL(u string) bool {
 	u = strings.TrimSpace(u)
 	if u == "" {
 		return false
 	}
-	return !strings.HasPrefix(strings.ToLower(u), "data:")
+	parsed, err := url.Parse(u)
+	if err != nil {
+		return false
+	}
+	return parsed.Scheme == "" || allowedScheme(parsed.Scheme)
 }
 
 // absoluteImageURL resolves a DOM-sourced src against the page it came from. A

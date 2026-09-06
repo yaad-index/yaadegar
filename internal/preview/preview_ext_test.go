@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -141,18 +142,38 @@ func TestExtract_DOMImageIgnoresChrome(t *testing.T) {
 		assert.Nil(t, d.ImageURL, "an inline data URI must not become image_url")
 	})
 
-	// A data URI must be rejected while ranking, not merely dropped at the end.
-	// If it is allowed to win on area, the real image on the page loses to it and
-	// is then discarded for having an unusable scheme — costing an image that was
-	// there all along.
-	t.Run("a large data URI does not displace a smaller real image", func(t *testing.T) {
-		d, err := run(t, `<html><head><title>Widget</title></head><body>
-<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" width="900" height="900">
+	// An unservable scheme must be rejected while ranking, not merely dropped at
+	// the end. If it is allowed to win on area, the real image on the page loses
+	// to it and is then discarded for having an unusable scheme — costing an image
+	// that was there all along.
+	//
+	// data: is the obvious case, but the rule is about the scheme, not that one
+	// prefix, so every other scheme is checked the same way.
+	for _, src := range []string{
+		"data:image/gif;base64,R0lGODlhAQABAAAAACw=",
+		"blob:https://shop.example/2f8a-4c1d",
+		"javascript:void(0)",
+		"mailto:someone@shop.example",
+		"ftp://cdn.example/legacy.jpg",
+	} {
+		t.Run("a large "+src[:strings.Index(src, ":")]+": src does not displace a smaller real image", func(t *testing.T) {
+			d, err := run(t, `<html><head><title>Widget</title></head><body>
+<img src="`+src+`" width="900" height="900">
 <img src="https://cdn.example/real.jpg" width="300" height="300">
 </body></html>`)
+			require.NoError(t, err)
+			require.NotNil(t, d.ImageURL, "the real image must survive a larger unservable candidate")
+			assert.Equal(t, "https://cdn.example/real.jpg", *d.ImageURL)
+		})
+	}
+
+	t.Run("a protocol-relative src is kept and resolved", func(t *testing.T) {
+		d, err := run(t, `<html><head><title>Widget</title></head><body>
+<img src="//cdn.example/proto-relative.jpg" width="600" height="600">
+</body></html>`)
 		require.NoError(t, err)
-		require.NotNil(t, d.ImageURL, "the real image must survive a larger data URI")
-		assert.Equal(t, "https://cdn.example/real.jpg", *d.ImageURL)
+		require.NotNil(t, d.ImageURL, "a scheme-less src is relative, not unservable")
+		assert.Equal(t, "https://cdn.example/proto-relative.jpg", *d.ImageURL)
 	})
 }
 
