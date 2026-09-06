@@ -23,7 +23,6 @@ func TestSetPreviewHeaders_PinsAcceptEncodingToIdentity(t *testing.T) {
 	// no Accept-Encoding may compress regardless.
 	assert.Equal(t, "identity", req.Header.Get("Accept-Encoding"))
 	assert.NotEmpty(t, req.Header.Get("User-Agent"))
-	assert.NotEmpty(t, req.Header.Get("Accept-Language"))
 	assert.Contains(t, req.Header.Get("Accept"), "text/html")
 }
 
@@ -106,6 +105,80 @@ func TestReadBody_KeepsTruncatedGzipHead(t *testing.T) {
 	require.NoError(t, err, "a truncated tail must not fail the whole fetch")
 	assert.Contains(t, string(body), "<title>Truncated Product</title>",
 		"the head of the document must survive truncation")
+}
+
+// truncatedReader yields some bytes and then reports the connection died, which
+// is what net/http's body reader does when a declared Content-Length is not
+// fully delivered.
+type truncatedReader struct {
+	data []byte
+	sent bool
+}
+
+func (r *truncatedReader) Read(p []byte) (int, error) {
+	if !r.sent {
+		r.sent = true
+		n := copy(p, r.data)
+		return n, nil
+	}
+	return 0, io.ErrUnexpectedEOF
+}
+
+// TestReadBody_PlainTruncationIsAnError is the counterpart to the gzip case: on
+// an uncompressed body the size cap cannot cause a short read, because
+// io.LimitReader signals its limit with a plain io.EOF that io.ReadAll reports
+// as success. So an unexpected EOF here is a dropped connection, and returning
+// the partial HTML would be a silent success on an incomplete page.
+func TestReadBody_PlainTruncationIsAnError(t *testing.T) {
+	resp := &http.Response{
+		Header: http.Header{},
+		Body:   io.NopCloser(&truncatedReader{data: []byte("<html><head><title>Half")}),
+	}
+
+	_, err := readBody(resp)
+	require.Error(t, err, "a dropped connection must not read as a successful fetch")
+	assert.ErrorIs(t, err, io.ErrUnexpectedEOF)
+}
+
+// TestReadBody_CapAloneIsNotTruncation pins the premise the test above rests on:
+// hitting maxBodyBytes on a plain body is a success, not an error.
+func TestReadBody_CapAloneIsNotTruncation(t *testing.T) {
+	resp := &http.Response{
+		Header: http.Header{},
+		Body:   io.NopCloser(bytes.NewReader(bytes.Repeat([]byte("a"), maxBodyBytes*2))),
+	}
+
+	body, err := readBody(resp)
+	require.NoError(t, err, "the size cap is not a failure")
+	assert.Len(t, body, maxBodyBytes)
+}
+
+func TestReadBody_UnsupportedEncodingIsAnError(t *testing.T) {
+	for _, enc := range []string{"br", "deflate", "zstd"} {
+		t.Run(enc, func(t *testing.T) {
+			resp := &http.Response{
+				Header: http.Header{"Content-Encoding": []string{enc}},
+				Body:   io.NopCloser(strings.NewReader("\x00\x01binary")),
+			}
+
+			_, err := readBody(resp)
+			require.Error(t, err, "an encoding we cannot decode must say so")
+			assert.Contains(t, err.Error(), enc,
+				"the error must name the encoding rather than look like an empty page")
+		})
+	}
+}
+
+func TestReadBody_IdentityHeaderIsPlain(t *testing.T) {
+	const html = `<html><head><title>Identity</title></head></html>`
+	resp := &http.Response{
+		Header: http.Header{"Content-Encoding": []string{"identity"}},
+		Body:   io.NopCloser(strings.NewReader(html)),
+	}
+
+	body, err := readBody(resp)
+	require.NoError(t, err)
+	assert.Equal(t, html, string(body))
 }
 
 func TestNamesTheSiteItself(t *testing.T) {

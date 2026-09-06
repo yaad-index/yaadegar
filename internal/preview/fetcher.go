@@ -22,9 +22,6 @@ const (
 	// acceptHTML mirrors what a browser asks for. Some retailers vary their
 	// response on it and serve a reduced page to a bare Accept.
 	acceptHTML = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-	// acceptLanguage keeps titles and prices in a predictable language rather
-	// than whatever the egress IP's geo suggests.
-	acceptLanguage = "en;q=0.9,*;q=0.5"
 )
 
 // Fetcher retrieves the HTML body at a URL. The production implementation is
@@ -104,7 +101,6 @@ func (f *SafeFetcher) Fetch(ctx context.Context, rawURL string) ([]byte, error) 
 func setPreviewHeaders(req *http.Request) {
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", acceptHTML)
-	req.Header.Set("Accept-Language", acceptLanguage)
 	req.Header.Set("Accept-Encoding", "identity")
 }
 
@@ -113,29 +109,47 @@ func setPreviewHeaders(req *http.Request) {
 // Setting Accept-Encoding by hand switches off the transport's transparent
 // decompression, so a server that compresses regardless of what we asked for
 // would otherwise hand the parser gzip bytes and yield an empty draft. Trust the
-// response's own Content-Encoding rather than the request's, and cap both the
-// compressed and the decompressed side so a small body cannot expand without
-// bound.
+// response's own Content-Encoding rather than the request's.
 func readBody(resp *http.Response) ([]byte, error) {
 	r := io.LimitReader(resp.Body, maxBodyBytes)
 
-	if strings.EqualFold(strings.TrimSpace(resp.Header.Get("Content-Encoding")), "gzip") {
+	switch enc := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Encoding"))); enc {
+	case "", "identity":
+		// Nothing is tolerated on this path. The size cap cannot produce a short
+		// read here — io.LimitReader signals its limit with a plain io.EOF, which
+		// io.ReadAll already reports as success — so an unexpected EOF means the
+		// connection dropped mid-download, and returning the partial HTML would
+		// be a silent success built on an incomplete page.
+		body, err := io.ReadAll(r)
+		if err != nil {
+			return nil, err
+		}
+		return body, nil
+
+	case "gzip":
 		zr, err := gzip.NewReader(r)
 		if err != nil {
 			return nil, err
 		}
 		defer func() { _ = zr.Close() }()
-		r = io.LimitReader(zr, maxBodyBytes)
-	}
 
-	body, err := io.ReadAll(r)
-	// A truncated tail is expected whenever the cap cuts a compressed stream
-	// short. The head of the document is where the metadata lives, so keep what
-	// arrived instead of discarding a usable page.
-	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
-		return nil, err
+		// Cap the decompressed side too, so a small body cannot expand without
+		// bound.
+		body, err := io.ReadAll(io.LimitReader(zr, maxBodyBytes))
+		// Only here is a truncated tail expected rather than exceptional: the cap
+		// can cut the compressed stream mid-way. The metadata sits in the head of
+		// the document, so keep what arrived.
+		if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
+			return nil, err
+		}
+		return body, nil
+
+	default:
+		// br, deflate, anything else. Without this the body reaches the parser as
+		// binary and fails as "no metadata found", which is indistinguishable
+		// from a page that genuinely publishes none.
+		return nil, fmt.Errorf("preview: unsupported content encoding %q", enc)
 	}
-	return body, nil
 }
 
 func allowedScheme(s string) bool { return s == "http" || s == "https" }
