@@ -157,7 +157,23 @@
 	     treatment so the two tabs of this page do not diverge. -->
 	<section class="mt-6 rounded-card border border-line bg-surface p-4">
 		<p class="font-display text-title text-ink-heading">List settings</p>
-		<form method="post" action="?/settings" use:formEnhance class="mt-4 space-y-4">
+		<!-- reset:false (#305). enhance resets the <form> on a successful submit, which
+		     is right for a form that creates something and wrong for one that edits
+		     what already exists: the reset drops every control back to its markup
+		     default. "Who can reserve" is the field that shows it, because it is the
+		     only one here driven by bind:value rather than a data-derived selected
+		     attribute — after the reset the element sits on its first option,
+		     "Inherit default", while the chosen tier is already saved and the bound
+		     state still holds it. Nothing re-asserts the value, so the display
+		     contradicts the stored setting until a reload. -->
+		<form
+			method="post"
+			action="?/settings"
+			use:formEnhance={() =>
+				({ update }) =>
+					update({ reset: false })}
+			class="mt-4 space-y-4"
+		>
 			<label class="block">
 				<span class="mb-1 block font-ui text-ui font-medium text-ink">Description</span>
 				<textarea
