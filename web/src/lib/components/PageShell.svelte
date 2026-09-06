@@ -28,7 +28,7 @@
 	}: Props = $props();
 </script>
 
-<div class="min-h-screen bg-page">
+<div class="flex flex-1 flex-col bg-page">
 	<TopNav {brand} {home} {actions} />
 	<main class="mx-auto max-w-content px-4 py-8">
 		{#if isEmpty && empty}
