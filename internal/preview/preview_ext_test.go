@@ -90,6 +90,96 @@ func TestExtract_AmbiguousPriceIsNil(t *testing.T) {
 	assert.Nil(t, d2.Price)
 }
 
+// TestExtract_DOMImageFallback covers a page that publishes no social-card image
+// at all and carries the product picture only in the DOM, as a JSON map of URL to
+// [width, height]. The largest rendition wins.
+func TestExtract_DOMImageFallback(t *testing.T) {
+	d, err := run(t, `<html><head><title>Blue Widget 3000</title></head><body>
+<img id="landingImage" data-a-dynamic-image='{"https://cdn.example/small.jpg":[355,284],"https://cdn.example/large.jpg":[679,679],"https://cdn.example/mid.jpg":[450,450]}'>
+</body></html>`)
+	require.NoError(t, err)
+	require.NotNil(t, d.ImageURL)
+	assert.Equal(t, "https://cdn.example/large.jpg", *d.ImageURL)
+}
+
+// TestExtract_MetadataImageOutranksDOM keeps the fallback last: a page that does
+// publish og:image must be unaffected by the crawl.
+func TestExtract_MetadataImageOutranksDOM(t *testing.T) {
+	d, err := run(t, `<html><head>
+<meta property="og:title" content="OG Widget">
+<meta property="og:image" content="https://cdn.example/og.jpg">
+</head><body>
+<img data-a-dynamic-image='{"https://cdn.example/dom.jpg":[999,999]}'>
+</body></html>`)
+	require.NoError(t, err)
+	assert.Equal(t, "https://cdn.example/og.jpg", *d.ImageURL)
+}
+
+func TestExtract_DOMImageIgnoresChrome(t *testing.T) {
+	t.Run("icons below the size floor are skipped", func(t *testing.T) {
+		d, err := run(t, `<html><head><title>Widget</title></head><body>
+<img src="https://cdn.example/star.png" width="16" height="16">
+<img src="https://cdn.example/logo.png" width="120" height="40">
+</body></html>`)
+		require.NoError(t, err)
+		assert.Nil(t, d.ImageURL, "chrome must not become the product image")
+	})
+
+	t.Run("an img with no declared size is skipped", func(t *testing.T) {
+		d, err := run(t, `<html><head><title>Widget</title></head><body>
+<img src="https://cdn.example/unknown.jpg">
+</body></html>`)
+		require.NoError(t, err)
+		assert.Nil(t, d.ImageURL, "an unranked candidate must not win by default")
+	})
+
+	t.Run("a data URI is never stored", func(t *testing.T) {
+		d, err := run(t, `<html><head><title>Widget</title></head><body>
+<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" width="600" height="600">
+</body></html>`)
+		require.NoError(t, err)
+		assert.Nil(t, d.ImageURL, "an inline data URI must not become image_url")
+	})
+
+	// A data URI must be rejected while ranking, not merely dropped at the end.
+	// If it is allowed to win on area, the real image on the page loses to it and
+	// is then discarded for having an unusable scheme — costing an image that was
+	// there all along.
+	t.Run("a large data URI does not displace a smaller real image", func(t *testing.T) {
+		d, err := run(t, `<html><head><title>Widget</title></head><body>
+<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" width="900" height="900">
+<img src="https://cdn.example/real.jpg" width="300" height="300">
+</body></html>`)
+		require.NoError(t, err)
+		require.NotNil(t, d.ImageURL, "the real image must survive a larger data URI")
+		assert.Equal(t, "https://cdn.example/real.jpg", *d.ImageURL)
+	})
+}
+
+// TestExtract_DOMImageResolvesRelativeSrc — a relative src is common in markup and
+// useless once stored, so it is resolved against the page it came from.
+func TestExtract_DOMImageResolvesRelativeSrc(t *testing.T) {
+	d, err := run(t, `<html><head><title>Widget</title></head><body>
+<img src="/media/widget.jpg" width="600" height="600">
+</body></html>`)
+	require.NoError(t, err)
+	require.NotNil(t, d.ImageURL)
+	assert.Equal(t, "https://shop.example/media/widget.jpg", *d.ImageURL)
+}
+
+// TestExtract_DOMImagePicksLargestAcrossElements — thumbnails and the main image
+// are separate elements; the biggest declared picture on the page wins.
+func TestExtract_DOMImagePicksLargestAcrossElements(t *testing.T) {
+	d, err := run(t, `<html><head><title>Widget</title></head><body>
+<img src="https://cdn.example/thumb.jpg" width="220" height="220">
+<img src="https://cdn.example/hero.jpg" width="800" height="800">
+<img src="https://cdn.example/other.jpg" width="300" height="300">
+</body></html>`)
+	require.NoError(t, err)
+	require.NotNil(t, d.ImageURL)
+	assert.Equal(t, "https://cdn.example/hero.jpg", *d.ImageURL)
+}
+
 func TestExtract_EmptyIsUnfetchable(t *testing.T) {
 	_, err := run(t, `<html><head></head><body>nothing</body></html>`)
 	assert.ErrorIs(t, err, preview.ErrUnfetchable)
