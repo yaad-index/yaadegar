@@ -57,8 +57,39 @@ func (p *Previewer) Preview(ctx context.Context, rawURL string) (Draft, error) {
 		return Draft{}, ErrUnfetchable
 	}
 	d := extract(body, rawURL)
-	if !d.hasContent() {
+	if !d.hasContent() || namesTheSiteItself(d.Name, u.Host) {
 		return Draft{}, ErrUnfetchable
 	}
 	return d, nil
+}
+
+// namesTheSiteItself reports whether the only thing scraped was the site's own
+// name — "Acme.example" for a page on acme.example.
+//
+// An anti-automation stub answers 200 with a short body whose title is the site
+// name, so neither the status code nor hasContent distinguishes a fetched page
+// from a refused one. Without this check the refusal is the failure that looks
+// like a success: the user gets an item named after a shop and no signal that
+// anything went wrong. Failing here routes them to manual entry instead.
+//
+// Deliberately an exact match on the host or its first label, not a prefix or
+// substring test — a real product legitimately called "Acme Basics Cable" must
+// still preview.
+func namesTheSiteItself(name *string, host string) bool {
+	if name == nil {
+		return false
+	}
+	n := strings.ToLower(strings.TrimSpace(*name))
+	if n == "" {
+		return false
+	}
+	h := strings.ToLower(host)
+	if i := strings.IndexByte(h, ':'); i >= 0 { // drop any port
+		h = h[:i]
+	}
+	h = strings.TrimPrefix(h, "www.")
+	if h == "" {
+		return false
+	}
+	return n == h || n == strings.SplitN(h, ".", 2)[0]
 }

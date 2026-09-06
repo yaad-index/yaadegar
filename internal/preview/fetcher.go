@@ -1,11 +1,14 @@
 package preview
 
 import (
+	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -15,6 +18,13 @@ const (
 	fetchTimeout = 8 * time.Second
 	dialTimeout  = 5 * time.Second
 	userAgent    = "yaadegar-link-preview/1.0 (+https://github.com/yaad-index/yaadegar)"
+
+	// acceptHTML mirrors what a browser asks for. Some retailers vary their
+	// response on it and serve a reduced page to a bare Accept.
+	acceptHTML = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+	// acceptLanguage keeps titles and prices in a predictable language rather
+	// than whatever the egress IP's geo suggests.
+	acceptLanguage = "en;q=0.9,*;q=0.5"
 )
 
 // Fetcher retrieves the HTML body at a URL. The production implementation is
@@ -65,8 +75,7 @@ func (f *SafeFetcher) Fetch(ctx context.Context, rawURL string) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("Accept", "text/html,application/xhtml+xml")
+	setPreviewHeaders(req)
 
 	resp, err := f.client.Do(req)
 	if err != nil {
@@ -76,8 +85,54 @@ func (f *SafeFetcher) Fetch(ctx context.Context, rawURL string) ([]byte, error) 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("preview: upstream status %d", resp.StatusCode)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
-	if err != nil {
+	return readBody(resp)
+}
+
+// setPreviewHeaders pins every negotiated header explicitly instead of letting
+// the transport pick.
+//
+// Accept-Encoding matters most. http.Transport adds "gzip" on its own whenever
+// the caller leaves the header unset, and at least one major retailer varies its
+// response on that header — serving an anti-automation stub to the compressed
+// request and the real product page to the plain one. Asking for identity keeps
+// us on the page a browser would get. The extra bandwidth is already bounded by
+// maxBodyBytes.
+//
+// It has to be set to "identity" rather than merely left off: a server that sees
+// no Accept-Encoding at all is free to compress anyway, and observed behaviour
+// is that one does.
+func setPreviewHeaders(req *http.Request) {
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", acceptHTML)
+	req.Header.Set("Accept-Language", acceptLanguage)
+	req.Header.Set("Accept-Encoding", "identity")
+}
+
+// readBody reads at most maxBodyBytes of the response.
+//
+// Setting Accept-Encoding by hand switches off the transport's transparent
+// decompression, so a server that compresses regardless of what we asked for
+// would otherwise hand the parser gzip bytes and yield an empty draft. Trust the
+// response's own Content-Encoding rather than the request's, and cap both the
+// compressed and the decompressed side so a small body cannot expand without
+// bound.
+func readBody(resp *http.Response) ([]byte, error) {
+	r := io.LimitReader(resp.Body, maxBodyBytes)
+
+	if strings.EqualFold(strings.TrimSpace(resp.Header.Get("Content-Encoding")), "gzip") {
+		zr, err := gzip.NewReader(r)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = zr.Close() }()
+		r = io.LimitReader(zr, maxBodyBytes)
+	}
+
+	body, err := io.ReadAll(r)
+	// A truncated tail is expected whenever the cap cuts a compressed stream
+	// short. The head of the document is where the metadata lives, so keep what
+	// arrived instead of discarding a usable page.
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
 		return nil, err
 	}
 	return body, nil
