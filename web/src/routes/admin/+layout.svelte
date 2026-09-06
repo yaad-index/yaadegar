@@ -6,7 +6,7 @@
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
 </script>
 
-<div class="min-h-screen">
+<div class="flex flex-1 flex-col">
 	<!-- The admin chrome renders for an owner who holds the instance-admin capability
 	     (ADR-0010). Admin is part of the owner experience now, so it links back to the
 	     dashboard; signing out ends the shared owner session. -->
