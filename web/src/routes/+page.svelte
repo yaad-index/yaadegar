@@ -105,9 +105,15 @@
 	// Hub", where nothing is published); GitHub Discussions is not enabled, so the
 	// community column links the issue tracker and the self-hosting guide rather than a
 	// dead Discussions tab; and the licence is the MIT LICENSE file GitHub now detects.
+	//
+	// `external` splits the two kinds: the repo columns leave the site (new tab, noreferrer,
+	// and no resolve() to express them), while Legal points at this instance's own /privacy
+	// and /terms (#300) — same-tab in-app navigation, resolve()'d like every other route
+	// link. Those two pages always exist, so neither link can 404.
 	const footerColumns = [
 		{
 			heading: 'Project',
+			external: true,
 			links: [
 				{ label: 'Source Code', href: REPO_URL },
 				{ label: 'Container Image', href: `${REPO_URL}/pkgs/container/yaadegar` },
@@ -116,10 +122,19 @@
 		},
 		{
 			heading: 'Community',
+			external: true,
 			links: [
 				{ label: 'Issue Tracker', href: `${REPO_URL}/issues` },
 				{ label: 'Self-hosting Guide', href: `${REPO_URL}/blob/main/docs/self-hosting.md` },
 				{ label: 'MIT License', href: `${REPO_URL}/blob/main/LICENSE` }
+			]
+		},
+		{
+			heading: 'Legal',
+			external: false,
+			links: [
+				{ label: 'Privacy Policy', href: resolve('/privacy') },
+				{ label: 'Terms of Service', href: resolve('/terms') }
 			]
 		}
 	];
@@ -818,9 +833,10 @@
 				</p>
 			</div>
 
-			<!-- eslint-disable svelte/no-navigation-without-resolve -- external links to the source
-			     repository and its GitHub resources; none is a SvelteKit route resolve() can express. -->
-			<div class="flex gap-16">
+			<!-- eslint-disable svelte/no-navigation-without-resolve -- the external columns link the
+			     source repository and its GitHub resources; none is a SvelteKit route resolve() can
+			     express. The Legal column's hrefs ARE resolve()'d, above. -->
+			<div class="flex flex-wrap gap-16">
 				{#each footerColumns as col (col.heading)}
 					<div>
 						<p class="font-ui text-chip font-semibold uppercase tracking-wide text-ink-heading">
@@ -832,8 +848,8 @@
 									<a
 										class="transition-colors hover:text-ink"
 										href={link.href}
-										rel="noreferrer"
-										target="_blank">{link.label}</a
+										rel={col.external ? 'noreferrer' : undefined}
+										target={col.external ? '_blank' : undefined}>{link.label}</a
 									>
 								</li>
 							{/each}
