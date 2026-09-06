@@ -19,7 +19,7 @@
 
 <svelte:head><title>{page.title} · Yaadegar</title></svelte:head>
 
-<main class="min-h-screen bg-page px-6 py-16">
+<main class="flex-1 bg-page px-6 py-16">
 	<div class="mx-auto max-w-3xl">
 		<a
 			class="font-display text-ui font-semibold tracking-[0.2em] text-primary transition-colors hover:text-primary-hover"

@@ -27,10 +27,13 @@
 </svelte:head>
 
 <QueryClientProvider client={queryClient}>
+	<!-- A column that fills the viewport, with the page above the footer. The page
+	     shells grow into the space that is left (flex-1) rather than each demanding
+	     its own 100vh: nested min-h-screen wrappers stack, which put the footer one
+	     whole viewport below a short page and made links that are present in the
+	     markup something no reader would ever scroll to. -->
 	<div class="flex min-h-screen flex-col">
-		<div class="flex-1">
-			{@render children()}
-		</div>
+		{@render children()}
 		{#if !isLandingPage}
 			<LegalFooter />
 		{/if}
