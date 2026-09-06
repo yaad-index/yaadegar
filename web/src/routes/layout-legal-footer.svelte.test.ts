@@ -14,7 +14,13 @@ const routeState = { id: null as string | null };
 
 vi.mock('$app/state', () => ({
 	get page() {
-		return { url: new URL('http://test.local/'), route: routeState, form: null, data: {}, status: 200 };
+		return {
+			url: new URL('http://test.local/'),
+			route: routeState,
+			form: null,
+			data: {},
+			status: 200
+		};
 	},
 	navigating: {},
 	updated: { current: false }
