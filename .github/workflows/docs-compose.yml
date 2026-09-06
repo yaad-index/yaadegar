@@ -185,7 +185,21 @@ jobs:
 
       - name: Reconcile the docs compose pin against the current release
         env:
+          # Consumers of each identity in this step, listed because the defect that
+          # created this split was that nobody enumerated them — the comment explained
+          # the one call it was written for and three others changed silently:
+          #   GH_TOKEN    -> gh release list, gh pr list, gh pr create
+          #   ISSUE_TOKEN -> gh label create, gh issue list, gh issue close (x2),
+          #                  gh issue edit, gh issue create
+          #
+          # Two identities, on purpose. GH_TOKEN is the PR identity: it may be a PAT,
+          # because a PR opened with the built-in token does not fire pull_request and
+          # its checks never run. ISSUE_TOKEN is always the built-in token, which is the
+          # one this job's `issues: write` permission actually grants. A PAT is scoped by
+          # whatever it was minted with and need not carry issue rights at all — pointing
+          # the issue calls at it silently disabled every one of them (#317).
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          ISSUE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # On a release this is the tag that just published; empty on push / PR.
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           EVENT: ${{ github.event_name }}
@@ -225,9 +239,9 @@ jobs:
           # One reused tracking issue, found by a fixed label so exactly one is ever open.
           # Create the label idempotently first, so the --label filter never errors.
           LABEL="docs-pin-stale"
-          gh label create "$LABEL" --repo "$REPO" --color ededed \
+          GH_TOKEN="$ISSUE_TOKEN" gh label create "$LABEL" --repo "$REPO" --color ededed \
             --description "docs/docker-compose.yml pin trails the latest release" 2>/dev/null || true
-          open_issue="$(gh issue list --repo "$REPO" --state open --label "$LABEL" --limit 1 \
+          open_issue="$(GH_TOKEN="$ISSUE_TOKEN" gh issue list --repo "$REPO" --state open --label "$LABEL" --limit 1 \
             --json number --jq '.[0].number // ""')"
 
           if [ "$got" = "$want" ]; then
@@ -237,10 +251,15 @@ jobs:
             # unmerged (or later abandoned) PR would clear the reminder for a change that
             # has not landed. The push:main after the bump PR merges does the close.
             if [ -n "$open_issue" ] && [ "$EVENT" != "pull_request" ]; then
-              gh issue close "$open_issue" --repo "$REPO" \
-                --comment "The docs compose pin now names $want; closing automatically." \
-                || echo "::warning::could not close tracking issue #$open_issue (non-fatal)"
-              echo "closed tracking issue #$open_issue"
+              # The echo belongs INSIDE the success branch. Reporting the close after an
+              # `||` warning printed "closed tracking issue" for a call that had just
+              # failed, which is how a broken run read as a green one (#317).
+              if GH_TOKEN="$ISSUE_TOKEN" gh issue close "$open_issue" --repo "$REPO" \
+                   --comment "The docs compose pin now names $want; closing automatically."; then
+                echo "closed tracking issue #$open_issue"
+              else
+                echo "::warning::could not close tracking issue #$open_issue (non-fatal)"
+              fi
             fi
             exit 0
           fi
@@ -306,7 +325,7 @@ jobs:
             # The PR supersedes the reminder; a leftover issue from before this job
             # opened PRs would otherwise sit open forever with no one to close it.
             if [ -n "$open_issue" ]; then
-              gh issue close "$open_issue" --repo "$REPO" \
+              GH_TOKEN="$ISSUE_TOKEN" gh issue close "$open_issue" --repo "$REPO" \
                 --comment "Superseded by the bump PR for $want, which is opened automatically now." \
                 || echo "::warning::could not close superseded tracking issue #$open_issue (non-fatal)"
             fi
@@ -329,11 +348,17 @@ jobs:
             "" \
             "This is normally opened as a PR automatically (#307); that failed on this run, so it is here instead. The pin trails deliberately — auto-bumping it inside the release PR would race docker-publish, see the pin comment in the file and #275. This issue closes itself once the pin matches (#278).")"
           if [ -n "$open_issue" ]; then
-            gh issue edit "$open_issue" --repo "$REPO" --title "$title" --body "$body" \
-              || echo "::warning::could not update tracking issue #$open_issue (non-fatal)"
-            echo "updated tracking issue #$open_issue -> $want"
+            if GH_TOKEN="$ISSUE_TOKEN" gh issue edit "$open_issue" --repo "$REPO" \
+                 --title "$title" --body "$body"; then
+              echo "updated tracking issue #$open_issue -> $want"
+            else
+              echo "::warning::could not update tracking issue #$open_issue (non-fatal)"
+            fi
           else
-            gh issue create --repo "$REPO" --title "$title" --body "$body" --label "$LABEL" \
-              || echo "::warning::could not open tracking issue (non-fatal)"
-            echo "opened tracking issue for $want"
+            if GH_TOKEN="$ISSUE_TOKEN" gh issue create --repo "$REPO" \
+                 --title "$title" --body "$body" --label "$LABEL"; then
+              echo "opened tracking issue for $want"
+            else
+              echo "::warning::could not open tracking issue (non-fatal)"
+            fi
           fi
