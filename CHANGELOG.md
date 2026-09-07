@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.1](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.17.0...yaadegar-v0.17.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* **ci:** open the pin bump PR after the images publish, not on the release event ([#320](https://github.com/yaad-index/yaadegar/issues/320)) ([f139315](https://github.com/yaad-index/yaadegar/commit/f13931546833171561ccbcbebdcf11f1061f6e83))
+
 ## [0.17.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.16.0...yaadegar-v0.17.0) (2026-09-06)
 
 
