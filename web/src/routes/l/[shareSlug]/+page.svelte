@@ -122,11 +122,18 @@
 		clientEmailError = null;
 	};
 
-	// A single generic item glyph. The export draws a per-item line glyph (coffee/book/
-	// ribbon) in a tinted circle, but the payload carries no category to choose one and
-	// #234 draws photographs for the same items — both logged as design questions
-	// (design-open-questions.md), so this renders one honest generic mark rather than a
-	// photo or an invented category. Amber-tinted when this browser reserved the item.
+	// The fallback mark, used only for an item with no picture of its own (#347).
+	//
+	// This used to render for every item. Two design references disagreed — the export
+	// draws a per-item line glyph (coffee/book/ribbon) in a tinted circle, #234 draws
+	// photographs — and with the disagreement unresolved a single generic mark was the
+	// honest choice over a photo or an invented category. #347 settles the photo half:
+	// the item's own image is drawn when there is one, so this is now the no-image case
+	// rather than the whole set.
+	//
+	// The other half is NOT settled. There is still no category in the payload, so a
+	// per-item glyph remains unavailable and this stays one generic mark for every
+	// item that lacks a picture. Amber-tinted when this browser reserved the item.
 </script>
 
 {#snippet giftGlyph()}
@@ -373,15 +380,41 @@
 						>
 							<div class="flex items-start justify-between gap-4">
 								<div class="flex min-w-0 gap-4">
-									<!-- Item glyph in a tinted circle (amber when reserved by this browser). The
-									     glyph-vs-photo and per-item-glyph choices are design questions, not
-									     resolved here (see design-open-questions.md). -->
-									<span
-										class={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${reservedByYou ? 'bg-gold-tint text-gold' : 'bg-primary-tint text-primary'}`}
-										aria-hidden="true"
-									>
-										{@render giftGlyph()}
-									</span>
+									<!-- The item's own picture when it has one, else the generic mark (#347).
+									     An image is most of what tells a stranger which product is meant —
+									     several items on a real list differ only by a model number — and the
+									     owner's view has always drawn it, so its absence here made adding a
+									     picture appear to work while never reaching the only audience this
+									     page has.
+									     Sizing is the row's own 12-unit circle rather than the owner view's
+									     14-unit square: the conditional and object-cover are borrowed from
+									     there, the footprint is not, so the row does not re-lay-out.
+									     object-cover keeps a remote image of any dimensions inside that box
+									     rather than letting the source decide. The alt deliberately differs
+									     from the owner view's — see the note on the img below.
+									     The reserved-by-this-browser cue rides the border here, because the
+									     tinted background it uses for the glyph is not visible behind a
+									     photo. -->
+									{#if item.image_url}
+										<!-- ⛔ alt="" is correct ONLY while the item name is visible text beside
+										     this image (the span below). The picture then adds nothing a screen
+										     reader needs, and a name here would announce it twice. The two are
+										     coupled: if the adjacent name is ever removed or hidden, this alt has
+										     to become the item name again. -->
+										<img
+											src={item.image_url}
+											alt=""
+											loading="lazy"
+											class={`h-12 w-12 shrink-0 rounded-full border object-cover ${reservedByYou ? 'border-gold' : 'border-line'}`}
+										/>
+									{:else}
+										<span
+											class={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${reservedByYou ? 'bg-gold-tint text-gold' : 'bg-primary-tint text-primary'}`}
+											aria-hidden="true"
+										>
+											{@render giftGlyph()}
+										</span>
+									{/if}
 									<div class="min-w-0">
 										<div class="flex flex-wrap items-center gap-2">
 											<span class="font-ui text-body font-medium text-ink-heading">{item.name}</span
