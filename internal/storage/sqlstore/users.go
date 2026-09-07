@@ -28,10 +28,11 @@ func (r userRepo) Create(ctx context.Context, u storage.User) (storage.User, err
 	}
 	u.TenantID = r.tenantID
 	_, err := r.db.ExecContext(ctx, r.rb(
-		`INSERT INTO users (id, tenant_id, name, email, username, password_hash, role, banned, is_admin, credential_version, status, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+		`INSERT INTO users (id, tenant_id, name, email, username, password_hash, role, banned, is_admin, credential_version, status, owner_key, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		u.ID, u.TenantID, u.Name, u.Email, usernameArg(u.Username), u.PasswordHash,
-		string(u.Role), boolToInt(u.Banned), boolToInt(u.IsAdmin), u.CredentialVersion, u.Status, fmtTime(u.CreatedAt))
+		string(u.Role), boolToInt(u.Banned), boolToInt(u.IsAdmin), u.CredentialVersion, u.Status,
+		u.OwnerKey, fmtTime(u.CreatedAt))
 	if err != nil {
 		if r.d.isUniqueViolation(err) {
 			return storage.User{}, storage.ErrConflict // e.g. a duplicate username in the tenant
@@ -43,13 +44,13 @@ func (r userRepo) Create(ctx context.Context, u storage.User) (storage.User, err
 
 func (r userRepo) Get(ctx context.Context, id string) (storage.User, error) {
 	return r.scanUser(r.db.QueryRowContext(ctx, r.rb(
-		`SELECT id, tenant_id, name, email, username, password_hash, role, banned, is_admin, credential_version, status, created_at
+		`SELECT id, tenant_id, name, email, username, password_hash, role, banned, is_admin, credential_version, status, owner_key, created_at
 		   FROM users WHERE tenant_id = ? AND id = ?`), r.tenantID, id))
 }
 
 func (r userRepo) ByUsername(ctx context.Context, username string) (storage.User, error) {
 	return r.scanUser(r.db.QueryRowContext(ctx, r.rb(
-		`SELECT id, tenant_id, name, email, username, password_hash, role, banned, is_admin, credential_version, status, created_at
+		`SELECT id, tenant_id, name, email, username, password_hash, role, banned, is_admin, credential_version, status, owner_key, created_at
 		   FROM users WHERE tenant_id = ? AND username = ?`), r.tenantID, username))
 }
 
@@ -62,9 +63,57 @@ func (r userRepo) ByEmail(ctx context.Context, email string) (storage.User, erro
 		return storage.User{}, storage.ErrNotFound
 	}
 	return r.scanUser(r.db.QueryRowContext(ctx, r.rb(
-		`SELECT id, tenant_id, name, email, username, password_hash, role, banned, is_admin, credential_version, status, created_at
+		`SELECT id, tenant_id, name, email, username, password_hash, role, banned, is_admin, credential_version, status, owner_key, created_at
 		   FROM users WHERE tenant_id = ? AND email = ?
 		  ORDER BY created_at, id LIMIT 1`), r.tenantID, email))
+}
+
+// ByOwnerKey resolves an owner by their public list-index key (#308), backing the
+// unauthenticated owner page. The empty key never matches, and that guard is
+// load-bearing rather than defensive: "" is the not-yet-minted sentinel that most
+// accounts carry, so without it a request with an empty key would resolve to an
+// arbitrary owner who had never published anything. Same shape as ByEmail's
+// empty-email guard, for the same reason.
+func (r userRepo) ByOwnerKey(ctx context.Context, ownerKey string) (storage.User, error) {
+	if ownerKey == "" {
+		return storage.User{}, storage.ErrNotFound
+	}
+	return r.scanUser(r.db.QueryRowContext(ctx, r.rb(
+		`SELECT id, tenant_id, name, email, username, password_hash, role, banned, is_admin, credential_version, status, owner_key, created_at
+		   FROM users WHERE tenant_id = ? AND owner_key = ?`), r.tenantID, ownerKey))
+}
+
+// ownerKeyAttempts bounds the retry on a key collision. A collision needs two equal
+// draws from newSlug's 128 bits, so one retry already covers it; the loop exists so
+// a collision is a retry rather than a returned error, and the bound exists so a
+// unique violation from some *other* cause cannot spin forever.
+const ownerKeyAttempts = 3
+
+// RotateOwnerKey mints a fresh owner key, stores it, and returns it (#308). The key
+// is generated here, beside share_slug's generator, so the two provably share their
+// entropy rather than matching by convention. Replacing is the rotation path: the
+// old key stops resolving the moment this commits, which is what makes a circulated
+// link revocable. Scoped to the bound tenant, mirroring the other mutations.
+func (r userRepo) RotateOwnerKey(ctx context.Context, userID string) (string, error) {
+	for range ownerKeyAttempts {
+		key, err := newSlug()
+		if err != nil {
+			return "", err
+		}
+		res, err := r.db.ExecContext(ctx, r.rb(
+			`UPDATE users SET owner_key = ? WHERE tenant_id = ? AND id = ?`), key, r.tenantID, userID)
+		if err != nil {
+			if r.d.isUniqueViolation(err) {
+				continue // drew a key already in use; draw another
+			}
+			return "", err
+		}
+		if err := expectOne(res); err != nil {
+			return "", err
+		}
+		return key, nil
+	}
+	return "", storage.ErrConflict
 }
 
 // rowScanner is satisfied by both *sql.Row and *sql.Rows, so one scan body serves
@@ -89,7 +138,7 @@ func scanUserRow(row rowScanner) (storage.User, error) {
 		createdAt string
 	)
 	if err := row.Scan(&u.ID, &u.TenantID, &u.Name, &u.Email, &username, &u.PasswordHash,
-		&role, &banned, &isAdmin, &u.CredentialVersion, &u.Status, &createdAt); err != nil {
+		&role, &banned, &isAdmin, &u.CredentialVersion, &u.Status, &u.OwnerKey, &createdAt); err != nil {
 		return storage.User{}, err
 	}
 	if username.Valid {
@@ -114,7 +163,7 @@ func (r userRepo) List(ctx context.Context, p storage.Page) ([]storage.User, int
 		return nil, 0, err
 	}
 	rows, err := r.db.QueryContext(ctx, r.rb(
-		`SELECT id, tenant_id, name, email, username, password_hash, role, banned, is_admin, credential_version, status, created_at
+		`SELECT id, tenant_id, name, email, username, password_hash, role, banned, is_admin, credential_version, status, owner_key, created_at
 		   FROM users WHERE tenant_id = ?
 		  ORDER BY created_at, id LIMIT ? OFFSET ?`), r.tenantID, p.Limit, p.Offset)
 	if err != nil {

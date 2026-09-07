@@ -161,6 +161,20 @@ type UserRepo interface {
 	// self-registered account from pending to active once it verifies its email.
 	// ErrNotFound if the user is absent.
 	SetStatus(ctx context.Context, userID, status string) error
+	// ByOwnerKey resolves an owner by their public list-index key (#308), backing the
+	// unauthenticated owner page. The empty key never matches — "" is the
+	// not-yet-minted sentinel most accounts carry, so it must not resolve to one of
+	// them. Returns ErrNotFound when no user holds the key.
+	ByOwnerKey(ctx context.Context, ownerKey string) (User, error)
+	// RotateOwnerKey mints a fresh owner key for a user, stores it, and returns it
+	// (#308). Creating a first key and rotating an existing one are the same
+	// operation — both replace whatever is stored — and rotation is therefore
+	// revocation: the previous key stops resolving immediately, so an owner can
+	// retire a link already in circulation. The key is generated here rather than by
+	// the caller so it provably shares the share_slug generator and entropy
+	// (ADR-0002 §9) instead of two packages agreeing to match by convention.
+	// ErrNotFound if the user is absent.
+	RotateOwnerKey(ctx context.Context, userID string) (string, error)
 }
 
 // ListRepo persists lists within the bound tenant. Ownership lives in a join table
@@ -177,6 +191,14 @@ type ListRepo interface {
 	GetBySlug(ctx context.Context, shareSlug string) (List, error)
 	// List returns the lists ownerID owns, resolved through the join table.
 	List(ctx context.Context, ownerID string, p Page) ([]List, int, error)
+	// ListedByOwner returns the lists ownerID has marked listed (visibility
+	// 'public'), newest first, backing the owner page (#308). The visibility
+	// predicate is applied in the query rather than by the caller: this read feeds an
+	// unauthenticated surface and must carry share_slug to link through, so an
+	// unlisted list's slug must never be loaded in the first place. It does not apply
+	// the disabled/past-event rule — the caller does, through the same listDisabled
+	// path the per-list public view answers 410 with.
+	ListedByOwner(ctx context.Context, ownerID string, p Page) ([]List, error)
 	Update(ctx context.Context, l List) (List, error)
 	Delete(ctx context.Context, id string) error
 

@@ -299,6 +299,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/owner-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the authenticated owner's public list-index key
+         * @description Returns the owner's own key for their public list index (#308), or null if they have never created one. This read never mints: an account has no owner page until the owner explicitly asks for one via POST, so no account carries a public surface it did not ask for.
+         */
+        get: operations["getOwnerKey"];
+        put?: never;
+        /**
+         * Create or rotate the authenticated owner's public list-index key
+         * @description Mints a fresh key for the owner's public list index (#308) and returns it. Creating the first key and rotating an existing one are the same operation: both replace whatever is stored with a newly generated value. Rotation is therefore revocation — the previous key stops resolving immediately, so an owner who has shared a link too widely can retire it. The key is opaque and unguessable, generated exactly like a list's share_slug (ADR-0002 §9).
+         */
+        post: operations["createOwnerKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/password": {
         parameters: {
             query?: never;
@@ -544,6 +568,34 @@ export interface paths {
          * @description Looks up the DNS TXT record at _yaadegar-verify.<hostname> and marks the domain verified if it contains the verification_token. Idempotent: an already-verified domain returns verified; a missing or non-matching record returns the domain still unverified (retry after publishing the record) — not an error. Only verified domains route requests to the tenant.
          */
         post: operations["verifyDomain"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/owners/{ownerKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ownerKey: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * View an owner's listed lists (anonymous)
+         * @description Public index of one owner's lists by their owner key (#308), so an owner can share a single durable link instead of one link per list.
+         *
+         *     It carries only lists the owner has marked listed (visibility `public`), and the filter is applied when the lists are read rather than when they are rendered — an unlisted list's share_slug is never loaded, so it cannot reach this response. Lists whose own share link would answer 410 (inactive, or past their event date) are omitted too: a list the per-list view refuses to serve is not advertised on an index.
+         *
+         *     Read-only. There is no reserve or co-buy surface here; each row links through to that list's own public view, which carries its existing giver flows.
+         *
+         *     An unknown key returns 404; a valid key whose owner has listed nothing returns 200 with an empty array. Those are deliberately distinct: collapsing them onto one response would leave an owner opening their own link unable to tell a mistyped key from a page they have not published to yet. The alternative would hide whether a key is valid, which is worth little against a 128-bit random key that an attacker must already hold to ask the question.
+         */
+        get: operations["getPublicOwner"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1123,6 +1175,26 @@ export interface components {
             amount_funded?: components["schemas"]["Money"];
             /** @description Whether this item may be co-bought (#100, resolved from the item override and list default). The giver UI shows the chip-in affordance only when this is true AND the item is priced. */
             allow_cobuy?: boolean;
+        };
+        OwnerKey: {
+            /** @description The owner's opaque key for their public list index (#308), or null when they have never created one. Same generator and entropy as a list's share_slug (ADR-0002 §9). Null is the normal state for an account that has not asked for an owner page — it is not an error. */
+            owner_key?: string | null;
+        };
+        PublicOwner: {
+            /** @description The owner's display name, used as the page heading. Null when the account has no name distinct from its email: the stored display name falls back to the account email at creation (#185), so rendering it unconditionally would publish an email address to anyone holding the key. Null means the page shows a neutral heading instead. */
+            display_name?: string | null;
+            /** @description The owner's listed lists, newest first. Empty when the owner has listed nothing yet. */
+            lists?: components["schemas"]["PublicOwnerList"][];
+        };
+        /** @description One row on the owner page. Carries only what a row renders — no visibility field, no owner identity, and nothing about who reserved anything. */
+        PublicOwnerList: {
+            title?: string;
+            /** @description The list's own public link, so a row can link through. Present only because every list in this response is one the owner marked listed; an unlisted list is excluded when the lists are read, so its slug is never loaded into this response. */
+            share_slug?: string;
+            /** @description The number of items on the list. */
+            item_count?: number;
+            /** @description Up to the first few items' thumbnails (#207), in the list's item display order — the same preview cluster the owner's own dashboard cards render. */
+            item_previews?: components["schemas"]["ItemPreview"][];
         };
         PublicList: {
             title?: string;
@@ -1772,6 +1844,48 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    getOwnerKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The owner's key, or null if none has been created. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnerKey"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createOwnerKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The newly created key, replacing any previous one. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnerKey"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
     changePassword: {
         parameters: {
             query?: never;
@@ -2312,6 +2426,29 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getPublicOwner: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ownerKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The owner's listed lists. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicOwner"];
+                };
+            };
             404: components["responses"]["NotFound"];
         };
     };

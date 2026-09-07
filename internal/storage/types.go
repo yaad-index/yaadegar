@@ -165,7 +165,14 @@ type User struct {
 	// self-registered account awaiting email verification. A pending account cannot
 	// log in (the login gate rejects it like a ban); verify flips it to active. Empty
 	// is treated as active at Create.
-	Status    string
+	Status string
+	// OwnerKey is the opaque, unguessable handle for this owner's public list index
+	// (#308) — the owner-level counterpart to List.ShareSlug, minted by the same
+	// generator (ADR-0002 §9). "" means no key has been minted yet, which is the
+	// state every account starts in: a key is created only when the owner first asks
+	// for their link, so no account carries a public owner surface it never asked
+	// for. Rotating overwrites it, which is what revokes a circulated link.
+	OwnerKey  string
 	CreatedAt time.Time
 }
 
