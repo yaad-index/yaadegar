@@ -8,7 +8,7 @@
 
 <svelte:head><title>Verify your email · Yaadegar</title></svelte:head>
 
-<main class="mx-auto max-w-sm p-8">
+<main class="mx-auto w-full max-w-sm p-8">
 	<h1 class="text-2xl font-bold">Verify your email</h1>
 
 	{#if !data.token}

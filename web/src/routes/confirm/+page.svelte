@@ -20,7 +20,7 @@
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
-<main class="mx-auto max-w-md p-6">
+<main class="mx-auto w-full max-w-md p-6">
 	{#if released}
 		<h1 class="text-2xl font-bold">Reservation released</h1>
 		<p class="mt-3 text-gray-600">The item is available for someone else to reserve.</p>

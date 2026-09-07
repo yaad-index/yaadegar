@@ -24,7 +24,7 @@
 			</div>
 		</header>
 	{/if}
-	<main class="mx-auto max-w-3xl p-4">
+	<main class="mx-auto w-full max-w-3xl p-4">
 		{@render children()}
 	</main>
 </div>
