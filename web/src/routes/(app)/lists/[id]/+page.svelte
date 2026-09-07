@@ -23,6 +23,17 @@
 			? ((actionForm.importRowErrors as { row: number; message: string }[]) ?? [])
 			: []
 	);
+	// Settings result (#313). The ?/settings action has always returned both of these
+	// and nothing read either, so the form gave no feedback in either direction: a
+	// rejected save left the refused value sitting in the control with nothing on the
+	// page to say it had not taken. Read the same way as the import result above, and
+	// rendered with the same treatment, so the two forms on this tab behave alike.
+	const settingsError = $derived(
+		actionForm && 'settingsError' in actionForm ? actionForm.settingsError : undefined
+	);
+	const settingsSaved = $derived(
+		actionForm && 'settingsSaved' in actionForm ? actionForm.settingsSaved : undefined
+	);
 	// superForm captures the initial form once and owns its reactivity thereafter.
 	// resetForm:false is load-bearing: the ?/preview action returns the scraped draft
 	// (name/url/image/price) as a success result, and the library default (resetForm:
@@ -266,6 +277,14 @@
 			</label>
 			<Button type="submit">Save settings</Button>
 		</form>
+		<!-- Directly below the Save button, matching the import block's placement and
+		     roles: the outcome has to be visible where the action was taken, because
+		     the control keeps showing the value the server just refused. -->
+		{#if settingsError}
+			<p class="mt-2 font-ui text-ui text-red-600" role="alert">{settingsError}</p>
+		{:else if settingsSaved}
+			<p class="mt-2 font-ui text-ui text-green" role="status">Settings saved.</p>
+		{/if}
 	</section>
 
 	<!-- Import / export: back up or move the item catalog (#26). It never includes
