@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.3](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.18.2...yaadegar-v0.18.3) (2026-09-07)
+
+
+### Bug Fixes
+
+* **web:** draw item pictures on the public share page ([#350](https://github.com/yaad-index/yaadegar/issues/350)) ([bdf6b27](https://github.com/yaad-index/yaadegar/commit/bdf6b2780c2b365558f059c70833760e76b16315))
+
 ## [0.18.2](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.18.1...yaadegar-v0.18.2) (2026-09-07)
 
 
