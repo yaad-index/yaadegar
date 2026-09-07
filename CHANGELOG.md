@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.18.0...yaadegar-v0.18.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* **web:** show the result of a list settings save ([#338](https://github.com/yaad-index/yaadegar/issues/338)) ([7f878d9](https://github.com/yaad-index/yaadegar/commit/7f878d93bba3ce25af0d632fe11161244471e022)), closes [#313](https://github.com/yaad-index/yaadegar/issues/313)
+
 ## [0.18.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.17.1...yaadegar-v0.18.0) (2026-09-07)
 
 
