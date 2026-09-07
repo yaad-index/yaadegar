@@ -387,10 +387,11 @@
 									     picture appear to work while never reaching the only audience this
 									     page has.
 									     Sizing is the row's own 12-unit circle rather than the owner view's
-									     14-unit square: the pattern is borrowed (conditional, object-cover,
-									     alt from the name), the footprint is not, so the row does not
-									     re-lay-out. object-cover keeps a remote image of any dimensions
-									     inside that box rather than letting the source decide.
+									     14-unit square: the conditional and object-cover are borrowed from
+									     there, the footprint is not, so the row does not re-lay-out.
+									     object-cover keeps a remote image of any dimensions inside that box
+									     rather than letting the source decide. The alt deliberately differs
+									     from the owner view's — see the note on the img below.
 									     The reserved-by-this-browser cue rides the border here, because the
 									     tinted background it uses for the glyph is not visible behind a
 									     photo. -->
