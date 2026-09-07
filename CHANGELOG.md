@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.17.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.16.0...yaadegar-v0.17.0) (2026-09-06)
+
+
+### Features
+
+* **web:** link the legal pages from every page but the landing one ([#314](https://github.com/yaad-index/yaadegar/issues/314)) ([7c7d2f2](https://github.com/yaad-index/yaadegar/commit/7c7d2f2ecb94062f1fb60177298f567dbcbced27)), closes [#302](https://github.com/yaad-index/yaadegar/issues/302)
+
+
+### Bug Fixes
+
+* **preview:** fall back to the DOM for a product image ([#310](https://github.com/yaad-index/yaadegar/issues/310)) ([f7b9305](https://github.com/yaad-index/yaadegar/commit/f7b93052c8004d6083a8061fa84b408e134c86d0)), closes [#306](https://github.com/yaad-index/yaadegar/issues/306)
+* **preview:** request identity encoding so the real product page is returned ([#309](https://github.com/yaad-index/yaadegar/issues/309)) ([e475e3d](https://github.com/yaad-index/yaadegar/commit/e475e3d156493d6aef87f9fedaefc8229f5c1ab4)), closes [#304](https://github.com/yaad-index/yaadegar/issues/304)
+* **web:** keep list settings from resetting the reserver tier on save ([#312](https://github.com/yaad-index/yaadegar/issues/312)) ([21f0b62](https://github.com/yaad-index/yaadegar/commit/21f0b629e10e513384b1be4babb914abed556cdc)), closes [#305](https://github.com/yaad-index/yaadegar/issues/305)
+
 ## [0.16.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.15.0...yaadegar-v0.16.0) (2026-09-06)
 
 
