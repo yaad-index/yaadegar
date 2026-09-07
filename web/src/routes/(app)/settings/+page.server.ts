@@ -5,17 +5,41 @@ import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const client = backendClient({ host: locals.host, token: locals.token });
-	const [settingsRes, domainsRes] = await Promise.all([
+	const [settingsRes, domainsRes, ownerKeyRes] = await Promise.all([
 		client.GET('/api/v1/settings'),
-		client.GET('/api/v1/domains')
+		client.GET('/api/v1/domains'),
+		// The owner's shared-page key (#308). This read never mints one — null here
+		// means the owner has not created a shared page, which is the ordinary state
+		// and not an error.
+		client.GET('/api/v1/me/owner-key')
 	]);
 	return {
 		settings: settingsRes.data ?? { oauth_google_enabled: false, google_client_configured: false },
-		domains: domainsRes.data ?? []
+		domains: domainsRes.data ?? [],
+		ownerKey: ownerKeyRes.data?.owner_key ?? null
 	};
 };
 
 export const actions: Actions = {
+	// Create or rotate the owner's shared-page key (#308). Both are the same backend
+	// operation — it replaces whatever is stored — so rotating is what revokes a link
+	// that has been shared too widely. `rotating` rides along only so the page can
+	// word its confirmation for what the owner actually did.
+	ownerKey: async ({ request, locals }) => {
+		const fd = await request.formData();
+		const rotating = String(fd.get('rotating') ?? '') === 'true';
+		const client = backendClient({ host: locals.host, token: locals.token });
+		const { data, error: err } = await client.POST('/api/v1/me/owner-key', {});
+		if (err || !data?.owner_key) {
+			return fail(400, {
+				ownerKeyError: rotating
+					? 'Could not create a new link. Your existing one still works.'
+					: 'Could not create your shared page.'
+			});
+		}
+		return { ownerKey: data.owner_key, ownerKeyRotated: rotating, ownerKeyCreated: !rotating };
+	},
+
 	// Toggle Google login for the owner's own tenant. The backend writes only the
 	// authenticated principal's tenant (from the session), so no tenant id is sent.
 	toggle: async ({ request, locals }) => {

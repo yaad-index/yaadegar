@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import DomainDnsRecords from '$lib/components/DomainDnsRecords.svelte';
 	import Field from '$lib/components/Field.svelte';
 	import Button from '$lib/components/Button.svelte';
@@ -9,6 +10,24 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 	// After a toggle save the action returns fresh settings; otherwise use the load.
 	const settings = $derived(form?.settings ?? data.settings);
+
+	// The shared page (#308). A freshly created or rotated key comes back on the
+	// action; otherwise it is whatever the load found — null meaning the owner has
+	// not created one, which is the ordinary state rather than a missing value.
+	const ownerKey = $derived(form?.ownerKey ?? data.ownerKey);
+	const ownerUrl = $derived(ownerKey ? `${page.url.origin}/o/${ownerKey}` : '');
+	let ownerCopied = $state<'idle' | 'ok' | 'fail'>('idle');
+	let ownerCopyTimer: ReturnType<typeof setTimeout> | undefined;
+	async function copyOwnerUrl() {
+		clearTimeout(ownerCopyTimer);
+		try {
+			await navigator.clipboard.writeText(ownerUrl);
+			ownerCopied = 'ok';
+		} catch {
+			ownerCopied = 'fail';
+		}
+		ownerCopyTimer = setTimeout(() => (ownerCopied = 'idle'), 2500);
+	}
 </script>
 
 <svelte:head><title>Settings · Yaadegar</title></svelte:head>
@@ -94,6 +113,91 @@
 				<Button type="submit">Save name</Button>
 			</div>
 		</form>
+	</section>
+
+	<!-- The shared page (#308): one durable link for every list the owner chooses to
+	     show, instead of one link per list. Sits next to Display name because that is
+	     the name this page carries. -->
+	<section class="rounded-card border border-line bg-surface p-6">
+		<h2 class="font-display text-title text-ink-heading">Your shared page</h2>
+		<p class="mt-1 font-ui text-ui text-ink-muted">
+			One link that shows every list you've chosen to share, so you can send it once instead of
+			sending a new link each time you make a list.
+		</p>
+
+		{#if form?.ownerKeyCreated}
+			<p class="mt-4 rounded-card bg-green-tint p-3 font-ui text-ui text-green" role="status">
+				Your shared page is ready.
+			</p>
+		{/if}
+		{#if form?.ownerKeyRotated}
+			<p class="mt-4 rounded-card bg-green-tint p-3 font-ui text-ui text-green" role="status">
+				New link created. The previous one no longer opens.
+			</p>
+		{/if}
+		{#if form?.ownerKeyError}
+			<p class="mt-4 rounded-card bg-red-50 p-3 font-ui text-ui text-red-600" role="alert">
+				{form.ownerKeyError}
+			</p>
+		{/if}
+
+		{#if ownerKey}
+			<div class="mt-4 flex flex-wrap items-center gap-3">
+				<input
+					class="min-w-0 flex-1 rounded-card border border-line bg-surface-alt px-3 py-2 font-ui text-ui text-ink"
+					value={ownerUrl}
+					readonly
+					aria-label="Your shared page link"
+				/>
+				<Button type="button" variant="secondary" onclick={copyOwnerUrl}>
+					{ownerCopied === 'ok' ? 'Copied' : ownerCopied === 'fail' ? 'Copy failed' : 'Copy'}
+				</Button>
+				<!-- A runtime absolute URL on the tenant origin, built from the key the
+				     backend minted; resolve() has no route to express it. Same reason the
+				     list page's share link is constructed rather than resolved. -->
+				<!-- eslint-disable svelte/no-navigation-without-resolve -->
+				<a
+					href={ownerUrl}
+					target="_blank"
+					rel="noopener"
+					class="font-ui text-ui text-primary transition-colors hover:text-primary-hover">Open</a
+				>
+				<!-- eslint-enable svelte/no-navigation-without-resolve -->
+			</div>
+
+			<p class="mt-3 font-ui text-ui text-ink-muted">
+				A list appears here only when you turn on <span class="text-ink"
+					>Show on my shared page</span
+				> in that list's settings. Everything else stays off it, and every list's own share link keeps
+				working either way.
+			</p>
+			<!-- Stated as the rule rather than as this account's current state: the
+			     display name defaults to the account email, and the frontend is not told
+			     the email, so it cannot tell the two apart. The backend can and does —
+			     it withholds the name in exactly that case. -->
+			<p class="mt-2 font-ui text-ui text-ink-muted">
+				Your page is headed by your display name once you've set one above. Until then it stays
+				unnamed — your email address is never shown on it.
+			</p>
+
+			<form method="post" action="?/ownerKey" use:enhance class="mt-4">
+				<input type="hidden" name="rotating" value="true" />
+				<Button type="submit" variant="secondary">Create a new link</Button>
+				<p class="mt-2 font-ui text-ui text-ink-muted">
+					Use this if you've shared the link too widely. It replaces the link above, and anyone
+					holding the old one will no longer be able to open your page. Your lists themselves are
+					not affected.
+				</p>
+			</form>
+		{:else}
+			<form method="post" action="?/ownerKey" use:enhance class="mt-4">
+				<Button type="submit">Create my shared page</Button>
+				<p class="mt-2 font-ui text-ui text-ink-muted">
+					Nothing is shared until you create this and then choose which lists to show. You can
+					replace the link later at any time.
+				</p>
+			</form>
+		{/if}
 	</section>
 
 	<section class="rounded-card border border-line bg-surface p-6">
