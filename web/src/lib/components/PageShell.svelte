@@ -30,7 +30,16 @@
 
 <div class="flex flex-1 flex-col bg-page">
 	<TopNav {brand} {home} {actions} />
-	<main class="mx-auto max-w-content px-4 py-8">
+	<!-- w-full is load-bearing (#346). This <main> is a flex item in a column, and
+	     auto inline margins beat `stretch` on the cross axis, so without an explicit
+	     width its used width resolves to fit-content capped by max-width — making
+	     the column as wide as whatever content is rendered. That turned a tab click
+	     into a resize: 741px on List, 800px on Settings at a 1440px viewport. With
+	     width:100% the used width is the container's, still capped by max-w-content
+	     and still centred by the auto margins, but no longer a function of content.
+	     `mx-auto max-w-*` alone is the correct centring idiom in a BLOCK container;
+	     it is only wrong here because the parent is display:flex. -->
+	<main class="mx-auto w-full max-w-content px-4 py-8">
 		{#if isEmpty && empty}
 			<div class="flex min-h-[50vh] items-center justify-center">
 				{@render empty()}

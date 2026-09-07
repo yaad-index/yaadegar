@@ -17,7 +17,7 @@
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
-<main class="mx-auto max-w-md p-6">
+<main class="mx-auto w-full max-w-md p-6">
 	{#if decided}
 		<!-- After a decision. Contacts appear only when both_confirmed (matchView). -->
 		{#if decided.released}

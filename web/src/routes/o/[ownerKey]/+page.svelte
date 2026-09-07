@@ -47,7 +47,7 @@
 	</div>
 </header>
 
-<main class="mx-auto max-w-2xl px-4 py-10">
+<main class="mx-auto w-full max-w-2xl px-4 py-10">
 	<h1 class="display-title-md font-display text-ink-heading">{heading}</h1>
 
 	{#if data.lists.length > 0}

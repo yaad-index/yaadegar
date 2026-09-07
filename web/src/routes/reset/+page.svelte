@@ -8,7 +8,7 @@
 
 <svelte:head><title>Reset password · Yaadegar</title></svelte:head>
 
-<main class="mx-auto max-w-sm p-8">
+<main class="mx-auto w-full max-w-sm p-8">
 	<h1 class="text-2xl font-bold">Choose a new password</h1>
 
 	{#if !data.token}

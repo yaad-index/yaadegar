@@ -191,7 +191,7 @@
 	</div>
 </header>
 
-<main class="mx-auto max-w-2xl px-4 py-10">
+<main class="mx-auto w-full max-w-2xl px-4 py-10">
 	{#if data.closed}
 		<!-- Inactive share link. The design set does not draw this state; it is kept and
 		     dressed in the tokens rather than dropped (#235). -->
