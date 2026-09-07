@@ -701,6 +701,12 @@ type NullableInt = nullable.Nullable[int]
 // NullableString defines model for NullableString.
 type NullableString = nullable.Nullable[string]
 
+// OwnerKey defines model for OwnerKey.
+type OwnerKey struct {
+	// OwnerKey The owner's opaque key for their public list index (#308), or null when they have never created one. Same generator and entropy as a list's share_slug (ADR-0002 §9). Null is the normal state for an account that has not asked for an owner page — it is not an error.
+	OwnerKey *string `json:"owner_key,omitempty"`
+}
+
 // PasswordResetConfirm defines model for PasswordResetConfirm.
 type PasswordResetConfirm struct {
 	// NewPassword The replacement password. Must satisfy the instance password policy (a minimum length); a too-short value is rejected.
@@ -757,6 +763,28 @@ type PublicList struct {
 	EventDate     *openapi_types.Date `json:"event_date,omitempty"`
 	Items         *[]PublicItem       `json:"items,omitempty"`
 	Title         *string             `json:"title,omitempty"`
+}
+
+// PublicOwner defines model for PublicOwner.
+type PublicOwner struct {
+	// DisplayName The owner's display name, used as the page heading. Null when the account has no name distinct from its email: the stored display name falls back to the account email at creation (#185), so rendering it unconditionally would publish an email address to anyone holding the key. Null means the page shows a neutral heading instead.
+	DisplayName *string `json:"display_name,omitempty"`
+
+	// Lists The owner's listed lists, newest first. Empty when the owner has listed nothing yet.
+	Lists *[]PublicOwnerList `json:"lists,omitempty"`
+}
+
+// PublicOwnerList One row on the owner page. Carries only what a row renders — no visibility field, no owner identity, and nothing about who reserved anything.
+type PublicOwnerList struct {
+	// ItemCount The number of items on the list.
+	ItemCount *int `json:"item_count,omitempty"`
+
+	// ItemPreviews Up to the first few items' thumbnails (#207), in the list's item display order — the same preview cluster the owner's own dashboard cards render.
+	ItemPreviews *[]ItemPreview `json:"item_previews,omitempty"`
+
+	// ShareSlug The list's own public link, so a row can link through. Present only because every list in this response is one the owner marked listed; an unlisted list is excluded when the lists are read, so its slug is never loaded into this response.
+	ShareSlug *string `json:"share_slug,omitempty"`
+	Title     *string `json:"title,omitempty"`
 }
 
 // RegisterRequest defines model for RegisterRequest.
@@ -1118,6 +1146,12 @@ type ServerInterface interface {
 	// GetCurrentUser Get the current owner/tenant
 	// (GET /api/v1/me)
 	GetCurrentUser(w http.ResponseWriter, r *http.Request)
+	// GetOwnerKey Read the authenticated owner's public list-index key
+	// (GET /api/v1/me/owner-key)
+	GetOwnerKey(w http.ResponseWriter, r *http.Request)
+	// CreateOwnerKey Create or rotate the authenticated owner's public list-index key
+	// (POST /api/v1/me/owner-key)
+	CreateOwnerKey(w http.ResponseWriter, r *http.Request)
 	// ChangePassword Change the authenticated owner's password
 	// (PUT /api/v1/me/password)
 	ChangePassword(w http.ResponseWriter, r *http.Request)
@@ -1166,6 +1200,9 @@ type ServerInterface interface {
 	// ConfirmMatch Confirm or decline a proposed co-buying match
 	// (POST /public/matches/{matchId}/confirm)
 	ConfirmMatch(w http.ResponseWriter, r *http.Request, matchId string)
+	// GetPublicOwner View an owner's listed lists (anonymous)
+	// (GET /public/owners/{ownerKey})
+	GetPublicOwner(w http.ResponseWriter, r *http.Request, ownerKey string)
 	// ConfirmReservation Confirm an email_confirmed reservation via its emailed token (anonymous)
 	// (POST /public/reservations/confirm)
 	ConfirmReservation(w http.ResponseWriter, r *http.Request)
@@ -1845,6 +1882,34 @@ func (siw *ServerInterfaceWrapper) GetCurrentUser(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// GetOwnerKey operation middleware
+func (siw *ServerInterfaceWrapper) GetOwnerKey(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetOwnerKey(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateOwnerKey operation middleware
+func (siw *ServerInterfaceWrapper) CreateOwnerKey(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateOwnerKey(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ChangePassword operation middleware
 func (siw *ServerInterfaceWrapper) ChangePassword(w http.ResponseWriter, r *http.Request) {
 
@@ -2161,6 +2226,32 @@ func (siw *ServerInterfaceWrapper) ConfirmMatch(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// GetPublicOwner operation middleware
+func (siw *ServerInterfaceWrapper) GetPublicOwner(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "ownerKey" -------------
+	var ownerKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "ownerKey", r.PathValue("ownerKey"), &ownerKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "ownerKey", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPublicOwner(w, r, ownerKey)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ConfirmReservation operation middleware
 func (siw *ServerInterfaceWrapper) ConfirmReservation(w http.ResponseWriter, r *http.Request) {
 
@@ -2434,6 +2525,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/admin/tenants/{tenantId}/users/{userId}", wrapper.AdminUpdateUser)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/me", wrapper.GetCurrentUser)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/me/profile", wrapper.UpdateProfile)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/me/owner-key", wrapper.GetOwnerKey)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/me/owner-key", wrapper.CreateOwnerKey)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/me/password", wrapper.ChangePassword)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/me/reservations", wrapper.ListMyReservations)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/me/reservations", wrapper.CreateMyReservation)
@@ -2454,6 +2547,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/domains", wrapper.AddDomain)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/domains/{domainId}", wrapper.DeleteDomain)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/domains/{domainId}/verify", wrapper.VerifyDomain)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/public/owners/{ownerKey}", wrapper.GetPublicOwner)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/public/{shareSlug}", wrapper.GetPublicList)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/public/{shareSlug}/items/{itemId}/reservations", wrapper.CreateReservation)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/public/reservations/{reservationId}", wrapper.ReleaseReservation)
@@ -4276,6 +4370,80 @@ func (response GetCurrentUser401ApplicationProblemPlusJSONResponse) VisitGetCurr
 	return err
 }
 
+type GetOwnerKeyRequestObject struct {
+}
+
+type GetOwnerKeyResponseObject interface {
+	VisitGetOwnerKeyResponse(w http.ResponseWriter) error
+}
+
+type GetOwnerKey200JSONResponse OwnerKey
+
+func (response GetOwnerKey200JSONResponse) VisitGetOwnerKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetOwnerKey401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetOwnerKey401ApplicationProblemPlusJSONResponse) VisitGetOwnerKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateOwnerKeyRequestObject struct {
+}
+
+type CreateOwnerKeyResponseObject interface {
+	VisitCreateOwnerKeyResponse(w http.ResponseWriter) error
+}
+
+type CreateOwnerKey200JSONResponse OwnerKey
+
+func (response CreateOwnerKey200JSONResponse) VisitCreateOwnerKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateOwnerKey401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response CreateOwnerKey401ApplicationProblemPlusJSONResponse) VisitCreateOwnerKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ChangePasswordRequestObject struct {
 	Body *ChangePasswordJSONRequestBody
 }
@@ -5112,6 +5280,44 @@ func (response ConfirmMatch409ApplicationProblemPlusJSONResponse) VisitConfirmMa
 	return err
 }
 
+type GetPublicOwnerRequestObject struct {
+	OwnerKey string `json:"ownerKey"`
+}
+
+type GetPublicOwnerResponseObject interface {
+	VisitGetPublicOwnerResponse(w http.ResponseWriter) error
+}
+
+type GetPublicOwner200JSONResponse PublicOwner
+
+func (response GetPublicOwner200JSONResponse) VisitGetPublicOwnerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPublicOwner404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response GetPublicOwner404ApplicationProblemPlusJSONResponse) VisitGetPublicOwnerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ConfirmReservationRequestObject struct {
 	Body *ConfirmReservationJSONRequestBody
 }
@@ -5571,6 +5777,12 @@ type StrictServerInterface interface {
 	// GetCurrentUser Get the current owner/tenant
 	// (GET /api/v1/me)
 	GetCurrentUser(ctx context.Context, request GetCurrentUserRequestObject) (GetCurrentUserResponseObject, error)
+	// GetOwnerKey Read the authenticated owner's public list-index key
+	// (GET /api/v1/me/owner-key)
+	GetOwnerKey(ctx context.Context, request GetOwnerKeyRequestObject) (GetOwnerKeyResponseObject, error)
+	// CreateOwnerKey Create or rotate the authenticated owner's public list-index key
+	// (POST /api/v1/me/owner-key)
+	CreateOwnerKey(ctx context.Context, request CreateOwnerKeyRequestObject) (CreateOwnerKeyResponseObject, error)
 	// ChangePassword Change the authenticated owner's password
 	// (PUT /api/v1/me/password)
 	ChangePassword(ctx context.Context, request ChangePasswordRequestObject) (ChangePasswordResponseObject, error)
@@ -5619,6 +5831,9 @@ type StrictServerInterface interface {
 	// ConfirmMatch Confirm or decline a proposed co-buying match
 	// (POST /public/matches/{matchId}/confirm)
 	ConfirmMatch(ctx context.Context, request ConfirmMatchRequestObject) (ConfirmMatchResponseObject, error)
+	// GetPublicOwner View an owner's listed lists (anonymous)
+	// (GET /public/owners/{ownerKey})
+	GetPublicOwner(ctx context.Context, request GetPublicOwnerRequestObject) (GetPublicOwnerResponseObject, error)
 	// ConfirmReservation Confirm an email_confirmed reservation via its emailed token (anonymous)
 	// (POST /public/reservations/confirm)
 	ConfirmReservation(ctx context.Context, request ConfirmReservationRequestObject) (ConfirmReservationResponseObject, error)
@@ -6459,6 +6674,54 @@ func (sh *strictHandler) GetCurrentUser(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
+// GetOwnerKey operation middleware
+func (sh *strictHandler) GetOwnerKey(w http.ResponseWriter, r *http.Request) {
+	var request GetOwnerKeyRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetOwnerKey(ctx, request.(GetOwnerKeyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetOwnerKey")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetOwnerKeyResponseObject); ok {
+		if err := validResponse.VisitGetOwnerKeyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateOwnerKey operation middleware
+func (sh *strictHandler) CreateOwnerKey(w http.ResponseWriter, r *http.Request) {
+	var request CreateOwnerKeyRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateOwnerKey(ctx, request.(CreateOwnerKeyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateOwnerKey")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateOwnerKeyResponseObject); ok {
+		if err := validResponse.VisitCreateOwnerKeyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ChangePassword operation middleware
 func (sh *strictHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	var request ChangePasswordRequestObject
@@ -6897,6 +7160,32 @@ func (sh *strictHandler) ConfirmMatch(w http.ResponseWriter, r *http.Request, ma
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ConfirmMatchResponseObject); ok {
 		if err := validResponse.VisitConfirmMatchResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetPublicOwner operation middleware
+func (sh *strictHandler) GetPublicOwner(w http.ResponseWriter, r *http.Request, ownerKey string) {
+	var request GetPublicOwnerRequestObject
+
+	request.OwnerKey = ownerKey
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetPublicOwner(ctx, request.(GetPublicOwnerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetPublicOwner")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetPublicOwnerResponseObject); ok {
+		if err := validResponse.VisitGetPublicOwnerResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

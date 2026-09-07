@@ -250,6 +250,44 @@ func (r listRepo) List(ctx context.Context, ownerID string, p storage.Page) ([]s
 	return out, total, rows.Err()
 }
 
+// ListedByOwner returns the lists ownerID has marked listed — visibility 'public'
+// (#308) — joined through list_owners, newest first.
+//
+// The visibility predicate is in the SQL on purpose. This read feeds an
+// unauthenticated surface that must carry share_slug in order to link through at
+// all, so a version that selected every list and filtered later would render
+// correctly while shipping every unlisted list's slug to the client. Selecting only
+// listed rows means an unlisted slug is never loaded, let alone serialized.
+//
+// It deliberately does NOT apply the disabled/past-event rule: that lives in
+// listDisabled, which the per-list public view uses to answer 410, and a second
+// implementation of it here in SQL could drift from the first. The caller applies
+// it, so both surfaces refuse the same lists for the same reason.
+func (r listRepo) ListedByOwner(ctx context.Context, ownerID string, p storage.Page) ([]storage.List, error) {
+	rows, err := r.db.QueryContext(ctx, r.rb(
+		`SELECT `+listSelectCols+` FROM lists
+		  WHERE tenant_id = ? AND visibility = ?
+		    AND EXISTS (SELECT 1 FROM list_owners lo
+		                WHERE lo.list_id = lists.id AND lo.user_id = ?)
+		  ORDER BY created_at DESC, id
+		  LIMIT ? OFFSET ?`),
+		r.tenantID, string(storage.VisibilityPublic), ownerID, p.Limit, p.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []storage.List
+	for rows.Next() {
+		l, err := scanList(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
 func (r listRepo) Update(ctx context.Context, l storage.List) (storage.List, error) {
 	res, err := r.db.ExecContext(ctx, r.rb(
 		`UPDATE lists SET title = ?, visibility = ?, event_date = ?,
