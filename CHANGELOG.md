@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.18.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.17.1...yaadegar-v0.18.0) (2026-09-07)
+
+
+### Features
+
+* **api:** owner page backend — owner key, listed-lists read, migration ([#328](https://github.com/yaad-index/yaadegar/issues/328)) ([d0d0f40](https://github.com/yaad-index/yaadegar/commit/d0d0f40dcf08b05c30c3aee5fd3087a49fccd5f9))
+* **web:** owner page, per-list listed toggle, shared-link panel ([#331](https://github.com/yaad-index/yaadegar/issues/331)) ([6564c0b](https://github.com/yaad-index/yaadegar/commit/6564c0bebaeffdb62a7ca562b27eb16a59c7035a)), closes [#308](https://github.com/yaad-index/yaadegar/issues/308)
+
 ## [0.17.1](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.17.0...yaadegar-v0.17.1) (2026-09-07)
 
 
