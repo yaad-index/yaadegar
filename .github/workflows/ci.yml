@@ -81,6 +81,15 @@ jobs:
         # is deliberately NOT made here — this job records the divergence in the
         # workflow file rather than papering over it. Treat a bump as a change that
         # moves together with the compose files.
+        #
+        # ⚠️ These two jobs are REQUIRED status checks on main, and a matrix job
+        # registers its context under the expanded name — "postgres (postgres:18.4)"
+        # is a literal string in the branch protection settings. So changing an image
+        # here renames the context: the new name is not required and the old one stays
+        # required and can never report again. A required check that never reports does
+        # not fail, it stays pending forever, and that blocks every PR in the repo —
+        # a routine version bump arriving as a permanent pending state with no failing
+        # job to point at. The matrix and the protection list have to move together.
         postgres-image:
           - postgres:17.2-alpine
           - postgres:18.4
