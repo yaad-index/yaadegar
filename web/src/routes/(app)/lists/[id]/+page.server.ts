@@ -183,10 +183,24 @@ export const actions: Actions = {
 		// instance default (null, three-state per #111); otherwise it sets the tier.
 		const reserverTierRaw = String(fd.get('reserver_tier') ?? '');
 		const reserver_tier = reserverTierRaw === '' ? null : reserverTierRaw;
+		// Whether this list appears on the owner's shared page (#308). The control has
+		// two positions but the stored enum has three, so turning it off must not
+		// silently rewrite an `unlisted` list into a `private` one: only a list that
+		// was actually listed is changed, and the two non-listed values are left as
+		// they are. Turning it off never affects the list's own share link.
+		const current = String(fd.get('current_visibility') ?? 'private');
+		const listed = String(fd.get('listed') ?? '') === 'on';
+		const visibility = listed ? 'public' : current === 'public' ? 'private' : current;
 		const client = backendClient({ host: locals.host, token: locals.token });
 		const { error: err } = await client.PATCH('/api/v1/lists/{listId}', {
 			params: { path: { listId: params.id } },
-			body: { allow_cobuy, thank_you_template, reserver_tier, description }
+			body: {
+				allow_cobuy,
+				thank_you_template,
+				reserver_tier,
+				description,
+				visibility: visibility as 'public' | 'unlisted' | 'private'
+			}
 		});
 		if (err) return fail(400, { settingsError: 'Could not update list settings.' });
 		return { settingsSaved: true };

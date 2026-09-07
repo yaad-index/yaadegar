@@ -189,6 +189,29 @@
 					Supports light markdown; links open in a new tab. Max 2000 characters.
 				</p>
 			</label>
+			<!-- Owner-page inclusion (#308). This governs listing ONLY — the list's own
+			     share link works exactly the same either way, which is the point of the
+			     flag and the thing most likely to be misread, so the copy says it rather
+			     than leaving it to be inferred. current_visibility rides along so that
+			     unchecking a list that was `unlisted` does not rewrite it to `private`. -->
+			<div class="rounded-card bg-surface-alt p-3">
+				<label class="flex items-start gap-3">
+					<input
+						type="checkbox"
+						name="listed"
+						checked={data.list.visibility === 'public'}
+						class="mt-1 h-4 w-4 shrink-0 rounded border-line text-primary focus-visible:ring-2 focus-visible:ring-primary"
+					/>
+					<span class="min-w-0">
+						<span class="block font-ui text-ui font-medium text-ink">Show on my shared page</span>
+						<span class="mt-0.5 block font-ui text-ui text-ink-muted">
+							Adds this list to the one link that shows all your shared lists. Its own share link
+							keeps working either way — turning this off only takes it off that page.
+						</span>
+					</span>
+				</label>
+				<input type="hidden" name="current_visibility" value={data.list.visibility ?? 'private'} />
+			</div>
 			<div class="flex flex-col gap-4 sm:flex-row">
 				<label class="block sm:flex-1">
 					<span class="mb-1 block font-ui text-ui font-medium text-ink">Group-buying default</span>
