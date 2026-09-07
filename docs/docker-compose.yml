@@ -21,8 +21,10 @@
 # pick a tag would leak into the container and make the mismatch detector report the
 # value you injected instead of the image's real version. Keep the two separate.
 #
-# This default is bumped MANUALLY after each release (a small follow-up PR), NOT
-# auto-moved by release-please, and that is deliberate rather than a gap. The
+# This default is bumped by a small follow-up PR after each release, NOT auto-moved by
+# release-please as part of the release itself, and that is deliberate rather than a gap.
+# The follow-up PR is opened automatically by the docs-compose workflow (#307); what
+# stays fixed is that the bump is a SEPARATE PR raised after the tag is published. The
 # docs-compose `serves-a-site` CI job pulls THIS pinned tag on the release event, and
 # auto-bumping it to the releasing version would name a tag that does not exist yet —
 # docker-publish.yml applies the pinnable tags LAST, via imagetools, so the pull would
@@ -47,7 +49,7 @@ services:
       retries: 20
 
   app:
-    image: ghcr.io/yaad-index/yaadegar:${YAADEGAR_IMAGE_TAG:-0.14.0}
+    image: ghcr.io/yaad-index/yaadegar:${YAADEGAR_IMAGE_TAG:-0.16.0}
     depends_on:
       db:
         condition: service_healthy
@@ -74,7 +76,7 @@ services:
       start_period: 5s
 
   web:
-    image: ghcr.io/yaad-index/yaadegar-web:${YAADEGAR_IMAGE_TAG:-0.14.0}
+    image: ghcr.io/yaad-index/yaadegar-web:${YAADEGAR_IMAGE_TAG:-0.16.0}
     depends_on:
       app:
         condition: service_healthy
