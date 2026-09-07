@@ -36,38 +36,39 @@ const listData = (): PageData =>
 		noteHtml: {}
 	}) as unknown as PageData;
 
+const itemImages = (container: HTMLElement) => [...container.querySelectorAll('li img')];
+
 describe('giver page item images (#347)', () => {
 	it('draws the picture of every item that has one', () => {
-		render(Page, { data: listData(), form: null });
-		expect(screen.getByAltText('Kettle')).toHaveAttribute(
-			'src',
-			'https://img.example.invalid/kettle.png'
-		);
-		expect(screen.getByAltText('Wool blanket')).toHaveAttribute(
-			'src',
+		const { container } = render(Page, { data: listData(), form: null });
+		expect(itemImages(container).map((i) => i.getAttribute('src'))).toEqual([
+			'https://img.example.invalid/kettle.png',
 			'https://img.example.invalid/blanket.png'
-		);
+		]);
 	});
 
-	it('names each picture after its item rather than leaving alt empty', () => {
+	// The picture sits beside the item's visible name, so it adds nothing a screen
+	// reader needs and an alt naming the item would announce it twice. These two
+	// assertions belong together: alt="" is only correct WHILE the name is rendered
+	// beside it, so a change that drops the visible name must fail here.
+	it('marks each picture decorative, and keeps the name as visible text beside it', () => {
 		const { container } = render(Page, { data: listData(), form: null });
-		const alts = [...container.querySelectorAll('li img')].map((i) => i.getAttribute('alt'));
-		expect(alts).toEqual(['Kettle', 'Wool blanket']);
+		expect(itemImages(container).map((i) => i.getAttribute('alt'))).toEqual(['', '']);
+		expect(screen.getByText('Kettle')).toBeInTheDocument();
+		expect(screen.getByText('Wool blanket')).toBeInTheDocument();
 	});
 
 	it('defers loading, since this is the public page on a cold cache', () => {
 		const { container } = render(Page, { data: listData(), form: null });
-		const lazy = [...container.querySelectorAll('li img')].map((i) => i.getAttribute('loading'));
-		expect(lazy).toEqual(['lazy', 'lazy']);
+		expect(itemImages(container).map((i) => i.getAttribute('loading'))).toEqual(['lazy', 'lazy']);
 	});
 
 	// The half that is easy to lose: an item with no picture must still read as a row,
 	// not as a gap or a broken icon. Asserting the count is what catches a fix that
-	// renders an <img src="">/placeholder for the imageless item too.
+	// renders an <img> for the imageless item too.
 	it('leaves the generic mark on an item with no picture, and draws no image for it', () => {
 		const { container } = render(Page, { data: listData(), form: null });
-		expect(container.querySelectorAll('li img')).toHaveLength(2);
+		expect(itemImages(container)).toHaveLength(2);
 		expect(screen.getByText('Espresso machine')).toBeInTheDocument();
-		expect(screen.queryByAltText('Espresso machine')).toBeNull();
 	});
 });

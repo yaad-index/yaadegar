@@ -395,9 +395,14 @@
 									     tinted background it uses for the glyph is not visible behind a
 									     photo. -->
 									{#if item.image_url}
+										<!-- ⛔ alt="" is correct ONLY while the item name is visible text beside
+										     this image (the span below). The picture then adds nothing a screen
+										     reader needs, and a name here would announce it twice. The two are
+										     coupled: if the adjacent name is ever removed or hidden, this alt has
+										     to become the item name again. -->
 										<img
 											src={item.image_url}
-											alt={item.name}
+											alt=""
 											loading="lazy"
 											class={`h-12 w-12 shrink-0 rounded-full border object-cover ${reservedByYou ? 'border-gold' : 'border-line'}`}
 										/>
