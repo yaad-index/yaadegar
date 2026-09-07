@@ -51,6 +51,112 @@ jobs:
       - name: Test
         run: go test -race ./...
 
+  # The Postgres half of the migration surface (#330). The `check` job above runs
+  # the default suite, which is SQLite-only. The two drivers share their entire
+  # CRUD body (ADR-0003 §1) but keep SEPARATE migration directories, so the
+  # migration SQL is the one place the dialects genuinely diverge — the
+  # least-shared code was the least-tested code, and until this job existed every
+  # migration this repo shipped reached Postgres users without CI ever applying it.
+  #
+  # Reading a migration catches whether the SQL expresses the intended set. It
+  # cannot catch whether Postgres accepts the statement at all — a type it does
+  # not have, an index shape it refuses, a form it parses differently. Only
+  # applying it to a running server catches that, and that failure otherwise
+  # surfaces on a user's upgrade rather than in a test run.
+  postgres:
+    runs-on: ubuntu-latest
+    strategy:
+      # Report both versions independently — if a migration breaks on one of them
+      # only, that is the single most useful thing this job can tell you, and
+      # cancelling the sibling would withhold it.
+      fail-fast: false
+      matrix:
+        # Two versions because the project does not currently have one. The compose
+        # files (docker-compose.yml, docs/docker-compose.yml) ship 17.2-alpine, so
+        # that is what anyone following the quick start runs; the deployment that
+        # exists today runs 18.4. Pinning either alone would leave the other
+        # untested, so both run and a migration must satisfy both.
+        #
+        # Converging those numbers is a real decision someone has to make, and it
+        # is deliberately NOT made here — this job records the divergence in the
+        # workflow file rather than papering over it. Treat a bump as a change that
+        # moves together with the compose files.
+        postgres-image:
+          - postgres:17.2-alpine
+          - postgres:18.4
+    services:
+      postgres:
+        image: ${{ matrix.postgres-image }}
+        env:
+          POSTGRES_USER: yaadegar
+          POSTGRES_DB: yaadegar_test
+          # No password at all, rather than a throwaway one written into the file.
+          # This server is created for one job, is reachable only from that job over
+          # its own loopback, and is destroyed with it -- so a credential here would
+          # protect nothing while putting a password-shaped string in the repository.
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U yaadegar -d yaadegar_test"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Run the Postgres integration suite
+        env:
+          YAADEGAR_TEST_POSTGRES_DSN: postgres://yaadegar@localhost:5432/yaadegar_test?sslmode=disable
+        run: |
+          set -euo pipefail
+
+          # A green `go test` is NOT evidence this ran. newPostgresStore() calls
+          # t.Skip() when YAADEGAR_TEST_POSTGRES_DSN is empty, so a service that
+          # never came up — or an env value that never reached this step — yields
+          # nothing but SKIPs and exit 0. That is a job which is green having
+          # executed nothing, and at the status tick it is indistinguishable from a
+          # working one. Confirmed by running the suite with the variable unset:
+          # every test skipped, exit code 0.
+          #
+          # So assert on the outcome instead of the exit status. `-list` enumerates
+          # the tests that exist; every one of them must then report PASS. Deriving
+          # the expectation from the source rather than from a literal count means a
+          # seventh test raises the bar without anyone remembering to, and a build
+          # tag that stops matching empties the list and fails here instead of
+          # passing vacuously.
+          # `-list` also prints a trailing "ok <pkg> <elapsed>" line, so filter to
+          # the names. The `|| true` keeps a no-match grep (exit 1) from killing the
+          # script under `set -e` before the check below can say why — without it
+          # the empty case still fails, but with no diagnostic, and the branch that
+          # explains it is unreachable.
+          go test -tags=integration -list 'TestPostgres' ./internal/storage/sqlstore/ \
+            > "$RUNNER_TEMP/list.txt"
+          { grep '^TestPostgres' "$RUNNER_TEMP/list.txt" || true; } \
+            | sort > "$RUNNER_TEMP/expected.txt"
+          if [ ! -s "$RUNNER_TEMP/expected.txt" ]; then
+            echo "found no TestPostgres* tests to run: the integration suite is not being built (build tag changed, or the file moved)"
+            exit 1
+          fi
+
+          go test -tags=integration -race -v -run 'TestPostgres' ./internal/storage/sqlstore/ \
+            2>&1 | tee "$RUNNER_TEMP/run.log"
+
+          # Top-level PASS lines only — subtest results are indented.
+          sed -n 's/^--- PASS: \(TestPostgres[^ ]*\).*/\1/p' "$RUNNER_TEMP/run.log" \
+            | sort > "$RUNNER_TEMP/passed.txt"
+          if ! diff -u "$RUNNER_TEMP/expected.txt" "$RUNNER_TEMP/passed.txt"; then
+            echo "a Postgres integration test that exists did not report PASS (the '-' lines above); a skip means the database was never reached"
+            exit 1
+          fi
+          echo "all $(wc -l < "$RUNNER_TEMP/expected.txt") Postgres integration tests executed and passed, migrations applied to ${{ matrix.postgres-image }}"
+
   # Guard the link-time version stamp (#190). The stamp lives in the Dockerfile
   # link flags + the publish workflow's build-arg — both outside the Go build the
   # `check` job exercises — so nothing above would notice the flag being dropped,
