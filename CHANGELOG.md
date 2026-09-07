@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.2](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.18.1...yaadegar-v0.18.2) (2026-09-07)
+
+
+### Bug Fixes
+
+* **web:** stop the page column taking its width from its content ([#348](https://github.com/yaad-index/yaadegar/issues/348)) ([926751b](https://github.com/yaad-index/yaadegar/commit/926751b38474d89b28a2d552f93c05c3195424ac)), closes [#346](https://github.com/yaad-index/yaadegar/issues/346)
+
 ## [0.18.1](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.18.0...yaadegar-v0.18.1) (2026-09-07)
 
 
