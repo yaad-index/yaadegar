@@ -64,7 +64,17 @@ fi
 # payload and the parse itself is exercised. Both shapes below are confirmed
 # against the live API rather than taken from documentation.
 requested="$(gh api "repos/${REPO}/pulls/${pr}/requested_reviewers" | jq -r '[.users[].login] | join(" ")')"
-reviewed="$(gh api "repos/${REPO}/pulls/${pr}/reviews" | jq -r '[.[].user.login] | unique | join(" ")')"
+#
+# ⚠️ DISMISSED reviews do not count as covered, and this is a decision rather than
+# a consequence of the union. This repository dismisses stale reviews on a diff
+# change, and release-please rewrites the changelog and manifest on every push to
+# main — so a release pull request's approvals are dismissed repeatedly while it is
+# open. Counting a dismissed review as an answer would leave that reviewer neither
+# requested nor approving, with nothing pending against their name: the same
+# silence this step exists to end, arriving one step later. Excluding them means
+# they are re-requested and re-notified, and there is no approval left to reset
+# because it has already been dismissed.
+reviewed="$(gh api "repos/${REPO}/pulls/${pr}/reviews" | jq -r '[.[] | select(.state != "DISMISSED") | .user.login] | unique | join(" ")')"
 covered=" ${requested} ${reviewed} "
 
 ask=()

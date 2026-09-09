@@ -47,9 +47,12 @@ to_users() {
 to_reviews() {
   printf '['
   local first=1
-  for who in $1; do
+  for entry in $1; do
     [ $first -eq 1 ] || printf ','
-    printf '{"user":{"login":"%s"},"state":"APPROVED"}' "$who"
+    local who="${entry%%:*}"
+    local state="APPROVED"
+    case "$entry" in *:*) state="${entry##*:}" ;; esac
+    printf '{"user":{"login":"%s"},"state":"%s"}' "$who" "$state"
     first=0
   done
   printf ']\n'
@@ -126,6 +129,16 @@ out="$(run_case '' 'first-reviewer second-reviewer' '')"; code=$?
 assert_status "$code" 0 "exits 0"
 assert_contains "$out" "already has every reviewer" "asks for nobody"
 assert_contains "$out" "reviewed 'first-reviewer second-reviewer'" "and says why"
+
+echo "🚨 a DISMISSED review does not count as an answer"
+# This repository dismisses stale reviews on a diff change and release-please
+# rewrites the changelog on every push to main, so a release PR's approvals are
+# dismissed repeatedly while it is open. Counting a dismissed review as covered
+# would leave that reviewer neither requested nor approving — the same silence,
+# one step later.
+out="$(run_case '' 'first-reviewer:DISMISSED second-reviewer:DISMISSED' 'first-reviewer second-reviewer')"; code=$?
+assert_status "$code" 0 "exits 0"
+assert_contains "$out" "asked for 'first-reviewer second-reviewer'" "both are re-requested"
 
 echo "one reviewed, one never asked: only the missing one is requested"
 out="$(run_case '' 'first-reviewer' 'second-reviewer')"; code=$?
