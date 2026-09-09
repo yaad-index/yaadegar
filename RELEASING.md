@@ -26,6 +26,34 @@ local build is honest about being one.
 
 The first release starts pre-1.0 from `0.0.0`.
 
+## After the merge: what publishes, and how long it should take
+
+Merging the release PR fires `docker-publish`, which pushes the API and web
+images as a matched pair. That workflow has **two** jobs:
+
+1. `require-suite` waits for the `ci.yml` run belonging to the commit being
+   published and refuses to continue unless it passed (#356). It exists so an
+   image can never be built from a commit no test run has covered.
+2. `publish` builds and pushes.
+
+⚠️ **The run's total duration is no longer the publish duration, and old figures
+are not comparable to new ones.** `docker-publish` used to have a single job, so
+the two numbers were the same and got used interchangeably. The gate's wait —
+however long the suite takes on that commit — is now part of the run and not part
+of the publish.
+
+**So compare the `publish` JOB against historical numbers, not the run.** A run
+several minutes longer than the figures you remember is expected and is not
+evidence of a slow build. This has already caused one wrong call: a publish
+flagged as overrunning measured 13m22s at the job, against a 12m41s–14m13s range
+for the three before it — entirely normal.
+
+🔑 The general form, which outlives this instance: **a number does not have to
+move to become wrong — what it was a proxy for can move out from under it.**
+Nothing in the old durations marks them as no longer comparable, and the person
+most likely to miss that is whoever added the job, because to them the run is
+still "the publish".
+
 ## First release: the one-time manual step
 
 The release PR is opened by the built-in `GITHUB_TOKEN`, and GitHub
