@@ -41,6 +41,20 @@ jobs:
       - name: Verify generated code is in sync with the spec
         run: make verify-generate
 
+      # The workflow shell that guards releases and publishes lives in
+      # .github/scripts so it can be exercised (#359, #343). These run here rather
+      # than in a job of their own because `check` is already a required context: a
+      # new job would not gate anything until branch protection was edited, and a
+      # test that runs green beside a regression is the state those issues exist to
+      # end.
+      - name: Test the workflow scripts against stubs
+        run: |
+          set -euo pipefail
+          for t in .github/scripts/*.test.sh; do
+            echo "--- $t"
+            bash "$t"
+          done
+
       - name: Vet
         run: go vet ./...
 

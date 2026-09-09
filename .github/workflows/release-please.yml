@@ -36,6 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Run release-please
+        id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           # Uses the optional RELEASE_PLEASE_TOKEN secret when present (so the
@@ -44,3 +45,39 @@ jobs:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      # Request reviewers on the release PR (#343).
+      #
+      # This PR class is the only one whose author can never approve it — GitHub
+      # forbids approving your own pull request, which is a platform constraint no
+      # review policy can relax. It was also the only class arriving with nobody
+      # requested. Each fact is harmless alone; together they mean the pull request
+      # that most depends on someone else noticing it notified no one, and it does
+      # not fail, it sits: nobody requested is indistinguishable from reviewers who
+      # have not got to it yet.
+      #
+      # 🚨 REVIEWERS ARE THE IDENTITIES THAT CAN APPROVE THIS PR, and whoever opens
+      # it is deliberately NOT among them. Adding that identity for symmetry is the
+      # obvious later edit and it is wrong: the request can never be satisfied, so
+      # it restores the same silence this step removes while wearing a reviewer
+      # badge. Which identity opens it depends on whether RELEASE_PLEASE_TOKEN is
+      # set, which is why the rule is "whoever opened it cannot review it" rather
+      # than a name.
+      #
+      # ⚠️ ONLY ON CREATION. release-please rewrites this same pull request on every
+      # push to main, so an unconditional request would run repeatedly against an
+      # open PR — and re-requesting someone who has already approved can reset that
+      # approval. The failure mode is a release PR whose approvals evaporate
+      # whenever trunk moves, which reads as reviewers being slow rather than as an
+      # automation undoing their work. `prs_created` is false on a rewrite.
+      #
+      # The body is a script rather than an inline block so it can be run against a
+      # stub and asserted (#359); ci.yml runs its tests on every pull request.
+      - name: Request reviewers on a newly created release PR
+        if: steps.release.outputs.prs_created == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_JSON: ${{ steps.release.outputs.pr }}
+          REVIEWERS: forge-rubigd sora-rubigd
+        run: .github/scripts/request-release-reviewers.sh
