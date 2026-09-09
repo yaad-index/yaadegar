@@ -124,6 +124,12 @@ jobs:
           --health-timeout 3s
           --health-retries 20
     steps:
+      # SCRATCH ONLY — reddens one leg to prove the aggregate goes red with it.
+      # Never merged.
+      - name: Fail one matrix leg on purpose
+        if: matrix.postgres-image == 'postgres:18.4'
+        run: exit 1
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
