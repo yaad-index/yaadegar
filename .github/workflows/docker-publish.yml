@@ -34,14 +34,160 @@ on:
 permissions:
   contents: read
   packages: write
+  # Read the Actions API to find the suite run for the commit being published
+  # (require-suite below). Read-only, and the publish job needs none of it.
+  actions: read
 
 env:
   IMAGE: ghcr.io/yaad-index/yaadegar
   WEB_IMAGE: ghcr.io/yaad-index/yaadegar-web
 
 jobs:
+  # Refuse to publish an image built from a commit no test run has covered (#356).
+  #
+  # Before this, the checks that assert the code works ran only on the merge
+  # candidate, while the workflow that publishes ran on the trunk — so the artifact
+  # and the evidence never shared a commit, and a squash merge published a SHA
+  # nothing had ever run against. Strict up-to-date branch protection narrows the
+  # window (a branch is rebuilt against a moved base before merging) but cannot
+  # close it: the squash commit is still a distinct SHA, and a build succeeding is a
+  # claim about compilation that says nothing about behaviour.
+  #
+  # This waits for the ci.yml run whose head_sha is github.sha — the very commit
+  # actions/checkout checks out in the publish job below — and requires it to have
+  # concluded successfully. Keying on github.sha rather than on a branch or a tag is
+  # what makes the guarantee hold for both triggers without either knowing which one
+  # fired: whatever commit gets built is the commit that must have a green run.
+  #
+  # ⚠️ ci.yml ONLY, and deliberately NOT web.yml. web.yml is path-filtered, so on a
+  # commit that touches no web path it correctly never runs — and a gate that waits
+  # for a run which will never exist does not fail, it hangs until it times out, and
+  # would block every publish from a commit that did not touch web/. That is the
+  # same never-reports-so-never-passes shape that keeps `web` out of the required
+  # status checks on main, arriving here as a stuck release instead of a stuck PR.
+  # The residual is stated rather than papered over: the web image is published on
+  # the strength of the API suite plus ci.yml's web-version-stamp job, not of
+  # web.yml. Distinguishing "legitimately filtered out" from "never ran because the
+  # workflow is broken" means evaluating the path filter here, which would be a
+  # second copy of it, so absence stays unusable as evidence and is not consulted.
+  #
+  # Not workflow_run: that runs the workflow definition from the DEFAULT branch, not
+  # the one in the commit, so a gate written that way cannot be exercised by the PR
+  # that introduces it and only takes effect once merged. This job is an ordinary
+  # dependency of publish, evaluated from this file at this commit.
+  require-suite:
+    runs-on: ubuntu-latest
+    # Backstop only. The script owns the real deadline (WAIT_SECONDS) so it can say
+    # WHY it gave up; this exists so a hung API call cannot idle a runner for hours.
+    timeout-minutes: 50
+    steps:
+      - name: Require a successful suite run for the commit being published
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          # CI's slowest path builds several images; 45 minutes is well clear of a
+          # normal run and still bounded well under the job timeout above.
+          WAIT_SECONDS: '2700'
+          POLL_SECONDS: '20'
+        run: |
+          set -euo pipefail
+
+          deadline=$(( $(date +%s) + WAIT_SECONDS ))
+          seen_run=no
+          lookups_ok=0
+          lookup_failures=0
+
+          while :; do
+            # Newest run for this exact commit. Re-runs update a run in place, so the
+            # latest is the current verdict rather than one of several opinions.
+            # No event filter: a run's evidence is about the tree at that SHA, and
+            # which event started it does not change what was executed — filtering to
+            # `push` would only add a way to reject evidence that exists.
+            # A failed lookup is not a verdict. Under `set -e` a single blip in one of
+            # the ~135 calls this wait can make would end the job, and it would surface
+            # as a red gate with no run URL — indistinguishable, to the next reader,
+            # from "the suite failed", which is the opposite of what happened. So
+            # tolerate the call and try again on the next tick.
+            #
+            # Tolerated, NOT ignored: a lookup that never once succeeds still fails at
+            # the deadline below, under its own message. Retrying is what keeps a
+            # transient blip from becoming a verdict; the counters are what keep a
+            # permanent break from quietly becoming a pass.
+            if info="$(gh api \
+              "repos/${REPO}/actions/workflows/ci.yml/runs?head_sha=${SHA}&per_page=100" \
+              --jq '.workflow_runs | sort_by(.run_started_at) | last
+                    | "\(.status // "")\t\(.conclusion // "")\t\(.html_url // "")"')"; then
+              lookups_ok=$(( lookups_ok + 1 ))
+
+              status="$(printf '%s' "$info" | cut -f1)"
+              conclusion="$(printf '%s' "$info" | cut -f2)"
+              url="$(printf '%s' "$info" | cut -f3)"
+
+              if [ -n "$status" ]; then
+                seen_run=yes
+              fi
+
+              if [ "$status" = "completed" ]; then
+                if [ "$conclusion" = "success" ]; then
+                  echo "suite run for ${SHA} succeeded: ${url}"
+                  exit 0
+                fi
+                # A finished non-success will not improve by waiting.
+                echo "the suite run for ${SHA} concluded '${conclusion}', not success (#356): refusing to publish an image from a commit whose tests did not pass — ${url}"
+                exit 1
+              fi
+
+              tick_note="suite run for ${SHA} is '${status:-not created yet}'"
+            else
+              # Do NOT overwrite status/url here, and do not loop straight back.
+              #
+              # Not overwriting: those variables hold the last thing actually observed.
+              # A blip on the final tick would otherwise blank them and make the
+              # timeout below report a run as still '' — a state no API ever returned.
+              #
+              # Not short-circuiting: the deadline check below is the one place this
+              # loop can end, so jumping past it would let a permanently broken lookup
+              # spin until the runner timeout killed the job, giving a red with no
+              # message at all — the failure being fixed here, only worse.
+              lookup_failures=$(( lookup_failures + 1 ))
+              tick_note="the Actions API lookup failed (${lookup_failures} so far); this is the lookup, not a verdict on the suite"
+            fi
+
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              # The two timeouts are different failures and must not read alike.
+              # An absent run is the dangerous one: it is what a deleted push
+              # trigger, a renamed workflow file, or a run that never dispatched all
+              # look like, and treating absence as permission is exactly the hole
+              # this job exists to close.
+              if [ "$seen_run" = yes ]; then
+                echo "the suite run for ${SHA} was still '${status}' after ${WAIT_SECONDS}s (#356): not publishing on an unfinished run — ${url}"
+              elif [ "$lookups_ok" -eq 0 ]; then
+                # Third case, and it must not read like either of the others: nothing
+                # was ever learned about the suite. Saying "no run exists" here would
+                # state a fact that was never observed.
+                echo "could not reach the Actions API for ${SHA}: all ${lookup_failures} lookups failed over ${WAIT_SECONDS}s (#356) — this is the lookup breaking, NOT the suite failing and NOT a missing run; the suite's actual state is unknown"
+              else
+                echo "no ci.yml run exists for ${SHA} after ${WAIT_SECONDS}s (#356): the push trigger on ci.yml is what creates it, so check that it is still there and that the workflow file is still named ci.yml — absence is not evidence of a pass"
+              fi
+              exit 1
+            fi
+
+            # Report what THIS tick learned. Recomputing the line from $status here
+            # would print the last successful observation as though it were current on
+            # a tolerated failure, and would claim "not created yet" when the very
+            # first lookup failed — asserting a run does not exist on a tick that
+            # learned nothing about whether it exists, which is the same
+            # absence-is-not-evidence error the deadline branch is careful to avoid.
+            echo "${tick_note}; waiting ${POLL_SECONDS}s"
+            sleep "$POLL_SECONDS"
+          done
+
   publish:
     runs-on: ubuntu-latest
+    # The gate, as a hard dependency: a failed or timed-out require-suite leaves this
+    # job un-run rather than merely noting a problem beside a published image.
+    needs: require-suite
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
