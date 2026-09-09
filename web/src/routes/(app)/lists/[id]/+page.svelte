@@ -10,10 +10,37 @@
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form: actionForm }: { data: PageData; form: ActionData } = $props();
+	// #337: a success banner outlives the state it describes. SvelteKit keeps the
+	// `form` prop until the next action result or a navigation, so "Settings saved."
+	// stays on screen while the user edits a control afterwards — and the page then
+	// renders a saved state and an unsaved one identically, which is the same harm as
+	// giving no feedback at all.
+	//
+	// Held by identity rather than as a boolean flag: an action result is a fresh
+	// object, so `actionForm !== <what was edited past>` is false again the moment the
+	// next result arrives. Nothing has to remember to reset it, and no effect has to
+	// watch the prop — the two cases that a flag gets wrong are a second save in a row
+	// (same value, new object) and a result that arrives while an edit is in flight.
+	//
+	// Success only, deliberately not the errors. The two directions are not
+	// symmetrical: a stale success understates a problem and removes the reason to
+	// look any further, while a stale error overstates one and is the very thing the
+	// user is editing in response to — dropping it on the first keystroke would delete
+	// the instruction while it is being followed. A new result replaces it either way.
+	//
+	// $state.raw, not $state: plain $state deep-proxies an object, so storing the
+	// result would store a PROXY of it, and `actionForm !== settingsEditedSince` would
+	// then be true forever — the banner would never clear, which is the bug this is
+	// fixing. Nothing here reads into the result; it is held only to be compared by
+	// reference, which is exactly what raw state is for. Reassignment still triggers.
+	let settingsEditedSince = $state.raw<ActionData | undefined>(undefined);
+	let importEditedSince = $state.raw<ActionData | undefined>(undefined);
 	// Import result surfaced from the ?/import action (aliased so it doesn't collide
 	// with the superForm `form` store below).
 	const imported = $derived(
-		actionForm && 'imported' in actionForm ? actionForm.imported : undefined
+		actionForm && actionForm !== importEditedSince && 'imported' in actionForm
+			? actionForm.imported
+			: undefined
 	);
 	const importError = $derived(
 		actionForm && 'importError' in actionForm ? actionForm.importError : undefined
@@ -32,7 +59,9 @@
 		actionForm && 'settingsError' in actionForm ? actionForm.settingsError : undefined
 	);
 	const settingsSaved = $derived(
-		actionForm && 'settingsSaved' in actionForm ? actionForm.settingsSaved : undefined
+		actionForm && actionForm !== settingsEditedSince && 'settingsSaved' in actionForm
+			? actionForm.settingsSaved
+			: undefined
 	);
 	// superForm captures the initial form once and owns its reactivity thereafter.
 	// resetForm:false is load-bearing: the ?/preview action returns the scraped draft
@@ -177,12 +206,20 @@
 		     "Inherit default", while the chosen tier is already saved and the bound
 		     state still holds it. Nothing re-asserts the value, so the display
 		     contradicts the stored setting until a reload. -->
+		<!-- Both events, on the form rather than per control (#337): the handler has to
+		     fire for every kind of input this form holds, and which of the two a control
+		     emits varies — textareas emit input, a select or a checkbox emits both. One
+		     listener on the container catches them all as they bubble, and stays correct
+		     when a control is added later; assignment is idempotent, so a control that
+		     emits both costs nothing. -->
 		<form
 			method="post"
 			action="?/settings"
 			use:formEnhance={() =>
 				({ update }) =>
 					update({ reset: false })}
+			oninput={() => (settingsEditedSince = actionForm)}
+			onchange={() => (settingsEditedSince = actionForm)}
 			class="mt-4 space-y-4"
 		>
 			<label class="block">
@@ -295,11 +332,20 @@
 			Back up your items or move them elsewhere. Never includes who reserved.
 		</p>
 
+		<!-- Same treatment as the settings form above (#337). Both blocks sit on this tab
+		     and behaved identically before, so fixing one alone would leave two adjacent
+		     forms differing for no reason a reader could infer. Here the only control is
+		     the file input, so "editing" is choosing a different file — which is exactly
+		     the moment "Imported 12 item(s)." stops describing what the form is about to
+		     do. A file input emits change; the input event is listened for alongside it
+		     for the same reason as above, rather than relying on which one fires. -->
 		<form
 			method="post"
 			action="?/import"
 			enctype="multipart/form-data"
 			use:formEnhance
+			oninput={() => (importEditedSince = actionForm)}
+			onchange={() => (importEditedSince = actionForm)}
 			class="mt-4 flex flex-wrap items-center gap-2"
 		>
 			<input
