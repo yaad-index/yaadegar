@@ -1,7 +1,19 @@
 name: CI
 
+# Runs on the merge candidate AND on the trunk itself (#356). The pull_request run
+# tests a commit that ceases to exist at merge: a squash produces a new SHA that no
+# run has covered, so `main` — the thing images are published from — had no suite
+# run of its own. The push trigger closes that: every commit on main gets a run
+# keyed to its own SHA.
+#
+# That run is also the evidence docker-publish.yml consumes. Its gate looks up the
+# ci.yml run for the exact SHA it is about to build and refuses to publish without a
+# green one, so removing this trigger does not merely stop reporting on main — it
+# blocks publishing. The two are one mechanism, not a check plus a nicety.
 on:
   pull_request:
+    branches: [main]
+  push:
     branches: [main]
 
 permissions:
@@ -302,6 +314,81 @@ jobs:
             echo "no-tag source build reported '$got', want a bare commit hash (#259): the shallow-clone fallback is wrong"
             exit 1
           fi
+
+  # Assert the publish gate is still DECLARED in docker-publish.yml (#356).
+  #
+  # ⚠️ Read the job name literally. This proves the YAML still says the right words.
+  # It does not run the gate, does not reach the Actions API, and cannot tell you the
+  # gate would actually block anything — a green here is evidence about text, and
+  # treating it as evidence the gate functions is the same substitution the issue
+  # this job comes from is about (a probe that only exercises the build cannot
+  # distinguish a repo with tests from one without). The gate's real behaviour is
+  # first exercised on the first push to main after this merges.
+  #
+  # It exists because docker-publish.yml has no pull_request trigger, so nothing else
+  # in this repository looks at that file at PR time: deleting `needs: require-suite`
+  # would restore publishing-from-untested-commits silently, with every check green,
+  # and the next reader of a published image would have no way to notice. Same idiom
+  # and same reasoning as publish-forwards-version below.
+  publish-gate-declared:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Assert docker-publish still declares its dependency on a suite run
+        run: |
+          set -euo pipefail
+          wf=.github/workflows/docker-publish.yml
+          gate=require-suite
+
+          # Isolate one job: from its `  <id>:` header to the next one, scanning only
+          # after `jobs:`. Job-level keys sit at 4 spaces and step bodies deeper, so a
+          # bare 2-space `key:` inside a job cannot end a block early.
+          job_block() {
+            awk -v want="  $1:" '
+              /^jobs:$/                     { injobs = 1; next }
+              !injobs                       { next }
+              /^  [A-Za-z0-9_-]+:$/         { inblock = ($0 == want) }
+              inblock                       { print }
+            ' "$wf"
+          }
+
+          gate_block="$(job_block "$gate")"
+          if [ -z "$gate_block" ]; then
+            echo "no '$gate' job in $wf (#356): the job that requires a green suite run for the commit being published is gone, or was renamed without updating this check"
+            exit 1
+          fi
+
+          publish_block="$(job_block publish)"
+          if [ -z "$publish_block" ]; then
+            echo "no 'publish' job in $wf (#356): renamed? this check can no longer find what it guards"
+            exit 1
+          fi
+
+          if ! printf '%s\n' "$publish_block" | grep -Eq "^    needs: .*\b${gate}\b"; then
+            echo "the publish job in $wf no longer declares 'needs: $gate' (#356): images would publish from a commit with no suite run again, and every check in this repository would stay green while it happened"
+            exit 1
+          fi
+
+          # The gate must consult the suite. Without this, the job could survive as an
+          # empty shell that satisfies the needs edge above and gates nothing.
+          if ! printf '%s\n' "$gate_block" | grep -q 'workflows/ci\.yml/runs'; then
+            echo "the '$gate' job in $wf no longer looks up a ci.yml run (#356): the needs edge would still be declared while the gate asserts nothing"
+            exit 1
+          fi
+
+          # web.yml is path-filtered and legitimately does not run on most commits, so
+          # waiting for one of its runs would hang until timeout and block publishing
+          # from any commit that did not touch web/ — the never-reports-so-never-passes
+          # shape that keeps `web` out of the required checks on main. Catch it as a
+          # text change here rather than as a stuck release later.
+          if printf '%s\n' "$gate_block" | grep -q 'workflows/web\.yml/runs'; then
+            echo "the '$gate' job in $wf waits on a web.yml run (#356): web.yml is path-filtered, so on a commit that touches no web path that run never exists and the gate would block the publish forever"
+            exit 1
+          fi
+
+          echo "publish gate is declared: publish needs $gate, $gate consults ci.yml, and does not wait on path-filtered web.yml"
 
   # Observe that BOTH publish steps still forward VERSION into their multi-arch
   # builds (#193, extended to the matched pair in #268). The release-only pre-publish
