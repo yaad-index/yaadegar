@@ -366,8 +366,27 @@ jobs:
             exit 1
           fi
 
-          if ! printf '%s\n' "$publish_block" | grep -Eq "^    needs: .*\b${gate}\b"; then
-            echo "the publish job in $wf no longer declares 'needs: $gate' (#356): images would publish from a commit with no suite run again, and every check in this repository would stay green while it happened"
+          # Collect the needs declaration in EITHER YAML form: inline on the key
+          # (`needs: x`, `needs: [x, y]`) or a block sequence beneath it. Matching only
+          # the inline form would report the dependency as GONE after a purely
+          # cosmetic reformat — a false alarm that says "publishing is ungated" about a
+          # file where it is still gated, which is worse than silence because someone
+          # would go looking for a break that is not there.
+          needs_decl="$(printf '%s\n' "$publish_block" | awk '
+            /^    needs:/                { inneeds = 1; print; next }
+            inneeds && /^      *[-#]/    { print; next }
+            inneeds                      { inneeds = 0 }
+          ')"
+
+          if [ -z "$needs_decl" ]; then
+            echo "the publish job in $wf declares no 'needs:' at all (#356): images would publish from a commit with no suite run again, and every check in this repository would stay green while it happened"
+            exit 1
+          fi
+
+          # Word boundaries by hand: `require-suite` must not be satisfied by a
+          # longer id that merely contains it.
+          if ! printf '%s\n' "$needs_decl" | grep -Eq "(^|[^A-Za-z0-9_-])${gate}([^A-Za-z0-9_-]|$)"; then
+            echo "the publish job in $wf no longer needs '$gate' (#356): images would publish from a commit with no suite run again, and every check in this repository would stay green while it happened"
             exit 1
           fi
 
