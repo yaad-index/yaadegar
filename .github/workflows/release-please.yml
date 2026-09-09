@@ -64,16 +64,21 @@ jobs:
       # set, which is why the rule is "whoever opened it cannot review it" rather
       # than a name.
       #
-      # ⚠️ Idempotency does NOT rest on this condition. release-please rewrites the
-      # same pull request on every push to main, and re-requesting someone who has
-      # already approved can reset that approval — a release PR whose approvals
-      # evaporate whenever trunk moves reads as reviewers being slow rather than as
-      # an automation undoing their work. The script therefore reads the current
-      # reviewers and reviews first and asks only for who is missing from both, so
-      # it is safe to run against an already-open PR. `prs_created` is kept as a
-      # cheap skip, not as the guard: relying on it would make correctness depend on
-      # what the action means by "created", which is a claim about someone else's
-      # output semantics and is exactly the kind that is load-bearing and unstated.
+      # 🚨 `prs_created` DOES NOT MEAN WHAT ITS NAME SUGGESTS, and reading it as
+      # "only on creation" is the mistake this comment exists to prevent. Verified
+      # against the action's own source (Manifest.createOrUpdatePullRequest /
+      # maybeUpdateExistingPullRequest): it is true on ANY body change to an
+      # already-open release pull request, and false only on a byte-identical
+      # rewrite. Since release-please rewrites that PR on every push to main, this
+      # step fires on most pushes to trunk, not on creation.
+      #
+      # ⚠️ So idempotency does NOT rest on this condition. Re-requesting someone who
+      # has already approved can reset that approval, and a release PR whose
+      # approvals evaporate whenever trunk moves reads as reviewers being slow
+      # rather than as an automation undoing their work. The script reads the
+      # current reviewers AND reviews first and asks only for who is missing from
+      # both, which makes it safe against an already-open PR by construction. The
+      # condition is kept only as a cheap skip on the no-change case.
       #
       # The body is a script rather than an inline block so it can be run against a
       # stub and asserted (#359); ci.yml runs its tests on every pull request.
