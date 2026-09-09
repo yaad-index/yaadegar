@@ -315,18 +315,33 @@ jobs:
             exit 1
           fi
 
-  # Assert the publish gate is still DECLARED in docker-publish.yml (#356).
+  # Guard the publish gate (#356), in two parts that answer different questions.
   #
-  # ⚠️ Read the job name literally. This proves the YAML still says the right words.
-  # It does not run the gate, does not reach the Actions API, and cannot tell you the
-  # gate would actually block anything — a green here is evidence about text, and
-  # treating it as evidence the gate functions is the same substitution the issue
-  # this job comes from is about (a probe that only exercises the build cannot
-  # distinguish a repo with tests from one without). The gate's real behaviour is
-  # first exercised on the first push to main after this merges.
+  # ⚠️ The job id says "declared" and is now narrower than the job. It keeps that id
+  # because it is bound as a required check on main and renaming it would silently
+  # unbind it — a context that never reports never fails. The difference lives here.
   #
-  # It exists because docker-publish.yml has no pull_request trigger, so nothing else
-  # in this repository looks at that file at PR time: deleting `needs: require-suite`
+  # PART ONE asserts docker-publish.yml still says the right words: publish needs the
+  # gate, the gate runs the script, the script consults ci.yml and not path-filtered
+  # web.yml. This is evidence about TEXT. It cannot tell you the gate would block
+  # anything, and treating it as such is the same substitution the issue it comes from
+  # is about — a probe that only exercises the build cannot distinguish a repo with
+  # tests from one without.
+  #
+  # PART TWO runs the gate's poll loop against a stub (#359), which is what covers
+  # behaviour. Before the loop was extracted to a script it could not be invoked at
+  # all: it had been exercised by hand while it was written, and evidence about one
+  # revision is not coverage — a regression in it would have left every check green.
+  #
+  # ⚠️ What neither part proves: that the real Actions API answers in the shape the
+  # stub emits. A hand-written stub encodes what its author believed the format to be.
+  # That residual is narrow rather than absent — the live gate has parsed real replies
+  # over many ticks, so the success path's shape is confirmed by production, and the
+  # failure path parses nothing because the call itself fails. It is stated because
+  # "the tests pass" would otherwise cover a belief as well as a behaviour.
+  #
+  # All of it exists because docker-publish.yml has no pull_request trigger, so nothing
+  # else in this repository looks at that file at PR time: deleting `needs: require-suite`
   # would restore publishing-from-untested-commits silently, with every check green,
   # and the next reader of a published image would have no way to notice. Same idiom
   # and same reasoning as publish-forwards-version below.
@@ -341,6 +356,7 @@ jobs:
           set -euo pipefail
           wf=.github/workflows/docker-publish.yml
           gate=require-suite
+          script=.github/scripts/require-suite-run.sh
 
           # Isolate one job: from its `  <id>:` header to the next one, scanning only
           # after `jobs:`. Job-level keys sit at 4 spaces and step bodies deeper, so a
@@ -390,10 +406,27 @@ jobs:
             exit 1
           fi
 
-          # The gate must consult the suite. Without this, the job could survive as an
-          # empty shell that satisfies the needs edge above and gates nothing.
-          if ! printf '%s\n' "$gate_block" | grep -q 'workflows/ci\.yml/runs'; then
-            echo "the '$gate' job in $wf no longer looks up a ci.yml run (#356): the needs edge would still be declared while the gate asserts nothing"
+          # The gate must still run the script. Without this the job could survive as
+          # an empty shell that satisfies the needs edge above and gates nothing.
+          #
+          # ⚠️ The two content checks below moved here from the job block when the
+          # loop was extracted (#359). They read the SCRIPT because that is where the
+          # text now lives; left pointing at the job block they would have passed
+          # trivially forever, since the block no longer contains either string —
+          # a guard that cannot fail, in the file whose whole subject is guards that
+          # cannot fail.
+          if ! printf '%s\n' "$gate_block" | grep -q "$script"; then
+            echo "the '$gate' job in $wf no longer runs $script (#356, #359): the needs edge would still be declared while the gate asserts nothing"
+            exit 1
+          fi
+
+          if [ ! -x "$script" ]; then
+            echo "$script is missing or not executable (#359): the gate job would fail on every publish, or worse, be quietly edited to inline something else"
+            exit 1
+          fi
+
+          if ! grep -q 'workflows/ci\.yml/runs' "$script"; then
+            echo "$script no longer looks up a ci.yml run (#356): the needs edge would still be declared while the gate asserts nothing"
             exit 1
           fi
 
@@ -402,12 +435,45 @@ jobs:
           # from any commit that did not touch web/ — the never-reports-so-never-passes
           # shape that keeps `web` out of the required checks on main. Catch it as a
           # text change here rather than as a stuck release later.
-          if printf '%s\n' "$gate_block" | grep -q 'workflows/web\.yml/runs'; then
-            echo "the '$gate' job in $wf waits on a web.yml run (#356): web.yml is path-filtered, so on a commit that touches no web path that run never exists and the gate would block the publish forever"
+          if grep -q 'workflows/web\.yml/runs' "$script"; then
+            echo "$script waits on a web.yml run (#356): web.yml is path-filtered, so on a commit that touches no web path that run never exists and the gate would block the publish forever"
             exit 1
           fi
 
-          echo "publish gate is declared: publish needs $gate, $gate consults ci.yml, and does not wait on path-filtered web.yml"
+          # 🚨 Both jobs must check out the commit the gate verified. require-suite
+          # proves a green suite run exists for github.sha; the publish checkout
+          # decides which tree is built. If those ever resolved differently, the gate
+          # would pass on one commit while the image came from another and the whole
+          # guarantee would be false with every check green. The default ref happens
+          # to resolve correctly for the triggers this file declares today, which is
+          # a coincidence of the trigger list rather than a property — so it is
+          # pinned, and asserted here so a later edit cannot quietly unpin it.
+          for job in "$gate" publish; do
+            if ! printf '%s\n' "$(job_block "$job")" | grep -q 'ref: .*github\.sha'; then
+              echo "the '$job' job in $wf checks out without pinning ref to github.sha (#356): the gate proves a run exists for that commit, and an unpinned checkout lets a later trigger build a different tree while the gate still passes"
+              exit 1
+            fi
+          done
+
+          echo "publish gate is declared: publish needs $gate, $gate runs $script, which consults ci.yml and does not wait on path-filtered web.yml; both jobs check out github.sha"
+
+      # 🚨 The declaration checks above say the wiring is intact. They do not run the
+      # loop, which is what #359 is about: its shipped defect was a per-tick log line
+      # computed from the wrong variable, and no amount of asserting that the YAML
+      # still says the right words could have seen it.
+      #
+      # This step runs the extracted script against a stub `gh`, over every branch
+      # including the ones no live run has ever taken — a tolerated API blip, a
+      # lookup that never succeeds, a run concluded `failure`.
+      #
+      # ⚠️ It lives in THIS job rather than a new one deliberately. A new job would
+      # not be a required check until branch protection was edited, so it would run
+      # green beside a regression and gate nothing — which is precisely the state
+      # this issue exists to end. The job id therefore now understates what the job
+      # does; renaming it would break the required-context binding, so the id stays
+      # and this comment carries the difference.
+      - name: Run the publish gate's poll loop against a stubbed API
+        run: .github/scripts/require-suite-run.test.sh
 
   # Observe that BOTH publish steps still forward VERSION into their multi-arch
   # builds (#193, extended to the matched pair in #268). The release-only pre-publish
