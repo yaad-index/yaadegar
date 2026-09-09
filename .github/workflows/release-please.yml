@@ -64,12 +64,16 @@ jobs:
       # set, which is why the rule is "whoever opened it cannot review it" rather
       # than a name.
       #
-      # ⚠️ ONLY ON CREATION. release-please rewrites this same pull request on every
-      # push to main, so an unconditional request would run repeatedly against an
-      # open PR — and re-requesting someone who has already approved can reset that
-      # approval. The failure mode is a release PR whose approvals evaporate
-      # whenever trunk moves, which reads as reviewers being slow rather than as an
-      # automation undoing their work. `prs_created` is false on a rewrite.
+      # ⚠️ Idempotency does NOT rest on this condition. release-please rewrites the
+      # same pull request on every push to main, and re-requesting someone who has
+      # already approved can reset that approval — a release PR whose approvals
+      # evaporate whenever trunk moves reads as reviewers being slow rather than as
+      # an automation undoing their work. The script therefore reads the current
+      # reviewers and reviews first and asks only for who is missing from both, so
+      # it is safe to run against an already-open PR. `prs_created` is kept as a
+      # cheap skip, not as the guard: relying on it would make correctness depend on
+      # what the action means by "created", which is a claim about someone else's
+      # output semantics and is exactly the kind that is load-bearing and unstated.
       #
       # The body is a script rather than an inline block so it can be run against a
       # stub and asserted (#359); ci.yml runs its tests on every pull request.

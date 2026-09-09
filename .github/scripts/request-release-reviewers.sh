@@ -17,6 +17,14 @@
 #
 # `gh` is invoked by name so a test can put a stub earlier on PATH. There is no
 # indirection for it: production runs the same bytes the test runs.
+#
+# ⚠️ WHAT THE TESTS DO NOT COVER, named precisely so a green suite is not read as
+# more than it is. The stub answers the two GET endpoints with API-SHAPED payloads
+# and the jq below runs against them, so the parse IS exercised — and both shapes
+# were confirmed against the live API rather than taken from documentation. What
+# remains unexercised is the release-please `pr` output's shape, which only exists
+# on a run that actually opens a release pull request, and whether the token in use
+# may request reviewers. Both first execute at the next release.
 set -euo pipefail
 
 : "${REPO:?REPO must name the repository}"
@@ -37,24 +45,59 @@ if [ "${#wanted[@]}" -eq 0 ]; then
   exit 1
 fi
 
+# 🚨 Read the current state BEFORE asking for anything, and request only who is
+# missing from it. This is what makes the step idempotent BY CONSTRUCTION rather
+# than by a claim about when the caller runs it: re-requesting someone who has
+# already approved can reset that approval, and a release pull request whose
+# approvals evaporate whenever trunk moves reads as reviewers being slow rather
+# than as an automation undoing their work.
+#
+# ⚠️ "Covered" is requested OR already reviewed, and the second half is not
+# optional. **GitHub removes a reviewer from `requested_reviewers` once they
+# submit a review** — observed live: a pull request with one review and one
+# pending request returns only the pending one. So absent-from-requested means
+# either "never asked" or "already answered", and treating those alike would
+# re-request exactly the person whose approval is at stake. Two states, one
+# rendering, and the reviews list is what separates them.
+#
+# The jq runs here rather than inside `gh --jq` so a stub can emit an API-shaped
+# payload and the parse itself is exercised. Both shapes below are confirmed
+# against the live API rather than taken from documentation.
+requested="$(gh api "repos/${REPO}/pulls/${pr}/requested_reviewers" | jq -r '[.users[].login] | join(" ")')"
+reviewed="$(gh api "repos/${REPO}/pulls/${pr}/reviews" | jq -r '[.[].user.login] | unique | join(" ")')"
+covered=" ${requested} ${reviewed} "
+
+ask=()
+for who in "${wanted[@]}"; do
+  case "$covered" in
+    *" ${who} "*) ;;
+    *) ask+=("${who}") ;;
+  esac
+done
+
+if [ "${#ask[@]}" -eq 0 ]; then
+  echo "pull request #${pr} already has every reviewer requested or reviewing: requested '${requested}', reviewed '${reviewed}'"
+  exit 0
+fi
+
 # ⚠️ The array form is required. `gh pr edit --add-reviewer` REPLACES the reviewer
 # set rather than appending to it, so it cannot reliably add two.
 args=()
-for who in "${wanted[@]}"; do
+for who in "${ask[@]}"; do
   args+=(-f "reviewers[]=${who}")
 done
 gh api "repos/${REPO}/pulls/${pr}/requested_reviewers" -X POST "${args[@]}" > /dev/null
 
-# 🚨 Read the reviewers back rather than trusting the call. A reviewer request can
-# return a malformed response and leave the set untouched while the command still
-# looks like it ran — so without this the fix has exactly the shape of the bug it
-# removes: an automation whose failure is invisible. The check is the state of the
-# pull request, not the exit code of the request.
-requested="$(gh api "repos/${REPO}/pulls/${pr}/requested_reviewers" --jq '[.users[].login] | join(" ")')"
+# 🚨 Read back rather than trusting the call. A reviewer request can return
+# without error and leave the set untouched, so the check is the state of the pull
+# request and not the exit code of the request. Without this the fix has exactly
+# the shape of the bug it removes: an automation whose failure is invisible.
+requested="$(gh api "repos/${REPO}/pulls/${pr}/requested_reviewers" | jq -r '[.users[].login] | join(" ")')"
+covered=" ${requested} ${reviewed} "
 
 missing=()
 for who in "${wanted[@]}"; do
-  case " ${requested} " in
+  case "$covered" in
     *" ${who} "*) ;;
     *) missing+=("${who}") ;;
   esac
@@ -65,4 +108,4 @@ if [ "${#missing[@]}" -ne 0 ]; then
   exit 1
 fi
 
-echo "pull request #${pr} has its reviewers requested: ${requested}"
+echo "pull request #${pr} has its reviewers requested: asked for '${ask[*]}', set is now '${requested}'"
