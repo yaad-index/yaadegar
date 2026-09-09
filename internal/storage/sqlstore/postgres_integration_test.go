@@ -7,6 +7,10 @@
 //	YAADEGAR_TEST_POSTGRES_DSN='postgres://user:pass@localhost:5432/yaadegar_test?sslmode=disable' \
 //	    go test -tags=integration -race ./internal/storage/sqlstore/
 //
+// That server can be a persistent local one, and the suite can be run against it
+// repeatedly: fixture names carry a per-run token as well as the test name, so a
+// second run does not collide with the rows the first one left behind.
+//
 // The Postgres driver shares the entire CRUD body with SQLite (ADR-0003 §1); this
 // test exists to prove the Postgres dialect, placeholder rebinding, and migration
 // SQL actually run against a real server.
@@ -14,6 +18,8 @@ package sqlstore_test
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"sync"
@@ -43,6 +49,31 @@ func newPostgresStore(t *testing.T) storage.Store {
 	return st
 }
 
+// runToken is unique per PROCESS: a fresh value every time the suite starts.
+//
+// The fixtures below need names no row in the database already holds, and the test's
+// own name does not supply that on its own — it is stable across runs, so a second
+// run re-inserts the same subdomains and fails with `storage: conflict` (#334). The
+// two halves do different jobs and both are needed: the token separates one run from
+// the next, t.Name() separates the tests within a single run.
+var runToken = func() string {
+	var b [6]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// A fallback that is merely probably-unique would reintroduce the collision
+		// it replaces, so fail loudly instead.
+		panic("postgres integration test: cannot generate a run token: " + err.Error())
+	}
+	return hex.EncodeToString(b[:])
+}()
+
+// uniqueSuffix returns a value unique to this test AND to this run, so the suite can
+// be run repeatedly against one persistent, non-reset database — which is what the
+// header comment above tells a developer to do.
+func uniqueSuffix(t *testing.T) string {
+	t.Helper()
+	return t.Name() + "-" + runToken
+}
+
 // TestPostgres_RoundTripAndIsolation runs a representative slice of the contract
 // against a real Postgres: a scoped CRUD round-trip, unique-conflict mapping, and
 // the cross-tenant isolation guarantee.
@@ -50,8 +81,8 @@ func TestPostgres_RoundTripAndIsolation(t *testing.T) {
 	ctx := context.Background()
 	st := newPostgresStore(t)
 
-	// Unique subdomains per run to tolerate a shared, non-reset database.
-	suffix := t.Name()
+	// Unique subdomains per test and per run, to tolerate a shared, non-reset database.
+	suffix := uniqueSuffix(t)
 	tenA, err := st.CreateTenant(ctx, storage.Tenant{Subdomain: "a-" + suffix})
 	require.NoError(t, err)
 	tenB, err := st.CreateTenant(ctx, storage.Tenant{Subdomain: "b-" + suffix})
@@ -97,7 +128,7 @@ func TestPostgres_RoundTripAndIsolation(t *testing.T) {
 func TestPostgres_ConcurrentConfirmSingleCompletion(t *testing.T) {
 	ctx := context.Background()
 	st := newPostgresStore(t)
-	suffix := t.Name()
+	suffix := uniqueSuffix(t)
 
 	ten, err := st.CreateTenant(ctx, storage.Tenant{Subdomain: "cc-" + suffix})
 	require.NoError(t, err)
@@ -167,7 +198,7 @@ func TestPostgres_ConcurrentConfirmSingleCompletion(t *testing.T) {
 func TestPostgres_DomainReclaimConcurrentSingleWinner(t *testing.T) {
 	ctx := context.Background()
 	st := newPostgresStore(t)
-	suffix := t.Name()
+	suffix := uniqueSuffix(t)
 	hostname := "reclaim-" + suffix + ".example.com"
 
 	// A squatter parks the hostname, unverified, long ago.
@@ -224,7 +255,7 @@ func TestPostgres_DomainReclaimConcurrentSingleWinner(t *testing.T) {
 func TestPostgres_ConfirmVsExpireSingleWinner(t *testing.T) {
 	ctx := context.Background()
 	st := newPostgresStore(t)
-	suffix := t.Name()
+	suffix := uniqueSuffix(t)
 
 	ten, err := st.CreateTenant(ctx, storage.Tenant{Subdomain: "ce-" + suffix})
 	require.NoError(t, err)
@@ -302,7 +333,7 @@ func TestPostgres_ConfirmVsExpireSingleWinner(t *testing.T) {
 func TestPostgres_ReserveCoBuyMutualExclusionRace(t *testing.T) {
 	ctx := context.Background()
 	st := newPostgresStore(t)
-	suffix := t.Name()
+	suffix := uniqueSuffix(t)
 
 	ten, err := st.CreateTenant(ctx, storage.Tenant{Subdomain: "mx-" + suffix})
 	require.NoError(t, err)
@@ -375,7 +406,7 @@ func TestPostgres_ReserveCoBuyMutualExclusionRace(t *testing.T) {
 func TestPostgres_MatchExpiryVsConfirmRace(t *testing.T) {
 	ctx := context.Background()
 	st := newPostgresStore(t)
-	suffix := t.Name()
+	suffix := uniqueSuffix(t)
 
 	ten, err := st.CreateTenant(ctx, storage.Tenant{Subdomain: "mex-" + suffix})
 	require.NoError(t, err)

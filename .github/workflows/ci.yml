@@ -180,17 +180,43 @@ jobs:
             exit 1
           fi
 
-          go test -tags=integration -race -v -run 'TestPostgres' ./internal/storage/sqlstore/ \
-            2>&1 | tee "$RUNNER_TEMP/run.log"
+          # Run the suite TWICE against the same database, and require both passes.
+          #
+          # The second pass is what tests the property the suite's header promises —
+          # that it can be re-run against a persistent database. A fixture whose
+          # uniqueness comes only from t.Name() is stable across runs, so a repeat run
+          # re-inserts the same subdomains and dies with `storage: conflict` (#334).
+          # A single pass cannot see that here: each job gets a fresh service container,
+          # so every run is a first run. Only a pass over the rows its predecessor left
+          # behind exercises the promise.
+          #
+          # ⚠️ `-count=1` is load-bearing, not tidiness. Without it the second `go test`
+          # is served from the build cache: it never opens a connection, and it REPLAYS
+          # the cached output — including every `--- PASS:` line — so the check below
+          # diffs clean and the step goes green over a fixture that would collide. Drop
+          # the flag and this loop becomes a guard that cannot fail.
+          for pass in 1 2; do
+            # Capture the exit status rather than letting `set -e` act on it. A failing
+            # pass IS the signal this loop exists to produce, and under `pipefail` the
+            # script would exit on the pipeline itself — killing it before the branch
+            # below can say which pass broke and what that means. The status is not
+            # tolerated, it is re-asserted two lines down.
+            status=0
+            go test -tags=integration -race -count=1 -v -run 'TestPostgres' ./internal/storage/sqlstore/ \
+              2>&1 | tee "$RUNNER_TEMP/run-$pass.log" || status=$?
 
-          # Top-level PASS lines only — subtest results are indented.
-          sed -n 's/^--- PASS: \(TestPostgres[^ ]*\).*/\1/p' "$RUNNER_TEMP/run.log" \
-            | sort > "$RUNNER_TEMP/passed.txt"
-          if ! diff -u "$RUNNER_TEMP/expected.txt" "$RUNNER_TEMP/passed.txt"; then
-            echo "a Postgres integration test that exists did not report PASS (the '-' lines above); a skip means the database was never reached"
-            exit 1
-          fi
-          echo "all $(wc -l < "$RUNNER_TEMP/expected.txt") Postgres integration tests executed and passed, migrations applied to ${{ matrix.postgres-image }}"
+            # Top-level PASS lines only — subtest results are indented.
+            sed -n 's/^--- PASS: \(TestPostgres[^ ]*\).*/\1/p' "$RUNNER_TEMP/run-$pass.log" \
+              | sort > "$RUNNER_TEMP/passed-$pass.txt"
+            if [ "$status" -ne 0 ] || ! diff -u "$RUNNER_TEMP/expected.txt" "$RUNNER_TEMP/passed-$pass.txt"; then
+              echo "pass $pass failed (go test exit $status): a test failed outright, or one that exists did not report PASS (the '-' lines above); a skip means the database was never reached"
+              if [ "$pass" = 2 ]; then
+                echo "pass 2 runs against the database pass 1 left behind, so a failure here is a fixture colliding with its own previous run (#334) rather than a broken store"
+              fi
+              exit 1
+            fi
+          done
+          echo "all $(wc -l < "$RUNNER_TEMP/expected.txt") Postgres integration tests executed and passed TWICE against one ${{ matrix.postgres-image }} database, migrations applied"
 
   # Guard the link-time version stamp (#190). The stamp lives in the Dockerfile
   # link flags + the publish workflow's build-arg — both outside the Go build the
