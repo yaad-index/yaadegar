@@ -71,6 +71,14 @@ jobs:
   # workflow is broken" means evaluating the path filter here, which would be a
   # second copy of it, so absence stays unusable as evidence and is not consulted.
   #
+  # ⚠️ This job changed what the workflow's total duration MEANS (#360). Before it,
+  # docker-publish had one job, so run duration and publish duration were the same
+  # number and were used interchangeably. The wait below is now part of the run and
+  # not part of the publish, so a run several minutes longer than historical figures
+  # is expected. Compare the `publish` job against old numbers, never the run.
+  # RELEASING.md carries this where someone watching a release will meet it; it is
+  # repeated here because this is where the divergence was introduced.
+  #
   # Not workflow_run: that runs the workflow definition from the DEFAULT branch, not
   # the one in the commit, so a gate written that way cannot be exercised by the PR
   # that introduces it and only takes effect once merged. This job is an ordinary
