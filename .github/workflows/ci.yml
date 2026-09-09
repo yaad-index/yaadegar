@@ -77,6 +77,9 @@ jobs:
   # surfaces on a user's upgrade rather than in a test run.
   postgres:
     runs-on: ubuntu-latest
+    # SCRATCH ONLY — skips the matrix entirely to observe the aggregate's
+    # `skipped` arm, the state that reads as "nothing failed". Never merged.
+    if: false
     strategy:
       # Report both versions independently — if a migration breaks on one of them
       # only, that is the single most useful thing this job can tell you, and
@@ -124,12 +127,6 @@ jobs:
           --health-timeout 3s
           --health-retries 20
     steps:
-      # SCRATCH ONLY — reddens one leg to prove the aggregate goes red with it.
-      # Never merged.
-      - name: Fail one matrix leg on purpose
-        if: matrix.postgres-image == 'postgres:18.4'
-        run: exit 1
-
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
