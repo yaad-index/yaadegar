@@ -440,7 +440,22 @@ jobs:
             exit 1
           fi
 
-          echo "publish gate is declared: publish needs $gate, $gate runs $script, which consults ci.yml and does not wait on path-filtered web.yml"
+          # 🚨 Both jobs must check out the commit the gate verified. require-suite
+          # proves a green suite run exists for github.sha; the publish checkout
+          # decides which tree is built. If those ever resolved differently, the gate
+          # would pass on one commit while the image came from another and the whole
+          # guarantee would be false with every check green. The default ref happens
+          # to resolve correctly for the triggers this file declares today, which is
+          # a coincidence of the trigger list rather than a property — so it is
+          # pinned, and asserted here so a later edit cannot quietly unpin it.
+          for job in "$gate" publish; do
+            if ! printf '%s\n' "$(job_block "$job")" | grep -q 'ref: .*github\.sha'; then
+              echo "the '$job' job in $wf checks out without pinning ref to github.sha (#356): the gate proves a run exists for that commit, and an unpinned checkout lets a later trigger build a different tree while the gate still passes"
+              exit 1
+            fi
+          done
+
+          echo "publish gate is declared: publish needs $gate, $gate runs $script, which consults ci.yml and does not wait on path-filtered web.yml; both jobs check out github.sha"
 
       # 🚨 The declaration checks above say the wiring is intact. They do not run the
       # loop, which is what #359 is about: its shipped defect was a per-tick log line

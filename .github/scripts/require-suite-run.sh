@@ -31,6 +31,24 @@ set -euo pipefail
 : "${WAIT_SECONDS:?WAIT_SECONDS must bound the wait}"
 : "${POLL_SECONDS:?POLL_SECONDS must set the tick interval}"
 
+# The 40-character rule above is CHECKED rather than only stated, because its
+# violation produces the alarm state. An abbreviated SHA returns an empty list from
+# the Actions API — identical to a commit that has no run — so without this the gate
+# would fail with "no ci.yml run exists ... check that the push trigger is still
+# there", sending the next reader to inspect a trigger that is fine. Failing closed
+# is right; failing closed under the wrong explanation is a diagnostic pointing away
+# from the fault.
+case "$SHA" in
+  *[!0-9a-fA-F]* | "")
+    echo "SHA is not a hexadecimal commit id: '${SHA}'"
+    exit 1
+    ;;
+esac
+if [ "${#SHA}" -ne 40 ]; then
+  echo "SHA must be the full 40-character commit, got ${#SHA} characters: '${SHA}' — the Actions API does not match an abbreviated SHA and would answer as though no run existed"
+  exit 1
+fi
+
 deadline=$(( $(date +%s) + WAIT_SECONDS ))
 seen_run=no
 lookups_ok=0

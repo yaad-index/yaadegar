@@ -179,6 +179,16 @@ assert_contains "$out" "could not reach the Actions API" "names the lookup as th
 assert_contains "$out" "the suite's actual state is unknown" "and refuses to state what it never observed"
 assert_not_contains "$out" "no ci.yml run exists" "does not claim absence it never established"
 
+echo "an abbreviated SHA is refused as malformed INPUT, not reported as a missing run"
+# 🚨 The two are opposite diagnoses and the API cannot tell them apart: an
+# abbreviated SHA returns the same empty list a commit with no run returns. Without
+# the length check the gate fails under the missing-run message, which sends the
+# reader to inspect a trigger that is working.
+out="$(SHA=abc1234 run_case 'completed	success	https://example.test/run/9' 60)"; code=$?
+assert_status "$code" 1 "exits 1"
+assert_contains "$out" "must be the full 40-character commit" "names the input as the problem"
+assert_not_contains "$out" "no ci.yml run exists" "does not blame a trigger that is fine"
+
 echo
 if [ "$failures" -ne 0 ]; then
   echo "${failures} assertion(s) failed"
