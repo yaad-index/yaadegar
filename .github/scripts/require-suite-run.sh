@@ -54,6 +54,25 @@ seen_run=no
 lookups_ok=0
 lookup_failures=0
 
+# ⚠️ This loop holds a runner for the whole of its wait, doing nothing but sleeping
+# between polls. On a release merge that is not one idle runner but TWO: the merge
+# produces a `push` run and the tag produces a `release` run, both on the same SHA,
+# and both sit here at once. Observed on the 0.18.4 cut — three runs in flight on one
+# commit, two of them idling here.
+#
+# 🔑 It is a feedback loop rather than only waste: this wait competes for the same
+# runner pool as the suite it is waiting for, so it costs most exactly when the pool
+# is busiest. Mild and self-limiting at the current size.
+#
+# Accepted deliberately, not overlooked (#363). Skipping the gate on the `push` run
+# was rejected — the release does not exist yet when the push event fires, and the
+# two runs publish different tag sets, so it would leave the rolling tags publishing
+# from an unverified commit, which is the hole this gate exists to close. Waiting
+# without holding a runner has no good mechanism here; workflow_run is the obvious
+# candidate and is rejected on its own grounds in docker-publish.yml.
+#
+# What would overturn this: the runner pool becoming a real constraint. The number to
+# look at then is queueing delay on `check`, NOT this gate's own duration.
 while :; do
   # Newest run for this exact commit. Re-runs update a run in place, so the latest
   # is the current verdict rather than one of several opinions.
