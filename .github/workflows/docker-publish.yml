@@ -173,7 +173,13 @@ jobs:
               exit 1
             fi
 
-            echo "suite run for ${SHA} is '${status:-not created yet}'; waiting ${POLL_SECONDS}s"
+            # Report what THIS tick learned. Recomputing the line from $status here
+            # would print the last successful observation as though it were current on
+            # a tolerated failure, and would claim "not created yet" when the very
+            # first lookup failed — asserting a run does not exist on a tick that
+            # learned nothing about whether it exists, which is the same
+            # absence-is-not-evidence error the deadline branch is careful to avoid.
+            echo "${tick_note}; waiting ${POLL_SECONDS}s"
             sleep "$POLL_SECONDS"
           done
 
