@@ -87,6 +87,11 @@ jobs:
     runs-on: ubuntu-latest
     # Backstop only. The script owns the real deadline (WAIT_SECONDS) so it can say
     # WHY it gave up; this exists so a hung API call cannot idle a runner for hours.
+    #
+    # ⚠️ Distinct from the NORMAL wait, which also holds a runner while it polls —
+    # two of them on a release merge, since the merge and the tag each start a run on
+    # the same SHA and both gate here. That cost was weighed and accepted (#363); the
+    # reasoning, and what would overturn it, sits beside the loop in the script.
     timeout-minutes: 50
     steps:
       # The loop lives in a script (#359), so the job needs the tree.
