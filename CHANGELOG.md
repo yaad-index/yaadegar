@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.4](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.18.3...yaadegar-v0.18.4) (2026-09-09)
+
+
+### Bug Fixes
+
+* **web:** clear the list settings success banner once the user edits ([#358](https://github.com/yaad-index/yaadegar/issues/358)) ([e7b2e4e](https://github.com/yaad-index/yaadegar/commit/e7b2e4e9638a8ebdd864fc9479f02f45149b003e))
+
 ## [0.18.3](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.18.2...yaadegar-v0.18.3) (2026-09-07)
 
 
