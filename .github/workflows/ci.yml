@@ -214,6 +214,19 @@ jobs:
   #
   # `needs.postgres.result` is the matrix's aggregate outcome, so it already covers
   # every leg — including legs added later, which is the property being bought.
+  #
+  # ⚠️ Why treating `skipped` as not-green is safe HERE, recorded because the answer
+  # lives in a different part of this file from the rule and a skip-fails decision is
+  # exactly the kind that blocks unrelated people a week later. The matrix carries no
+  # `if:`, no path filter and no `needs:`, and this workflow fires on every pull
+  # request to main and every push to it — so the only routes to `skipped` are a
+  # cancelled run or a manual intervention, and both should block a merge.
+  #
+  # This is therefore NOT the never-reports-so-never-passes shape that keeps the
+  # path-filtered `web` workflow out of the required contexts: that one is legitimately
+  # absent on most commits, where this one is absent only when something went wrong.
+  # Adding an `if:` or a path filter to the matrix would break that argument and make
+  # this job block every commit the filter excludes.
   postgres-suite:
     runs-on: ubuntu-latest
     needs: [postgres]
