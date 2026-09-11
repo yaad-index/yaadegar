@@ -237,16 +237,17 @@ jobs:
   # VERSION, so a green run here does not prove the publish workflow still passes
   # its build-arg — that residual is covered by the release-only pre-publish gate
   # in docker-publish.yml and the publish-forwards-version job below (#193).
-  # The single Postgres context branch protection should require (#341).
+  # The single Postgres context branch protection requires (#341) — the swap landed,
+  # so this name is in the required list and the per-leg names are not.
   #
-  # A matrix job registers one status context per leg, under its EXPANDED name —
-  # "postgres (postgres:18.4)" is a literal string in the settings. So changing an
-  # image renames the context: the new name is not required, and the old name stays
-  # required and can never report again. A required check that never reports does not
-  # fail — it stays pending, and a pull request in that state cannot be merged by
-  # anyone. A routine one-line version bump then blocks every pull request in the
-  # repository, with no failing job to point at, on changes made by people who did
-  # not touch this file.
+  # What it replaced, and why it is worth keeping written down: a matrix job registers
+  # one status context per leg, under its EXPANDED name, so "postgres (postgres:18.4)"
+  # WAS a literal string in the settings. Changing an image renamed the context: the
+  # new name was not required, and the old name stayed required and could never report
+  # again. A required check that never reports does not fail — it stays pending, and a
+  # pull request in that state cannot be merged by anyone. A routine one-line version
+  # bump would then block every pull request in the repository, with no failing job to
+  # point at, on changes made by people who did not touch this file.
   #
   # This job's name does not move when the matrix does, so requiring it removes the
   # coupling rather than policing it. The matrix can gain versions, lose versions or
