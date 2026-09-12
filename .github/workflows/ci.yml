@@ -55,6 +55,22 @@ jobs:
             bash "$t"
           done
 
+      # Assert the workflows themselves, not only the scripts they call (#375).
+      #
+      # This is a SEPARATE step from the suite above on purpose, because the two
+      # answer different questions and a shared step would merge them: the suite
+      # proves the check can detect the defect (its negative control feeds it the
+      # exact line that broke release-please in #373), and this step proves the
+      # workflows currently carry none. A check that works against a repository that
+      # is dirty and a broken check against a clean one both read as one red line
+      # otherwise.
+      #
+      # ⚠️ It is scoped to unguarded `fromJSON` and not to "expressions that can
+      # throw" in general — the script's header says exactly what it does and does
+      # not cover. A pass here means "no unguarded fromJSON", nothing wider.
+      - name: Check the workflows for unguarded throwing expressions
+        run: .github/scripts/no-throwing-env-expr.sh
+
       - name: Vet
         run: go vet ./...
 
