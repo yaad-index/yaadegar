@@ -92,17 +92,44 @@ jobs:
       # on purpose — see the prs_created note above. The old name asserted the very
       # thing that note exists to deny, in the same file, two lines apart.
       #
-      # ⚠️ `fromJSON(...).number` is deliberately NOT wrapped in an emptiness guard.
-      # If that output were ever absent, the expression fails and the step goes red;
-      # adding `&& steps.release.outputs.pr != ''` to the condition would turn that
-      # into a silent skip instead — a release PR with no reviewers and nothing
-      # saying so, which is the exact failure #343 exists to remove. A loud error on
-      # a case that should not happen beats a quiet pass on it.
+      # 🚨 THE `pr &&` IS LOAD-BEARING AND MUST NOT BE TIDIED AWAY. Without it this
+      # step broke the workflow on the very next push to main, and it is worth being
+      # exact about why, because the version that shipped carried a comment arguing
+      # confidently FOR the broken form.
+      #
+      # `steps.release.outputs.pr` is an EMPTY STRING whenever release-please does not
+      # cut a release pull request, and `fromJSON('')` throws:
+      #
+      #   The template is not valid. … Error reading JToken from JsonReader.
+      #   Path '', line 0, position 0.
+      #
+      # ⚠️ AND THE `if:` BELOW DOES NOT PROTECT IT. A step's `env:` block is evaluated
+      # even when the step is SKIPPED, so the job fails rather than the step being
+      # passed over. Confirmed by running it, not reasoned about: a skipped step whose
+      # env called `fromJSON` on an empty output failed with that identical error,
+      # while the same step with the `pr &&` guard succeeded, and the guard still
+      # yielded the number on a real payload. `&&` short-circuits, so `fromJSON` is
+      # never reached when the output is empty.
+      #
+      # ⚠️ The premise of the old comment is the part that was wrong, and it is the
+      # part worth remembering. It called an absent output "a case that should not
+      # happen" and chose a loud failure for it, which is the right instinct applied
+      # to a false fact: an absent output is the NORMAL outcome of every push to main
+      # that carries no releasable commits, which is most of them. The commit that
+      # broke it was an ordinary `ci:` commit. A correct argument from a false premise
+      # reads exactly like a correct argument.
+      #
+      # ✅ The loudness it was reaching for is still here, on the case that actually
+      # warrants it. If `prs_created` is true while the output is empty, PR_NUMBER
+      # arrives empty and the SCRIPT's own "carries no usable number" guard exits 1 —
+      # reachable because that guard takes `?` rather than `:?`. So a pull request
+      # that exists and cannot be identified still fails loudly; only a push with no
+      # release to cut is now quiet, which is correct because nothing happened.
       - name: Request reviewers on the release pull request
         if: steps.release.outputs.prs_created == 'true'
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ fromJSON(steps.release.outputs.pr).number }}
+          PR_NUMBER: ${{ steps.release.outputs.pr && fromJSON(steps.release.outputs.pr).number }}
           REVIEWERS: forge-rubigd sora-rubigd
         run: .github/scripts/request-pr-reviewers.sh
