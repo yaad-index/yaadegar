@@ -82,11 +82,27 @@ jobs:
       #
       # The body is a script rather than an inline block so it can be run against a
       # stub and asserted (#359); ci.yml runs its tests on every pull request.
-      - name: Request reviewers on a newly created release PR
+      #
+      # ⚠️ The script is SHARED with docs-compose.yml, which opens the docs pin bump
+      # PR with the same problem (#343). It takes a pull request number and nothing
+      # about where the number came from, so neither caller carries a variant of the
+      # logic. Changing it means checking both callers, not this one.
+      #
+      # The step name says "the release pull request" and not "a newly created" one
+      # on purpose — see the prs_created note above. The old name asserted the very
+      # thing that note exists to deny, in the same file, two lines apart.
+      #
+      # ⚠️ `fromJSON(...).number` is deliberately NOT wrapped in an emptiness guard.
+      # If that output were ever absent, the expression fails and the step goes red;
+      # adding `&& steps.release.outputs.pr != ''` to the condition would turn that
+      # into a silent skip instead — a release PR with no reviewers and nothing
+      # saying so, which is the exact failure #343 exists to remove. A loud error on
+      # a case that should not happen beats a quiet pass on it.
+      - name: Request reviewers on the release pull request
         if: steps.release.outputs.prs_created == 'true'
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          PR_JSON: ${{ steps.release.outputs.pr }}
+          PR_NUMBER: ${{ fromJSON(steps.release.outputs.pr).number }}
           REVIEWERS: forge-rubigd sora-rubigd
-        run: .github/scripts/request-release-reviewers.sh
+        run: .github/scripts/request-pr-reviewers.sh
