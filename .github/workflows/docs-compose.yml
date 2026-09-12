@@ -213,9 +213,15 @@ jobs:
           # Consumers of each identity in this step, listed because the defect that
           # created this split was that nobody enumerated them — the comment explained
           # the one call it was written for and three others changed silently:
-          #   GH_TOKEN    -> gh release list, gh pr list, gh pr create
+          #   GH_TOKEN    -> gh release list, gh pr list, gh pr create,
+          #                  request-pr-reviewers.sh (its own gh api calls, #343)
           #   ISSUE_TOKEN -> gh label create, gh issue list, gh issue close (x2),
           #                  gh issue edit, gh issue create
+          #
+          # ⚠️ request-pr-reviewers.sh is a NEW consumer of GH_TOKEN and is listed
+          # above rather than left to be discovered. It needs the PR identity, not
+          # ISSUE_TOKEN: it reads and writes the reviewer set on the pull request
+          # this step just opened, which is `pull-requests: write` on the job.
           #
           # Two identities, on purpose. GH_TOKEN is the PR identity: it may be a PAT,
           # because a PR opened with the built-in token does not fire pull_request and
@@ -236,6 +242,15 @@ jobs:
           # is stale then too, and a PR naming an unpublished tag is what caused this.
           BUMP_OK: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' }}
           REPO: ${{ github.repository }}
+          # Read by request-pr-reviewers.sh (#343). The bump PR is opened by the same
+          # identity that opens the release PR, so it arrived with nobody requested
+          # for the same reason and is fixed by the same script.
+          #
+          # 🚨 These are the identities that CAN approve this PR, and whoever opens it
+          # is deliberately not among them — GitHub refuses a self-approval, so adding
+          # the opening identity here for symmetry would create a request that can
+          # never be satisfied: the same silence, wearing a reviewer badge.
+          REVIEWERS: forge-rubigd sora-rubigd
         run: |
           set -euo pipefail
 
@@ -326,6 +341,18 @@ jobs:
             --json number --jq '.[0].number // ""')"
           if [ -n "$existing_pr" ]; then
             echo "bump PR #$existing_pr is already open for $want"
+            # ⚠️ Still ensure the reviewers (#343), rather than exiting on the
+            # strength of the PR existing. This path is what a RE-RUN takes, so it
+            # is the only thing that can recover a reviewer request that failed on
+            # the run that opened the PR — without it, the one case that needs a
+            # retry is the one case that never gets one, and the PR sits with
+            # nobody requested exactly as before.
+            #
+            # Safe to run repeatedly: the script reads the current requested set and
+            # reviews first and asks only for who is missing from both, so it exits
+            # without posting when there is nothing to do. That is the property it
+            # was built with for release-please, which runs it on every rewrite.
+            PR_NUMBER="$existing_pr" .github/scripts/request-pr-reviewers.sh
             exit 0
           fi
 
@@ -363,6 +390,26 @@ jobs:
                  --title "chore(docs): pin the compose quick start to $want" \
                  --body "$pr_body"; then
             echo "opened bump PR for $want"
+
+            # Request the reviewers on the PR just opened (#343). The number is read
+            # back from the API rather than parsed out of `gh pr create` output, using
+            # the same query as the already-open check above — one way of answering
+            # "which PR is this", not two.
+            new_pr="$(gh pr list --repo "$REPO" --head "$branch" --state open \
+              --json number --jq '.[0].number // ""')"
+            PR_NUMBER="$new_pr" .github/scripts/request-pr-reviewers.sh
+
+            # ⚠️ ORDERING-DEPENDENT — this runs BEFORE the tracking issue is closed,
+            # and the order is the point. `set -e` is on, so a failed reviewer request
+            # aborts here and leaves the tracking issue OPEN: the stale pin stays
+            # visible on the surface built for it, in addition to the red run. Closing
+            # first would retire that reminder while calling the PR "superseded" by a
+            # PR that notifies nobody, which is the quieter always-red this job's whole
+            # design exists to avoid.
+            #
+            # The PR itself survives a failure here, which is correct — it is open and
+            # correct, it is only unannounced, and the red says so.
+
             # The PR supersedes the reminder; a leftover issue from before this job
             # opened PRs would otherwise sit open forever with no one to close it.
             if [ -n "$open_issue" ]; then

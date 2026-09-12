@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Tests for request-release-reviewers.sh (#343).
+# Tests for request-pr-reviewers.sh (#343).
 #
 # 🚨 The assertion that matters is the READ-BACK, not the request. The bug this
 # script exists to remove is an automation whose failure is invisible, and the
@@ -10,10 +10,15 @@
 #
 # A run where the request works and the read-back agrees is what a script with no
 # read-back at all also produces, so that case alone would prove nothing.
+#
+# ⚠️ These cases are caller-agnostic on purpose. Both openers — the release PR and
+# the docs pin bump — run the same bytes with the same contract, so there is no
+# per-caller variant here to drift. What the suite cannot reach is named in the
+# script's header rather than implied by its absence.
 set -uo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-script="${here}/request-release-reviewers.sh"
+script="${here}/request-pr-reviewers.sh"
 failures=0
 
 # run_case drives the script against a stub `gh` that answers the two GET
@@ -26,7 +31,13 @@ failures=0
 # what the requested endpoint reports once a POST has happened, which is how a
 # request that silently changes nothing is expressed.
 run_case() {
-  local requested="$1" reviewed="$2" after="$3" post_fails="${4:-no}" pr_json="${5:-{\"number\":123\}}"
+  # ⚠️ `${5-123}` and not `${5:-123}`: the empty-number case passes '' deliberately,
+  # and `:-` would substitute the default for it, silently running the normal path
+  # instead of the guard. It was written that way first and the suite caught it —
+  # but only on the MESSAGE assertion. The exit-status assertion still passed,
+  # because the run failed anyway, one stage later at the read-back. A status-only
+  # check would have called this covered.
+  local requested="$1" reviewed="$2" after="$3" post_fails="${4:-no}" pr_number="${5-123}" reviewers="${6-first-reviewer second-reviewer}"
   local dir; dir="$(mktemp -d)"
 
   cat > "${dir}/gh" <<'STUB'
@@ -69,7 +80,20 @@ for arg in "$@"; do
   fi
 done
 
-case "$1$2$3" in
+# Dispatch on the WHOLE argument list rather than on a fixed set of positions.
+#
+# ⚠️ This is HARDENING, not a fix, and the distinction is worth stating because the
+# opposite is the easier thing to believe. The previous form matched "$1$2$3", and
+# `--paginate` does shift the endpoint from $2 to $3 — but $1$2$3 still spans it,
+# so the old form keeps dispatching correctly and reverting this line passes the
+# whole suite. Mutation-checked rather than assumed.
+#
+# What it removes is the positional dependency: one more flag ahead of the URL
+# would push it out of the window, and the reviews call would then be answered
+# with the requested-reviewers payload. That failure is loud (the script's jq
+# cannot read an object as a review list) but it reads as a parse bug rather than
+# as a stub that answered the wrong question.
+case "$*" in
   *reviews*) to_reviews "${STUB_REVIEWED}" ;;
   *) if [ -f "$posted" ]; then to_users "${STUB_AFTER}"; else to_users "${STUB_REQUESTED}"; fi ;;
 esac
@@ -83,8 +107,8 @@ STUB
   STUB_STATE="$dir" \
   PATH="${dir}:${PATH}" \
   REPO=owner/repo \
-  PR_JSON="$pr_json" \
-  REVIEWERS="first-reviewer second-reviewer" \
+  PR_NUMBER="$pr_number" \
+  REVIEWERS="$reviewers" \
   GH_TOKEN=stub \
     bash "$script"
   local code=$?
@@ -125,6 +149,10 @@ echo "🚨 a reviewer who has ALREADY REVIEWED is not re-requested"
 # confirmed live. So absent-from-requested means either "never asked" or "already
 # answered", and re-requesting the second can reset the very approval this step
 # exists to protect. Only the reviews list separates them.
+#
+# This case also proves the reviews endpoint was actually consulted and parsed:
+# the "reviewed '...'" text can only come from that payload, so a stub that
+# mis-dispatched the reviews call could not produce it.
 out="$(run_case '' 'first-reviewer second-reviewer' '')"; code=$?
 assert_status "$code" 0 "exits 0"
 assert_contains "$out" "already has every reviewer" "asks for nobody"
@@ -149,16 +177,26 @@ echo "a failing request is not swallowed"
 out="$(run_case '' '' 'first-reviewer second-reviewer' yes)"; code=$?
 assert_status "$code" 1 "exits 1"
 
-echo "a created pull request with no usable number is refused rather than guessed"
-out="$(run_case '' '' '' no '{"title":"chore: release"}')"; code=$?
+echo "a pull request with no usable number is refused rather than guessed"
+# Reached when a caller derives the number from an output that did not carry one.
+out="$(run_case '' '' '' no '')"; code=$?
 assert_status "$code" 1 "exits 1"
 assert_contains "$out" "carries no usable number" "says which input was unusable"
+
+echo "an empty reviewer list is refused rather than reported as a success"
+# ⚠️ This arm was unreachable on main: `: "${REVIEWERS:?...}"` fired on an empty
+# value before the check below could run, so the guard existed and could not be
+# reached. Reachable now, and asserted, because a step that requests nobody and
+# exits 0 is precisely the silence #343 exists to end.
+out="$(run_case '' '' '' no 123 '')"; code=$?
+assert_status "$code" 1 "exits 1"
+assert_contains "$out" "REVIEWERS is empty" "says the list was empty"
 
 echo "a number that is not a number is refused too, not only an absent one"
 # ⚠️ Added after a mutation survived: removing the non-numeric arm broke nothing,
 # because the only case reaching that check supplied NO number and was caught by
 # the empty arm. An arm with no case is untested rather than safe.
-out="$(run_case '' '' '' no '{"number":"not-a-number"}')"; code=$?
+out="$(run_case '' '' '' no 'not-a-number')"; code=$?
 assert_status "$code" 1 "exits 1"
 assert_contains "$out" "carries no usable number" "says which input was unusable"
 
