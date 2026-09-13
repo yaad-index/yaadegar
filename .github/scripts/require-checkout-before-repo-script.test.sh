@@ -131,6 +131,76 @@ assert_contains "$out" "no-checkout" "names the job that lacks it"
 if [[ "$out" != *"'has-checkout'"* ]]; then echo "  ok: does not flag the job that has one"; else echo "  FAIL: flagged the compliant sibling"; failures=$(( failures + 1 )); fi
 
 echo
+echo "🚨 REGRESSION: a trailing comment on a job id must not hide the job (#379 review)"
+echo "   the shipped version read this as ONE job, attributed danger-job's step to"
+echo "   safe-job, and exited 0 — a silent false negative in the covered direction"
+f="$(fixture trailing <<'YML'
+jobs:
+  safe-job:
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: .github/scripts/something.sh
+  danger-job:  # a trailing comment on the job id
+    steps:
+      - run: .github/scripts/request-pr-reviewers.sh
+YML
+)"
+out="$(bash "$script" "$f" 2>&1)"; st=$?
+assert_status "$st" 1 "exits 1"
+# Match the FINDING, not the bare id. The unreadable-job-id error also echoes the
+# offending line, so asserting on "danger-job" alone is satisfied by either path —
+# and this case exists to prove the job is read and judged, not merely noticed.
+assert_contains "$out" "job 'danger-job'" "finds the job the trailing comment hid"
+assert_contains "$out" "never checks the repository out" "judges it, rather than erroring on it"
+
+echo
+echo "🚨 JOB-ID SYNTAX CORPUS, asserted by COUNT rather than by outcome."
+echo "   Agreeing with a real YAML parser on the live tree proves only agreement on a"
+echo "   corpus containing none of these forms — the live tree is the one input"
+echo "   guaranteed to be clean. So the forms this claims to handle are written out"
+echo "   here, and the count is the tell: an unread job does not vanish, its steps"
+echo "   silently join the job above it."
+f="$(fixture variants <<'YML'
+jobs:
+  plain:
+    steps:
+      - run: echo one
+  trailing-spaces:
+    steps:
+      - run: echo two
+  with-comment: # a note
+    steps:
+      - run: echo three
+  mixed_id.9-x:
+    steps:
+      - run: echo four
+  UpperCase:
+    steps:
+      - run: echo five
+YML
+)"
+out="$(bash "$script" "$f" 2>&1)"; st=$?
+assert_status "$st" 0 "exits 0 (none of them invoke anything)"
+assert_contains "$out" "5 job(s)" "reads all five job-id forms, rather than absorbing any into its neighbour"
+
+echo
+echo "a job-id form this cannot read is an ERROR, not a silent attribution to the job above"
+f="$(fixture quoted <<'YML'
+jobs:
+  first:
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: echo hello
+  "quoted-id":
+    steps:
+      - run: .github/scripts/request-pr-reviewers.sh
+YML
+)"
+out="$(bash "$script" "$f" 2>&1)"; st=$?
+assert_status "$st" 1 "exits 1"
+assert_contains "$out" "cannot read this as a job id" "says it could not read the layout rather than reporting a clean scan"
+
+echo
 echo "🚨 MENTION IS NOT USE: a comment naming the path is not an invocation"
 echo "   (the workflow comments explaining this defect quote the path that trips it)"
 f="$(fixture mention <<'YML'

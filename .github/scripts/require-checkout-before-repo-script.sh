@@ -122,8 +122,13 @@ for wf in "${files[@]}"; do
     esac
 
     if [ "$in_jobs" -eq 1 ]; then
-      # A job id: exactly two spaces, a key, nothing else of substance on the line.
-      if [[ "$line" =~ ^\ \ ([A-Za-z0-9_.-]+):[[:space:]]*$ ]]; then
+      # A job id: exactly two spaces, a key, and optionally a trailing comment.
+      #
+      # ⚠️ The trailing comment is not decoration. Without it `  a-job:  # note` does
+      # not register as a job at all, and its steps are attributed to the PRECEDING
+      # job — so if that one checked out, an uncovered invocation reads as covered.
+      # Silent, and in the direction this check exists to prevent.
+      if [[ "$line" =~ ^\ \ ([A-Za-z0-9_.-]+):[[:space:]]*(#.*)?$ ]]; then
         flush
         job="${BASH_REMATCH[1]}"
         job_line=$lineno
@@ -131,6 +136,23 @@ for wf in "${files[@]}"; do
         checkout_line=0
         file_jobs=$(( file_jobs + 1 ))
         continue
+      fi
+
+      # 🚨 ANY OTHER two-space key inside `jobs:` is an ERROR rather than something to
+      # scroll past, and this is the general form of the bug above. Only job ids live
+      # at this indentation, so a line here that the pattern cannot read is a job — and
+      # an unread job does not vanish, its steps silently join the previous one. That
+      # failure is invisible: the scan still reports success, and only the job COUNT
+      # differs from reality.
+      #
+      # A quoted id (`  "a-job":`), an anchor, or any form not listed above lands here
+      # and stops the run instead of being absorbed. Erring loudly on an unfamiliar
+      # layout is the same choice as the whole-file guard below, applied per line.
+      if [[ "$line" =~ ^\ \ [^[:space:]] ]]; then
+        echo "${wf}:${lineno}: cannot read this as a job id (#378): only job ids sit at this indentation, and a job this scan does not recognise has its steps attributed to the job above it — which reports success while examining the wrong thing"
+        echo "    ${trimmed}"
+        echo "    recognised form: a job id of [A-Za-z0-9_.-], then ':', then nothing but an optional # comment"
+        exit 1
       fi
       # A top-level key at column 0 ends the jobs block.
       if [[ "$line" =~ ^[A-Za-z] ]]; then
