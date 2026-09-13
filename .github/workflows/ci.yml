@@ -71,6 +71,20 @@ jobs:
       - name: Check the workflows for unguarded throwing expressions
         run: .github/scripts/no-throwing-env-expr.sh
 
+      # Assert no job runs a script out of the working tree without checking the
+      # working tree out (#378). Separate from the suite above for the same reason
+      # the step above it is: the suite proves the check can detect the arrangement
+      # that shipped in #368, and this proves the workflows currently carry none.
+      #
+      # ⚠️ A pass here means "no job invokes .github/scripts/ without a preceding
+      # checkout" and nothing wider — not that every step has the files it needs. The
+      # script's header states what it does and does not cover.
+      #
+      # ⚠️ This step is itself an instance of what it checks, which is the cheapest
+      # possible confirmation that the job it runs in checks out.
+      - name: Check that workflow jobs check out before running repository scripts
+        run: .github/scripts/require-checkout-before-repo-script.sh
+
       - name: Vet
         run: go vet ./...
 
