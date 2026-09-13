@@ -46,6 +46,34 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
+      # 🚨 THE CHECKOUT IS LOAD-BEARING, AND THIS JOB READS AS ONE THAT DOES NOT NEED
+      # ONE. release-please works entirely through the API and takes nothing from the
+      # workspace, so for as long as that was the only step here, no checkout was
+      # correct. The step below runs a script FROM THE REPOSITORY, and a runner's
+      # workspace starts empty — without this, that path does not exist and the step
+      # cannot run at all. Adding the script without adding this is what happened.
+      #
+      # ⚠️ Why that stayed invisible, which is the part worth keeping. The step below
+      # is conditional and had been SKIPPED on every run since it shipped, because it
+      # fires only when a release pull request is cut and none had been cut since. A
+      # skipped step reports success, so the job was green throughout and the missing
+      # checkout was visible nowhere — the failure was waiting on a release rather
+      # than on a mistake. docs-compose.yml checks out before running the same shared
+      # script, so only this caller was affected, which is the half-solved-pair shape
+      # #343 warns about: correct on inspection, untested until a release goes by.
+      #
+      # ⚠️ Placed HERE rather than first, deliberately, on both counts. It sits next
+      # to the only step that needs it so the dependency is visible to whoever edits
+      # either — at the top it reads as boilerplate unconnected to the script. And it
+      # runs after release-please rather than before it, so a populated workspace
+      # cannot change how that action resolves its config and manifest.
+      #
+      # It is unconditional on purpose. Giving it the same `if:` as the step below
+      # would put the same condition in two places, and the failure when they drift
+      # is this one again.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
       # Request reviewers on the release PR (#343).
       #
       # This PR class is the only one whose author can never approve it — GitHub
