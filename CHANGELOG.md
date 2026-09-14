@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.18.6](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.18.5...yaadegar-v0.18.6) (2026-09-14)
+
+
+### Bug Fixes
+
+* judge link-preview drafts against the host that actually served them ([#391](https://github.com/yaad-index/yaadegar/issues/391)) ([2918889](https://github.com/yaad-index/yaadegar/commit/29188892ffe4776c4c2f0a77d5dfff16beabf00a))
+* let the edit-item name input shrink so the quantity box stays on the card ([#394](https://github.com/yaad-index/yaadegar/issues/394)) ([3992339](https://github.com/yaad-index/yaadegar/commit/3992339b55c4065730b1e98d0f3f1b82b0e9834a))
+
 ## [0.18.5](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.18.4...yaadegar-v0.18.5) (2026-09-14)
 
 
