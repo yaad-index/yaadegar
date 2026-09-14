@@ -629,8 +629,15 @@
 						</p>
 						<input type="hidden" name="item_id" value={id} />
 						<div class="flex gap-2">
+							<!-- min-w-0 is load-bearing, not tidiness. A flex child defaults to
+							     min-width:auto, and for a bare <input> that floors at the intrinsic
+							     width of its `size` (20 characters by default) — 274px in this
+							     typeface, against a 290px row that also has to hold the 80px qty
+							     box. Without it the input refuses to shrink and pushes qty off the
+							     card (#390). The add-item row above escapes this by putting flex-1
+							     on a wrapper <div> instead of on the input itself. -->
 							<input
-								class="h-12 flex-1 rounded-card border border-line bg-surface px-3 font-ui text-body text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+								class="h-12 min-w-0 flex-1 rounded-card border border-line bg-surface px-3 font-ui text-body text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
 								name="name"
 								aria-label="Item name"
 								value={item.name}
