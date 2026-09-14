@@ -88,6 +88,14 @@ func newHarnessCaptcha(t *testing.T, cc captchaConfig) *harness {
 	return newHarnessFull(t, nil, false, "", cc, "")
 }
 
+// newHarnessRegistrationCaptcha builds a harness with BOTH self-registration enabled
+// and a captcha verifier configured — the combination the register gate needs, which
+// neither newHarnessRegistration (no verifier) nor newHarnessCaptcha (registration
+// disabled, so every request 403s before the gate) can produce on its own.
+func newHarnessRegistrationCaptcha(t *testing.T, policy storage.RegistrationPolicy, cc captchaConfig) *harness {
+	return newHarnessFull(t, nil, false, policy, cc, "")
+}
+
 func newHarnessOpts(t *testing.T, limiter auth.Limiter, trustForwardedHost bool, registrationPolicy storage.RegistrationPolicy) *harness {
 	return newHarnessFull(t, limiter, trustForwardedHost, registrationPolicy, captchaConfig{}, "")
 }
