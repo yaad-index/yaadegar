@@ -2,12 +2,22 @@
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import AuthPanel from '$lib/components/AuthPanel.svelte';
+	import CaptchaWidget from '$lib/components/CaptchaWidget.svelte';
 	import Field from '$lib/components/Field.svelte';
 	import PasswordField from '$lib/components/PasswordField.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	// Anti-bot captcha (ADR-0013) on the register path, same shape as the reserve page:
+	// the widget fills a hidden captcha_token, and the submit stays disabled until it
+	// resolves. The disabled control is not cosmetic — while unverified, altcha's
+	// injected `required` checkbox makes the whole form invalid, so native constraint
+	// validation blocks submit with no event at all (#246). Without this the button
+	// would look live and do nothing.
+	let captchaToken = $state('');
+	const captchaBlocking = $derived(!!data.captchaProvider && captchaToken.trim() === '');
 
 	// When self-registration is off (#253) the page shows a not-enabled notice instead
 	// of the form, so the title and heading must stop naming an action the instance
@@ -63,7 +73,21 @@
 				minlength={8}
 				required
 			/>
-			<Button type="submit" full>Create account</Button>
+			<!-- Anti-bot captcha (ADR-0013), only when the instance configures a provider.
+			     Fills the hidden captcha_token the action forwards to the backend. -->
+			{#if data.captchaProvider}
+				<CaptchaWidget
+					provider={data.captchaProvider}
+					siteKey={data.captchaSiteKey}
+					bind:token={captchaToken}
+				/>
+			{/if}
+			<Button type="submit" full disabled={captchaBlocking}>Create account</Button>
+			{#if captchaBlocking}
+				<!-- Surface why the disabled button is disabled, rather than a click that does
+				     nothing (#246/#247), matching the reserve surface's wording. -->
+				<p class="font-ui text-chip text-ink-muted">Complete the anti-bot check above first.</p>
+			{/if}
 		</form>
 	{/if}
 
