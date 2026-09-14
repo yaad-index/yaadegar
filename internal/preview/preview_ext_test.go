@@ -224,6 +224,52 @@ func TestPreview_RealProductOnSameHostStillWorks(t *testing.T) {
 	assert.Equal(t, "shop.example Branded Mug", *d.Name)
 }
 
+// TestPreview_SiteNameViaShortLinkIsUnfetchable is the same anti-automation stub
+// as above, reached through a link shortener — the form the report actually used.
+// The body is byte-identical to the case that is correctly refused; only the
+// requested host differs from the serving one, which is the whole defect: the
+// guard used to compare the scraped name against the host that was ASKED rather
+// than the host that ANSWERED, so a redirect defeated it.
+func TestPreview_SiteNameViaShortLinkIsUnfetchable(t *testing.T) {
+	p := preview.New(&preview.FakeFetcher{
+		Body: []byte(`<html><head><title>shop.example</title></head>
+<body>To discuss automated access, contact us.</body></html>`),
+		FinalURL: "https://www.shop.example/dp/AbCd",
+	})
+	_, err := p.Preview(context.Background(), "https://shrt.example/d/AbCd")
+	assert.ErrorIs(t, err, preview.ErrUnfetchable)
+}
+
+// TestPreview_RealProductViaShortLinkStillWorks is the other direction, and the
+// one that stops the fix from becoming "refuse anything redirected": the same
+// shortener reaching a genuine product page must still preview.
+func TestPreview_RealProductViaShortLinkStillWorks(t *testing.T) {
+	p := preview.New(&preview.FakeFetcher{
+		Body:     []byte(`<html><head><title>Branded Mug 400ml</title></head></html>`),
+		FinalURL: "https://www.shop.example/dp/AbCd",
+	})
+	d, err := p.Preview(context.Background(), "https://shrt.example/d/AbCd")
+	require.NoError(t, err)
+	require.NotNil(t, d.Name)
+	assert.Equal(t, "Branded Mug 400ml", *d.Name)
+	// The echoed URL stays the one the user pasted — resolving a redirect must
+	// not rewrite their link into a tracking/affiliate destination.
+	require.NotNil(t, d.URL)
+	assert.Equal(t, "https://shrt.example/d/AbCd", *d.URL)
+}
+
+// TestPreview_StubNamingTheREQUESTEDHostStillRefused pins the pre-existing half of
+// the guard: a stub may carry the title of the host that was asked rather than the
+// one that answered, and widening to the served host must not drop that case.
+func TestPreview_StubNamingTheRequestedHostStillRefused(t *testing.T) {
+	p := preview.New(&preview.FakeFetcher{
+		Body:     []byte(`<html><head><title>shop.example</title></head></html>`),
+		FinalURL: "https://interstitial.example/blocked",
+	})
+	_, err := p.Preview(context.Background(), "https://www.shop.example/dp/AbCd")
+	assert.ErrorIs(t, err, preview.ErrUnfetchable)
+}
+
 func TestPreview_RejectsNonHTTPScheme(t *testing.T) {
 	p := preview.New(&preview.FakeFetcher{Body: []byte("<title>x</title>")})
 	_, err := p.Preview(context.Background(), "file:///etc/passwd")
@@ -240,4 +286,24 @@ func TestSafeFetcher_BlocksLoopback(t *testing.T) {
 
 	_, err := preview.NewSafeFetcher().Fetch(context.Background(), srv.URL)
 	require.Error(t, err, "the fetcher must refuse to connect to a loopback address")
+}
+
+// TestPreview_RelativeImageResolvesAgainstServingHost: a relative <img src> is
+// resolved against the document's actual base. After a redirect that is the
+// serving URL — resolving against the pasted short link would build an image URL
+// on a host that served nothing and cannot serve the image either.
+func TestPreview_RelativeImageResolvesAgainstServingHost(t *testing.T) {
+	p := preview.New(&preview.FakeFetcher{
+		Body: []byte(`<html><head><title>Branded Mug 400ml</title></head>
+<body><img src="/img/mug.jpg" width="600" height="600"></body></html>`),
+		FinalURL: "https://www.shop.example/dp/AbCd",
+	})
+	d, err := p.Preview(context.Background(), "https://shrt.example/d/AbCd")
+	require.NoError(t, err)
+	require.NotNil(t, d.ImageURL)
+	assert.Equal(t, "https://www.shop.example/img/mug.jpg", *d.ImageURL)
+
+	// The echoed URL still belongs to the user, not to the redirect target.
+	require.NotNil(t, d.URL)
+	assert.Equal(t, "https://shrt.example/d/AbCd", *d.URL)
 }

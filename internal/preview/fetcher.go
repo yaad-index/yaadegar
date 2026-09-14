@@ -24,10 +24,24 @@ const (
 	acceptHTML = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
 )
 
-// Fetcher retrieves the HTML body at a URL. The production implementation is
+// Page is a fetched document: the body, plus the URL that actually served it.
+//
+// The two differ whenever the request redirected, which is the normal case for a
+// shortened or tracking link. Callers that reason about *who answered* — rather
+// than who was asked — must use FinalURL, or they draw conclusions about a host
+// that served nothing.
+type Page struct {
+	Body []byte
+	// FinalURL is the URL the response came from, after any redirects. A fetcher
+	// that does not track redirects may leave it empty, and the caller then falls
+	// back to the requested URL.
+	FinalURL string
+}
+
+// Fetcher retrieves the HTML at a URL. The production implementation is
 // SSRF-guarded; tests inject a FakeFetcher serving fixture HTML.
 type Fetcher interface {
-	Fetch(ctx context.Context, rawURL string) ([]byte, error)
+	Fetch(ctx context.Context, rawURL string) (Page, error)
 }
 
 // SafeFetcher fetches remote HTML with SSRF protections: a Control-hook dialer
@@ -62,7 +76,7 @@ func NewSafeFetcher() *SafeFetcher {
 	return &SafeFetcher{client: client}
 }
 
-func (f *SafeFetcher) Fetch(ctx context.Context, rawURL string) ([]byte, error) {
+func (f *SafeFetcher) Fetch(ctx context.Context, rawURL string) (Page, error) {
 	// Both a context deadline and the client timeout, so a slow-loris body cannot
 	// hang past the cap.
 	ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
@@ -70,19 +84,37 @@ func (f *SafeFetcher) Fetch(ctx context.Context, rawURL string) ([]byte, error) 
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
-		return nil, err
+		return Page{}, err
 	}
 	setPreviewHeaders(req)
 
 	resp, err := f.client.Do(req)
 	if err != nil {
-		return nil, err
+		return Page{}, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("preview: upstream status %d", resp.StatusCode)
+		return Page{}, fmt.Errorf("preview: upstream status %d", resp.StatusCode)
 	}
-	return readBody(resp)
+	body, err := readBody(resp)
+	if err != nil {
+		return Page{}, err
+	}
+	return Page{Body: body, FinalURL: servedURL(resp, rawURL)}, nil
+}
+
+// servedURL reports the URL that actually produced resp.
+//
+// net/http sets Response.Request to the LAST request in the redirect chain, not
+// the one handed to Do, which is the only reason the serving host is recoverable
+// after a shortened link resolves. Falls back to the requested URL so a response
+// carrying no request (a hand-built one, or a client that does not populate it)
+// degrades to the old behaviour rather than to an empty host.
+func servedURL(resp *http.Response, requested string) string {
+	if resp != nil && resp.Request != nil && resp.Request.URL != nil {
+		return resp.Request.URL.String()
+	}
+	return requested
 }
 
 // setPreviewHeaders pins every negotiated header explicitly instead of letting
@@ -155,12 +187,14 @@ func readBody(resp *http.Response) ([]byte, error) {
 func allowedScheme(s string) bool { return s == "http" || s == "https" }
 
 // FakeFetcher is a test double: it returns the configured body/err without any
-// network access.
+// network access. FinalURL stands in for a redirect chain — leaving it empty
+// means "served by the URL that was requested".
 type FakeFetcher struct {
-	Body []byte
-	Err  error
+	Body     []byte
+	FinalURL string
+	Err      error
 }
 
-func (f *FakeFetcher) Fetch(context.Context, string) ([]byte, error) {
-	return f.Body, f.Err
+func (f *FakeFetcher) Fetch(context.Context, string) (Page, error) {
+	return Page{Body: f.Body, FinalURL: f.FinalURL}, f.Err
 }

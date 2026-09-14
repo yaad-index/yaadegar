@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -204,4 +205,33 @@ func TestNamesTheSiteItself(t *testing.T) {
 	}
 
 	assert.False(t, namesTheSiteItself(nil, "www.acme.example"), "a nil name is not a site name")
+}
+
+// TestServedURL covers the seam that makes a redirected fetch attributable: the
+// response carries the LAST request of the chain, and that is the host the
+// caller must judge the content against. The redirect-following itself is
+// net/http's, so what is asserted here is our reading of it plus the fallbacks —
+// the SSRF dial guard refuses loopback by design, so an end-to-end redirect
+// against a local server is not available to assert instead.
+func TestServedURL(t *testing.T) {
+	requested := "https://shrt.example/d/AbCd"
+
+	t.Run("uses the request that produced the response", func(t *testing.T) {
+		final, err := url.Parse("https://www.shop.example/dp/AbCd")
+		require.NoError(t, err)
+		resp := &http.Response{Request: &http.Request{URL: final}}
+		assert.Equal(t, "https://www.shop.example/dp/AbCd", servedURL(resp, requested))
+	})
+
+	t.Run("falls back when the response carries no request", func(t *testing.T) {
+		assert.Equal(t, requested, servedURL(&http.Response{}, requested))
+	})
+
+	t.Run("falls back when the request carries no URL", func(t *testing.T) {
+		assert.Equal(t, requested, servedURL(&http.Response{Request: &http.Request{}}, requested))
+	})
+
+	t.Run("falls back on a nil response", func(t *testing.T) {
+		assert.Equal(t, requested, servedURL(nil, requested))
+	})
 }
