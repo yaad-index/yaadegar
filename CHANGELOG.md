@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.18.5](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.18.4...yaadegar-v0.18.5) (2026-09-14)
+
+
+### Bug Fixes
+
+* **api:** refuse an empty register captcha token before the provider ([da68b06](https://github.com/yaad-index/yaadegar/commit/da68b064827f1f2835a4a89b56664ec56554209f)), closes [#384](https://github.com/yaad-index/yaadegar/issues/384)
+* render the register captcha widget and refuse empty tokens at the endpoint ([ea83237](https://github.com/yaad-index/yaadegar/commit/ea832372cd8f477fb9c84d0f526a1c69d6071808))
+* **web:** render the captcha widget on the register page ([2e4934b](https://github.com/yaad-index/yaadegar/commit/2e4934b03d1e2ab7dc77a3e83a4a1e7ee5b4b6a6)), closes [#384](https://github.com/yaad-index/yaadegar/issues/384)
+
 ## [0.18.4](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.18.3...yaadegar-v0.18.4) (2026-09-09)
 
 
