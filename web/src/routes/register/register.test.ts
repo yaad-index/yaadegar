@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// ADR-0012 cut 1a: the /register action posts email+password (captcha_token empty),
-// shows the same neutral "check your email" message on any success (enumeration-
-// neutral), a distinct message when registration is disabled (403), surfaces the
-// backend reason on other failures, and catches a confirm mismatch client-side.
+// ADR-0012 cut 1a: the /register action posts email+password plus the captcha_token
+// the page's widget resolved (#384), shows the same neutral "check your email" message
+// on any success (enumeration-neutral), a distinct message when registration is
+// disabled (403), surfaces the backend reason on other failures, and catches a confirm
+// mismatch client-side.
 
 const post = vi.fn();
 const get = vi.fn();
@@ -59,6 +60,28 @@ describe('register action (ADR-0012 cut 1a)', () => {
 			body: { email: 'newbie@example.com', password: 'long-enough-pass', captcha_token: '' }
 		});
 		expect(res).toEqual({ sent: true });
+	});
+
+	// #384: the token the action posts must be the one the widget resolved, not a
+	// constant — a constant is what made registration impossible on any instance with a
+	// provider configured.
+	it("forwards the widget's captcha_token to the backend (#384)", async () => {
+		post.mockResolvedValue({ data: undefined, error: undefined, response: { status: 202 } });
+		await register(
+			ev({
+				email: 'newbie@example.com',
+				password: 'long-enough-pass',
+				confirm_password: 'long-enough-pass',
+				captcha_token: 'solved-token'
+			})
+		);
+		expect(post).toHaveBeenCalledWith('/api/v1/auth/register', {
+			body: {
+				email: 'newbie@example.com',
+				password: 'long-enough-pass',
+				captcha_token: 'solved-token'
+			}
+		});
 	});
 
 	it('shows a distinct message when registration is disabled (403)', async () => {
@@ -132,10 +155,12 @@ describe('register action (ADR-0012 cut 1a)', () => {
 // #253: the loader reads the instance's registration_enabled (the same signal the login
 // page uses to hide its "Sign up" entry point) so the page can render a not-enabled state
 // up front instead of a form that can only 403.
-type LoadFn = (e: {
-	locals: { host: string };
-	url: URL;
-}) => Promise<{ registrationEnabled: boolean; returnTo: string }>;
+type LoadFn = (e: { locals: { host: string }; url: URL }) => Promise<{
+	registrationEnabled: boolean;
+	returnTo: string;
+	captchaProvider: string;
+	captchaSiteKey: string;
+}>;
 const loadRegister = load as unknown as LoadFn;
 
 function loadEv(returnTo?: string) {
@@ -172,5 +197,29 @@ describe('register load (#253)', () => {
 		get.mockResolvedValue({ data: { registration_enabled: true } });
 		const res = await loadRegister(loadEv('/reserve/abc'));
 		expect(res.returnTo).toBe('/reserve/abc');
+	});
+
+	// #384: the page can only render the widget if the loader passes the instance's
+	// captcha config through — it already fetches the very response carrying it.
+	it('surfaces the instance captcha provider and site key (#384)', async () => {
+		get.mockResolvedValue({
+			data: {
+				registration_enabled: true,
+				captcha_provider: 'turnstile',
+				captcha_site_key: 'site-key'
+			}
+		});
+		const res = await loadRegister(loadEv());
+		expect(res.captchaProvider).toBe('turnstile');
+		expect(res.captchaSiteKey).toBe('site-key');
+	});
+
+	it('reports no captcha provider when the instance has captcha disabled (#384)', async () => {
+		// The backend omits both fields entirely when captcha is off, rather than
+		// sending empties — so the default, not the value, is what disables the widget.
+		get.mockResolvedValue({ data: { registration_enabled: true } });
+		const res = await loadRegister(loadEv());
+		expect(res.captchaProvider).toBe('');
+		expect(res.captchaSiteKey).toBe('');
 	});
 });

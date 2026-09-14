@@ -51,16 +51,30 @@ func (s *Server) Register(ctx context.Context, req gen.RegisterRequestObject) (g
 		}, nil
 	}
 
-	// Human-challenge gate on the register path only. The default verifier is a no-op
-	// (accepts any value); a real provider slots in behind the same interface.
-	captchaToken := ""
-	if req.Body.CaptchaToken != nil {
-		captchaToken = *req.Body.CaptchaToken
-	}
-	if err := s.captcha.Verify(ctx, captchaToken, clientIPFromContext(ctx)); err != nil {
-		return gen.Register400ApplicationProblemPlusJSONResponse{
-			BadRequestApplicationProblemPlusJSONResponse: badRequest("captcha verification failed"),
-		}, nil
+	// Human-challenge gate on the register path, in the same shape the low-trust reserve
+	// gate uses (see captchaGate): skip entirely when no verifier is configured, refuse
+	// an absent token BEFORE the provider is called so an empty token is never sent
+	// upstream, and treat a rejected challenge and a provider outage alike as a
+	// fail-closed 400. Refusing "" here rather than relying on the verifier to reject it
+	// keeps the guarantee in the endpoint instead of in whichever provider is
+	// configured. The refusal runs before any account or token work and does not depend
+	// on the email, so the path stays enumeration-safe.
+	if s.captchaEnabled {
+		captchaToken := ""
+		if req.Body.CaptchaToken != nil {
+			captchaToken = *req.Body.CaptchaToken
+		}
+		if captchaToken == "" {
+			return gen.Register400ApplicationProblemPlusJSONResponse{
+				BadRequestApplicationProblemPlusJSONResponse: badRequest("captcha verification is required to create an account"),
+			}, nil
+		}
+		if err := s.captcha.Verify(ctx, captchaToken, clientIPFromContext(ctx)); err != nil {
+			s.logger.WarnContext(ctx, "register captcha verification failed", "error", err)
+			return gen.Register400ApplicationProblemPlusJSONResponse{
+				BadRequestApplicationProblemPlusJSONResponse: badRequest("captcha verification failed"),
+			}, nil
+		}
 	}
 
 	// Validate the password BEFORE any account/token work so a policy failure is a

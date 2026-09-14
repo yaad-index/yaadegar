@@ -19,7 +19,13 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const { data: methods } = await client.GET('/api/v1/auth/methods');
 	return {
 		returnTo: safeReturnTo(url.searchParams.get('return_to')) ?? '',
-		registrationEnabled: methods?.registration_enabled ?? false
+		registrationEnabled: methods?.registration_enabled ?? false,
+		// Anti-bot captcha (ADR-0013) for the register path: the same instance config the
+		// reserve surface reads, so the page can render the widget whose token the
+		// register endpoint verifies. Empty when captcha is disabled — the widget renders
+		// nothing and the action posts an empty token, which the no-op verifier accepts.
+		captchaProvider: methods?.captcha_provider ?? '',
+		captchaSiteKey: methods?.captcha_site_key ?? ''
 	};
 };
 
@@ -28,12 +34,15 @@ export const actions: Actions = {
 	// on any 2xx we show the same neutral "check your email" message whether or not the
 	// email already exists, so the UI never reveals which. A 403 (registration disabled
 	// on this instance) shows a distinct message; other failures surface the backend
-	// reason. The captcha is a no-op for now, so we send an empty captcha_token.
+	// reason. The captcha_token comes from the widget the page renders when the instance
+	// configures a provider (ADR-0013); it stays empty on an instance with captcha
+	// disabled, which the backend's no-op verifier accepts.
 	default: async ({ request, locals, cookies, url }) => {
 		const fd = await request.formData();
 		const email = String(fd.get('email') ?? '').trim();
 		const password = String(fd.get('password') ?? '');
 		const confirmPassword = String(fd.get('confirm_password') ?? '');
+		const captchaToken = String(fd.get('captcha_token') ?? '');
 		if (!email) return fail(400, { error: 'Enter your email.' });
 		if (!password) return fail(400, { error: 'Choose a password.' });
 		if (password !== confirmPassword) {
@@ -42,7 +51,7 @@ export const actions: Actions = {
 
 		const client = backendClient({ host: locals.host });
 		const { error: err, response } = await client.POST('/api/v1/auth/register', {
-			body: { email, password, captcha_token: '' }
+			body: { email, password, captcha_token: captchaToken }
 		});
 		if (response.status === 403) {
 			return fail(403, { disabled: true });
