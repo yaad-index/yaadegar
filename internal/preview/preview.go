@@ -62,12 +62,19 @@ func (p *Previewer) Preview(ctx context.Context, rawURL string) (Draft, error) {
 	// nothing at all. Anything that reasons about who answered has to use the
 	// served URL, or it compares the response against a host that was never
 	// involved in producing it.
+	served := strings.TrimSpace(page.FinalURL)
+	if served == "" {
+		served = rawURL
+	}
 	servedHost := u.Host
-	if su, err := url.Parse(strings.TrimSpace(page.FinalURL)); err == nil && su.Host != "" {
+	if su, err := url.Parse(served); err == nil && su.Host != "" {
 		servedHost = su.Host
+	} else {
+		served = rawURL // unparseable: resolve markup against the URL we do trust
 	}
 
-	d := extract(page.Body, rawURL)
+	// echo the pasted URL, resolve relative markup against the serving one.
+	d := extract(page.Body, rawURL, served)
 	// Check both hosts, not just the served one. A stub can carry the title of
 	// whichever end of the redirect it is impersonating, and refusing on the
 	// requested host is existing behaviour that must not regress.

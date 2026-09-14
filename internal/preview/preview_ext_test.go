@@ -287,3 +287,23 @@ func TestSafeFetcher_BlocksLoopback(t *testing.T) {
 	_, err := preview.NewSafeFetcher().Fetch(context.Background(), srv.URL)
 	require.Error(t, err, "the fetcher must refuse to connect to a loopback address")
 }
+
+// TestPreview_RelativeImageResolvesAgainstServingHost: a relative <img src> is
+// resolved against the document's actual base. After a redirect that is the
+// serving URL — resolving against the pasted short link would build an image URL
+// on a host that served nothing and cannot serve the image either.
+func TestPreview_RelativeImageResolvesAgainstServingHost(t *testing.T) {
+	p := preview.New(&preview.FakeFetcher{
+		Body: []byte(`<html><head><title>Branded Mug 400ml</title></head>
+<body><img src="/img/mug.jpg" width="600" height="600"></body></html>`),
+		FinalURL: "https://www.shop.example/dp/AbCd",
+	})
+	d, err := p.Preview(context.Background(), "https://shrt.example/d/AbCd")
+	require.NoError(t, err)
+	require.NotNil(t, d.ImageURL)
+	assert.Equal(t, "https://www.shop.example/img/mug.jpg", *d.ImageURL)
+
+	// The echoed URL still belongs to the user, not to the redirect target.
+	require.NotNil(t, d.URL)
+	assert.Equal(t, "https://shrt.example/d/AbCd", *d.URL)
+}

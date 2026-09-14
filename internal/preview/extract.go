@@ -14,10 +14,16 @@ import (
 )
 
 // extract parses HTML and builds a Draft by precedence: JSON-LD (schema.org
-// Product/Offer) → OpenGraph → Twitter card → <title>. The source URL is echoed
-// unchanged. All fields are optional.
-func extract(body []byte, sourceURL string) Draft {
-	d := Draft{URL: strp(sourceURL)}
+// Product/Offer) → OpenGraph → Twitter card → <title>. All fields are optional.
+//
+// The two URLs are deliberately separate and must not be collapsed. echoURL is
+// what the user pasted and is echoed into the draft unchanged — never rewritten,
+// so a redirect cannot turn their link into a tracking destination. baseURL is
+// the document's actual base, against which relative markup resolves; after a
+// redirect that is the serving URL, and resolving against the requested one
+// would build image URLs on a host that served nothing.
+func extract(body []byte, echoURL, baseURL string) Draft {
+	d := Draft{URL: strp(echoURL)}
 
 	root, err := html.Parse(bytes.NewReader(body))
 	if err != nil {
@@ -71,7 +77,7 @@ func extract(body []byte, sourceURL string) Draft {
 	// The DOM candidate is deliberately last: a page that publishes a social-card
 	// image keeps using it, and the crawl only matters for pages that publish none.
 	d.ImageURL = firstNonEmpty(ldImage, meta["og:image"], meta["og:image:url"], meta["twitter:image"],
-		absoluteImageURL(bestImg.url, sourceURL))
+		absoluteImageURL(bestImg.url, baseURL))
 
 	amount, currency := ldAmount, ldCurrency
 	if amount == "" {
