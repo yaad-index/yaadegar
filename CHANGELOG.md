@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.7](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.18.6...yaadegar-v0.18.7) (2026-09-15)
+
+
+### Bug Fixes
+
+* let the share-link input shrink so the Copy button stays on the page ([3f112f7](https://github.com/yaad-index/yaadegar/commit/3f112f7c819c9351d7ed0745414245593aed9259))
+
 ## [0.18.6](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.18.5...yaadegar-v0.18.6) (2026-09-14)
 
 
