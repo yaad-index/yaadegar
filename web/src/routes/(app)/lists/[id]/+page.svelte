@@ -398,8 +398,16 @@
 			what.
 		</p>
 		<div class="mt-3 flex gap-2">
+			<!-- min-w-0 is load-bearing, same mechanism as the edit-item row below: a
+			     flex child defaults to min-width:auto, and for a bare <input> that
+			     floors at the intrinsic width of its `size` (20 characters). Here that
+			     is 244px — smaller than the edit row's 274px because this input is
+			     text-ui (14px) rather than text-body (16px), so the number is a
+			     property of the type scale and not a constant to copy between rows.
+			     Without it the input refuses to shrink and pushes Copy off the page
+			     below 367px wide (#393). -->
 			<input
-				class="h-12 flex-1 rounded-card border border-line bg-surface px-3 font-ui text-ui text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+				class="h-12 min-w-0 flex-1 rounded-card border border-line bg-surface px-3 font-ui text-ui text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
 				readonly
 				value={shareUrl}
 				aria-label="Public share link"
