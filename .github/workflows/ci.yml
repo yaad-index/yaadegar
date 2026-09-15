@@ -85,6 +85,20 @@ jobs:
       - name: Check that workflow jobs check out before running repository scripts
         run: .github/scripts/require-checkout-before-repo-script.sh
 
+      # Assert no pipeline feeds a reader that exits early (#402). Split from its
+      # suite for the same reason as the two steps above: the suite proves the
+      # check can detect the shape, this proves the workflows currently carry none.
+      #
+      # ⚠️ This one is a SHAPE check rather than a behaviour check, and that is the
+      # whole point. The defect it guards is a race — the same byte-identical files
+      # passed on one run and failed on another — so no test of what the guard DOES
+      # can be relied on to fail when the guard is wrong. What the guard IS can be.
+      - name: Check the workflows for pipelines into early-exiting readers
+        run: .github/scripts/no-early-exit-pipe.sh
+
+      - name: Test the early-exiting-pipe check
+        run: .github/scripts/no-early-exit-pipe.test.sh
+
       - name: Vet
         run: go vet ./...
 
@@ -462,7 +476,7 @@ jobs:
           git tag -l 'yaadegar-v*' | xargs -r git tag -d
           docker build --build-arg VERSION= --tag yaadegar:derived-notag .
           got="$(docker run --rm yaadegar:derived-notag version)"
-          if printf '%s' "$got" | grep -Eq '^[0-9a-f]{7,40}(-dirty)?$'; then
+          if grep -Eq '^[0-9a-f]{7,40}(-dirty)?$' <<<"$got"; then
             echo "no-tag source build falls back to a bare commit: $got"
           else
             echo "no-tag source build reported '$got', want a bare commit hash (#259): the shallow-clone fallback is wrong"
@@ -505,111 +519,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # 🚨 Extracted to a script in #402. It used to be ~110 lines of shell inline
+      # here, which meant the only way to exercise it was to push a commit — and
+      # the defect it developed was a FALSE violation on a good tree, the one case
+      # that pushing a commit reports as "your change is broken". The script and
+      # its tests run the same bytes; the tests cover both directions.
       - name: Assert docker-publish still declares its dependency on a suite run
-        run: |
-          set -euo pipefail
-          wf=.github/workflows/docker-publish.yml
-          gate=require-suite
-          script=.github/scripts/require-suite-run.sh
+        run: .github/scripts/assert-publish-gate-declared.sh
 
-          # Isolate one job: from its `  <id>:` header to the next one, scanning only
-          # after `jobs:`. Job-level keys sit at 4 spaces and step bodies deeper, so a
-          # bare 2-space `key:` inside a job cannot end a block early.
-          job_block() {
-            awk -v want="  $1:" '
-              /^jobs:$/                     { injobs = 1; next }
-              !injobs                       { next }
-              /^  [A-Za-z0-9_-]+:$/         { inblock = ($0 == want) }
-              inblock                       { print }
-            ' "$wf"
-          }
-
-          gate_block="$(job_block "$gate")"
-          if [ -z "$gate_block" ]; then
-            echo "no '$gate' job in $wf (#356): the job that requires a green suite run for the commit being published is gone, or was renamed without updating this check"
-            exit 1
-          fi
-
-          publish_block="$(job_block publish)"
-          if [ -z "$publish_block" ]; then
-            echo "no 'publish' job in $wf (#356): renamed? this check can no longer find what it guards"
-            exit 1
-          fi
-
-          # Collect the needs declaration in EITHER YAML form: inline on the key
-          # (`needs: x`, `needs: [x, y]`) or a block sequence beneath it. Matching only
-          # the inline form would report the dependency as GONE after a purely
-          # cosmetic reformat — a false alarm that says "publishing is ungated" about a
-          # file where it is still gated, which is worse than silence because someone
-          # would go looking for a break that is not there.
-          needs_decl="$(printf '%s\n' "$publish_block" | awk '
-            /^    needs:/                { inneeds = 1; print; next }
-            inneeds && /^      *[-#]/    { print; next }
-            inneeds                      { inneeds = 0 }
-          ')"
-
-          if [ -z "$needs_decl" ]; then
-            echo "the publish job in $wf declares no 'needs:' at all (#356): images would publish from a commit with no suite run again, and every check in this repository would stay green while it happened"
-            exit 1
-          fi
-
-          # Word boundaries by hand: `require-suite` must not be satisfied by a
-          # longer id that merely contains it.
-          if ! printf '%s\n' "$needs_decl" | grep -Eq "(^|[^A-Za-z0-9_-])${gate}([^A-Za-z0-9_-]|$)"; then
-            echo "the publish job in $wf no longer needs '$gate' (#356): images would publish from a commit with no suite run again, and every check in this repository would stay green while it happened"
-            exit 1
-          fi
-
-          # The gate must still run the script. Without this the job could survive as
-          # an empty shell that satisfies the needs edge above and gates nothing.
-          #
-          # ⚠️ The two content checks below moved here from the job block when the
-          # loop was extracted (#359). They read the SCRIPT because that is where the
-          # text now lives; left pointing at the job block they would have passed
-          # trivially forever, since the block no longer contains either string —
-          # a guard that cannot fail, in the file whose whole subject is guards that
-          # cannot fail.
-          if ! printf '%s\n' "$gate_block" | grep -q "$script"; then
-            echo "the '$gate' job in $wf no longer runs $script (#356, #359): the needs edge would still be declared while the gate asserts nothing"
-            exit 1
-          fi
-
-          if [ ! -x "$script" ]; then
-            echo "$script is missing or not executable (#359): the gate job would fail on every publish, or worse, be quietly edited to inline something else"
-            exit 1
-          fi
-
-          if ! grep -q 'workflows/ci\.yml/runs' "$script"; then
-            echo "$script no longer looks up a ci.yml run (#356): the needs edge would still be declared while the gate asserts nothing"
-            exit 1
-          fi
-
-          # web.yml is path-filtered and legitimately does not run on most commits, so
-          # waiting for one of its runs would hang until timeout and block publishing
-          # from any commit that did not touch web/ — the never-reports-so-never-passes
-          # shape that keeps `web` out of the required checks on main. Catch it as a
-          # text change here rather than as a stuck release later.
-          if grep -q 'workflows/web\.yml/runs' "$script"; then
-            echo "$script waits on a web.yml run (#356): web.yml is path-filtered, so on a commit that touches no web path that run never exists and the gate would block the publish forever"
-            exit 1
-          fi
-
-          # 🚨 Both jobs must check out the commit the gate verified. require-suite
-          # proves a green suite run exists for github.sha; the publish checkout
-          # decides which tree is built. If those ever resolved differently, the gate
-          # would pass on one commit while the image came from another and the whole
-          # guarantee would be false with every check green. The default ref happens
-          # to resolve correctly for the triggers this file declares today, which is
-          # a coincidence of the trigger list rather than a property — so it is
-          # pinned, and asserted here so a later edit cannot quietly unpin it.
-          for job in "$gate" publish; do
-            if ! printf '%s\n' "$(job_block "$job")" | grep -q 'ref: .*github\.sha'; then
-              echo "the '$job' job in $wf checks out without pinning ref to github.sha (#356): the gate proves a run exists for that commit, and an unpinned checkout lets a later trigger build a different tree while the gate still passes"
-              exit 1
-            fi
-          done
-
-          echo "publish gate is declared: publish needs $gate, $gate runs $script, which consults ci.yml and does not wait on path-filtered web.yml; both jobs check out github.sha"
+      - name: Test the publish-gate declaration guard
+        run: .github/scripts/assert-publish-gate-declared.test.sh
 
       # 🚨 The declaration checks above say the wiring is intact. They do not run the
       # loop, which is what #359 is about: its shipped defect was a per-tick log line
@@ -673,11 +592,11 @@ jobs:
               echo "could not locate the publish step (- name: $step) in $wf (#268): renamed? the matched-pair forwarding check can no longer find its target"
               fail=1; continue
             fi
-            if ! printf '%s\n' "$block" | grep -q 'build-args:'; then
+            if ! grep -q 'build-args:' <<<"$block"; then
               echo "publish step '$step' has no build-args block — the resolved version is no longer forwarded (#193/#268)"
               fail=1; continue
             fi
-            if ! printf '%s\n' "$block" | grep -Eq 'VERSION=.*steps\.meta\.outputs\.version'; then
+            if ! grep -Eq 'VERSION=.*steps\.meta\.outputs\.version' <<<"$block"; then
               echo "publish step '$step' no longer forwards the resolved version as a VERSION build-arg set to steps.meta.outputs.version (#193/#268): a dev-stamped image would ship and only the post-push assert would notice"
               fail=1; continue
             fi

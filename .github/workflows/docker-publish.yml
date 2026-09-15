@@ -223,7 +223,7 @@ jobs:
           # build (+) tail (0.4.0-rc1, 0.4.0+build.5). A leading dot is not a valid
           # semver suffix, so this rejects a fourth numeric component (0.4.0.1) and
           # any trailing garbage.
-          if ! printf '%s\n' "$RESOLVED_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
+          if ! grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$' <<<"$RESOLVED_VERSION"; then
             echo "resolved release version '$RESOLVED_VERSION' is not semver-shaped (#190): refusing to build and publish a mislabelled image"
             exit 1
           fi

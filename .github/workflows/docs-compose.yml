@@ -103,9 +103,9 @@ jobs:
           # grep the rendered HTML for a marker only a real page carries. curl -f also
           # fails the job on a non-2xx. Host: routes the tenant through the web edge.
           html="$(curl -fsS -H 'Host: alice.localhost' http://localhost:3000/login)"
-          if ! printf '%s' "$html" | grep -qi 'yaadegar'; then
+          if ! grep -qi 'yaadegar' <<<"$html"; then
             echo "web served no recognisable page for the tenant (#258/#270): the compose starts but does not serve a site"
-            printf '%s\n' "$html" | head -20
+            head -20 <<<"$html"
             exit 1
           fi
           echo "web renders a site for the tenant"
