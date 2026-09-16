@@ -222,6 +222,26 @@
 			onchange={() => (settingsEditedSince = actionForm)}
 			class="mt-4 space-y-4"
 		>
+			<!-- Title (#404). First field on the tab: it is the list's name, and it is what
+			     an owner comes to this form to change. `required` blocks the obvious blank
+			     submit in the browser; the server refuses it regardless, since a title has
+			     no valid empty state. No maxlength — neither list creation nor the backend
+			     caps a title, and a cap invented only here would make a title that is fine
+			     to create impossible to re-save. -->
+			<label class="block">
+				<span class="mb-1 block font-ui text-ui font-medium text-ink">Title</span>
+				<input
+					id="list-title"
+					name="title"
+					type="text"
+					required
+					value={data.list.title ?? ''}
+					class="h-12 w-full rounded-card border border-line bg-surface px-3 font-ui text-body text-ink placeholder:text-ink-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+				/>
+				<p class="mt-1 font-ui text-ui text-ink-muted">
+					Shown on your list, on its share link and on your shared page.
+				</p>
+			</label>
 			<label class="block">
 				<span class="mb-1 block font-ui text-ui font-medium text-ink">Description</span>
 				<textarea

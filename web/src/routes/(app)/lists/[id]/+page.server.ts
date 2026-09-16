@@ -170,10 +170,23 @@ export const actions: Actions = {
 		return { edited: true };
 	},
 
-	// List-level settings: co-buy default (#100) + thank-you note default (#22) +
-	// reserver tier (#126).
+	// List-level settings: title (#404) + co-buy default (#100) + thank-you note
+	// default (#22) + reserver tier (#126).
 	settings: async ({ request, locals, params }) => {
 		const fd = await request.formData();
+		// List title (#404). The backend has accepted ListUpdate.title since it was
+		// written; this form simply never sent it. The title is read differently from
+		// the text fields below, and deliberately: `String(fd.get(x) ?? '')` collapses
+		// an ABSENT field and a BLANK one into the same '', which is exactly how a
+		// description is cleared. A title has no valid empty state (creation requires
+		// one), so the two cases have to stay apart — blank is a user clearing the
+		// list's name and is refused; absent means this form carried no title input,
+		// and leaves the stored title untouched rather than failing.
+		const titleRaw = fd.get('title');
+		const title = titleRaw === null ? undefined : String(titleRaw).trim();
+		if (title === '') {
+			return fail(400, { settingsError: 'Title is required.' });
+		}
 		const allow_cobuy = String(fd.get('allow_cobuy') ?? 'true') === 'true';
 		const thank_you_template = String(fd.get('thank_you_template') ?? '');
 		// List description (#143): raw markdown, stored as-is; the backend caps its
@@ -195,6 +208,9 @@ export const actions: Actions = {
 		const { error: err } = await client.PATCH('/api/v1/lists/{listId}', {
 			params: { path: { listId: params.id } },
 			body: {
+				// Omitted when the form carried no title input at all: PATCH is merge-patch,
+				// so an absent field leaves the stored title as it is.
+				...(title !== undefined ? { title } : {}),
 				allow_cobuy,
 				thank_you_template,
 				reserver_tier,
