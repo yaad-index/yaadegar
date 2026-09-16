@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.1](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.19.0...yaadegar-v0.19.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* **api:** reject a blank list title in the backend ([#410](https://github.com/yaad-index/yaadegar/issues/410)) ([d04a2ab](https://github.com/yaad-index/yaadegar/commit/d04a2abc6125c3ae2107ed4e560a8563d01dcf4c))
+
 ## [0.19.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.18.7...yaadegar-v0.19.0) (2026-09-16)
 
 
