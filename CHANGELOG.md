@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.18.7...yaadegar-v0.19.0) (2026-09-16)
+
+
+### Features
+
+* **web:** let a list owner change the title from settings ([7841e98](https://github.com/yaad-index/yaadegar/commit/7841e981b01dfc31164898acc4a5d8640d0fb87a))
+
 ## [0.18.7](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.18.6...yaadegar-v0.18.7) (2026-09-15)
 
 
