@@ -182,9 +182,19 @@ export const actions: Actions = {
 		// one), so the two cases have to stay apart — blank is a user clearing the
 		// list's name and is refused; absent means this form carried no title input,
 		// and leaves the stored title untouched rather than failing.
+		//
+		// The absent branch is unreachable from today's UI: one form posts to this
+		// action and it always carries the input. It is kept deliberately rather than
+		// left out as dead code, because a second consumer of this action is precisely
+		// the change that would otherwise reintroduce the bug without a symptom.
 		const titleRaw = fd.get('title');
 		const title = titleRaw === null ? undefined : String(titleRaw).trim();
 		if (title === '') {
+			// Deliberately rejects the WHOLE save, not just the title: an owner who
+			// blanks the title and edits the description in one submit loses the
+			// description edit too. The alternative is a partial write where some
+			// fields land and the title does not, leaving no way to tell from the form
+			// which of them took. Refusing the submit keeps the settings atomic.
 			return fail(400, { settingsError: 'Title is required.' });
 		}
 		const allow_cobuy = String(fd.get('allow_cobuy') ?? 'true') === 'true';
