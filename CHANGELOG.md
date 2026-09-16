@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.20.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.19.1...yaadegar-v0.20.0) (2026-09-16)
+
+
+### Features
+
+* **web:** let an owner set an item image without a successful scrape ([5e69628](https://github.com/yaad-index/yaadegar/commit/5e69628e04c5673ea8dccf461bdaeda71058986f))
+
+
+### Bug Fixes
+
+* **web:** an image from a previous scrape must not outlive its page ([c8e7560](https://github.com/yaad-index/yaadegar/commit/c8e756014b52891d3f01ac96b98584c3a73bc0d4))
+
 ## [0.19.1](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.19.0...yaadegar-v0.19.1) (2026-09-16)
 
 
