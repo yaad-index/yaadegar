@@ -183,10 +183,11 @@ export const actions: Actions = {
 		// list's name and is refused; absent means this form carried no title input,
 		// and leaves the stored title untouched rather than failing.
 		//
-		// The absent branch is unreachable from today's UI: one form posts to this
-		// action and it always carries the input. It is kept deliberately rather than
-		// left out as dead code, because a second consumer of this action is precisely
-		// the change that would otherwise reintroduce the bug without a symptom.
+		// The absent branch is live, not defensive. This action is an HTTP endpoint and
+		// the form is one caller of it, not the definition of it: a direct POST that
+		// omits the field reaches here today — verified against a running instance, the
+		// save succeeds and the stored title is left alone. The form always supplies the
+		// input, which is the only reason the branch never fires from the UI.
 		const titleRaw = fd.get('title');
 		const title = titleRaw === null ? undefined : String(titleRaw).trim();
 		if (title === '') {
