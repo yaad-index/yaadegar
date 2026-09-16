@@ -557,9 +557,11 @@ type ListCreate struct {
 	ReserverConfirmWindow *int `json:"reserver_confirm_window,omitempty"`
 
 	// ReserverTier Reserver-identity tier override (ADR-0007): full_guest | email_confirmed | registered. Omit (or null) to inherit the instance default. full_guest reserves with a one-time capability token; email_confirmed requires the giver to confirm an email before the reservation activates; registered (deferred) requires a giver account.
-	ReserverTier *string         `json:"reserver_tier,omitempty"`
-	Title        string          `json:"title"`
-	Visibility   *ListVisibility `json:"visibility,omitempty"`
+	ReserverTier *string `json:"reserver_tier,omitempty"`
+
+	// Title The list's name. Stored trimmed; a blank or whitespace-only value is rejected with 400.
+	Title      string          `json:"title"`
+	Visibility *ListVisibility `json:"visibility,omitempty"`
 }
 
 // ListPage defines model for ListPage.
@@ -585,9 +587,11 @@ type ListUpdate struct {
 	ReserverTier          NullableString `json:"reserver_tier,omitempty"`
 
 	// ThankYouTemplate List-level default owner→giver thank-you note body (#22), emailed to a reserver when their reservation goes active. "" disables it. A `{item}` token is replaced with the item name; the note carries no giver identity.
-	ThankYouTemplate *string         `json:"thank_you_template,omitempty"`
-	Title            *string         `json:"title,omitempty"`
-	Visibility       *ListVisibility `json:"visibility,omitempty"`
+	ThankYouTemplate *string `json:"thank_you_template,omitempty"`
+
+	// Title The list's name. Stored trimmed; a blank or whitespace-only value is rejected with 400. Absent leaves the existing title unchanged.
+	Title      *string         `json:"title,omitempty"`
+	Visibility *ListVisibility `json:"visibility,omitempty"`
 }
 
 // ListVisibility defines model for ListVisibility.

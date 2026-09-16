@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 
 	"github.com/yaad-index/yaadegar/internal/storage"
 )
@@ -142,8 +143,30 @@ func scanList(s scanner) (storage.List, error) {
 	return l, nil
 }
 
+// storedTitle returns the form a title is stored in: trimmed, and never empty.
+//
+// Both list writes go through it, and they are the only two statements in the tree
+// that put a title into the lists table, so this is the floor the rule sits on
+// (#406). Trimming here rather than only rejecting means the invariant is the same
+// for every client: a stored title has no surrounding whitespace, and a caller that
+// forgets to trim cannot create a title that a later re-save would refuse. The
+// whitespace class is unicode.IsSpace via strings.TrimSpace — wider than SQL's
+// btrim, so a non-breaking space is caught too.
+func storedTitle(title string) (string, error) {
+	t := strings.TrimSpace(title)
+	if t == "" {
+		return "", storage.ErrInvalidListTitle
+	}
+	return t, nil
+}
+
 // Create inserts the list and records ownerID as its sole owner, atomically.
 func (r listRepo) Create(ctx context.Context, l storage.List, ownerID string) (storage.List, error) {
+	title, err := storedTitle(l.Title)
+	if err != nil {
+		return storage.List{}, err
+	}
+	l.Title = title
 	if l.ID == "" {
 		l.ID = newID()
 	}
@@ -289,6 +312,11 @@ func (r listRepo) ListedByOwner(ctx context.Context, ownerID string, p storage.P
 }
 
 func (r listRepo) Update(ctx context.Context, l storage.List) (storage.List, error) {
+	title, err := storedTitle(l.Title)
+	if err != nil {
+		return storage.List{}, err
+	}
+	l.Title = title
 	res, err := r.db.ExecContext(ctx, r.rb(
 		`UPDATE lists SET title = ?, visibility = ?, event_date = ?,
 		        decay_days = ?, active = ?, reserver_tier = ?, reserver_confirm_window = ?,

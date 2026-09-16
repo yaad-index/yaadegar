@@ -1024,6 +1024,7 @@ export interface components {
         /** @enum {string} */
         ListVisibility: "public" | "unlisted" | "private";
         ListCreate: {
+            /** @description The list's name. Stored trimmed; a blank or whitespace-only value is rejected with 400. */
             title: string;
             visibility?: components["schemas"]["ListVisibility"];
             /**
@@ -1039,6 +1040,7 @@ export interface components {
             reserver_confirm_window?: number | null;
         };
         ListUpdate: {
+            /** @description The list's name. Stored trimmed; a blank or whitespace-only value is rejected with 400. Absent leaves the existing title unchanged. */
             title?: string;
             visibility?: components["schemas"]["ListVisibility"];
             event_date?: components["schemas"]["NullableDate"];

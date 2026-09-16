@@ -30,6 +30,13 @@ var (
 	// full format + reserved-name policy is enforced at the provisioning boundary
 	// (see internal/tenant); this is the storage floor.
 	ErrInvalidSubdomain = errors.New("storage: invalid subdomain")
+	// ErrInvalidListTitle is returned by the list writes for a title that is empty
+	// or only whitespace (#406). A list's name had been validated nowhere but the
+	// web forms, and the two of them disagreed — creation accepted a whitespace-only
+	// title that the settings form would then refuse to re-save. This is the storage
+	// floor, so the rule holds for every API client rather than for the surfaces that
+	// happen to check first.
+	ErrInvalidListTitle = errors.New("storage: invalid list title")
 )
 
 // Driver selects a backing database.

@@ -174,8 +174,10 @@ export const actions: Actions = {
 	// default (#22) + reserver tier (#126).
 	settings: async ({ request, locals, params }) => {
 		const fd = await request.formData();
-		// List title (#404). The backend has accepted ListUpdate.title since it was
-		// written; this form simply never sent it. The title is read differently from
+		// List title (#404, rule moved to the backend in #406). The storage write path
+		// now trims and refuses a blank title and the API answers 400, so the check
+		// below is the fast local message for the same rule rather than this surface's
+		// own policy. The title is read differently from
 		// the text fields below, and deliberately: `String(fd.get(x) ?? '')` collapses
 		// an ABSENT field and a BLANK one into the same '', which is exactly how a
 		// description is cleared. A title has no valid empty state (creation requires

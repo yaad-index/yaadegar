@@ -19,6 +19,12 @@ const maxListDescriptionLen = 2000
 // before the "+N" overflow chip (#207): the delivered design shows up to three.
 const previewsPerCard = 3
 
+// invalidListTitleDetail is the client-facing wording for a blank or
+// whitespace-only list title (#406). One constant for both the create and the
+// update surface, because the two disagreeing about a rule they share is the
+// defect this closes.
+const invalidListTitleDetail = "a list title cannot be blank"
+
 func (s *Server) CreateList(ctx context.Context, req gen.CreateListRequestObject) (gen.CreateListResponseObject, error) {
 	ts, _, ok := s.tenantStore(ctx)
 	owner, ok2 := ownerFromContext(ctx)
@@ -53,6 +59,11 @@ func (s *Server) CreateList(ctx context.Context, req gen.CreateListRequestObject
 		Active:                       true,
 	}, owner.ID)
 	if err != nil {
+		if errors.Is(err, storage.ErrInvalidListTitle) {
+			return gen.CreateList400ApplicationProblemPlusJSONResponse{
+				BadRequestApplicationProblemPlusJSONResponse: badRequest(invalidListTitleDetail),
+			}, nil
+		}
 		return nil, err
 	}
 	return gen.CreateList201JSONResponse(toGenList(created)), nil
@@ -232,6 +243,13 @@ func (s *Server) UpdateList(ctx context.Context, req gen.UpdateListRequestObject
 
 	updated, err := ts.Lists().Update(ctx, l)
 	if err != nil {
+		// A blank or whitespace-only title is the client's mistake, not a server
+		// fault (#406), so it answers 400 rather than falling through to a 500.
+		if errors.Is(err, storage.ErrInvalidListTitle) {
+			return gen.UpdateList400ApplicationProblemPlusJSONResponse{
+				BadRequestApplicationProblemPlusJSONResponse: badRequest(invalidListTitleDetail),
+			}, nil
+		}
 		return nil, err
 	}
 	return gen.UpdateList200JSONResponse(toGenList(updated)), nil

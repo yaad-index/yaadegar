@@ -1743,7 +1743,14 @@ components:
       type: object
       required: [title]
       properties:
-        title: { type: string }
+        # A title is stored trimmed and may not be blank (#406). The rule is enforced
+        # on the storage write path, so it holds for every client; a title that is
+        # empty or only whitespace is answered with 400, not silently accepted.
+        title:
+          type: string
+          description: >
+            The list's name. Stored trimmed; a blank or whitespace-only value is
+            rejected with 400.
         visibility: { $ref: "#/components/schemas/ListVisibility" }
         event_date:
           type: [string, "null"]
@@ -1779,7 +1786,14 @@ components:
       # null clears it (to inherit the instance default, or no event date), a value
       # sets it. See the Nullable* wrapper schemas.
       properties:
-        title: { type: string }
+        # Same rule as ListCreate (#406): absent leaves the title alone, but a
+        # present value that trims to empty is rejected with 400 rather than
+        # renaming the list to nothing.
+        title:
+          type: string
+          description: >
+            The list's name. Stored trimmed; a blank or whitespace-only value is
+            rejected with 400. Absent leaves the existing title unchanged.
         visibility: { $ref: "#/components/schemas/ListVisibility" }
         event_date: { $ref: "#/components/schemas/NullableDate" }
         decay_days: { $ref: "#/components/schemas/NullableInt" }
