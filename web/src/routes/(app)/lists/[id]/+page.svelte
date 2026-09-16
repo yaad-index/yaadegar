@@ -495,10 +495,34 @@
 				Fetch
 			</Button>
 		</div>
+		<!-- Image link (#414). This was a hidden input the preview alone could fill, which
+		     made a failed scrape unrecoverable: no image, and no way to supply one. It is
+		     an ordinary field now, prefilled by Fetch when that works and typed by hand
+		     when it does not. The thumbnail moved here from the price row so the preview
+		     sits with the field it previews rather than beside the currency box. -->
+		<!-- Carries what the last scrape put in the image box, so ?/preview can tell a
+		     scraped value from a typed one without any client-side bookkeeping. -->
+		<input type="hidden" name="image_from_scrape" bind:value={$form.image_from_scrape} />
+		<div class="flex items-end gap-2">
+			<div class="flex-1">
+				<Field
+					label="Image link"
+					name="image_url"
+					placeholder="Image URL (optional)"
+					hint="Fetch fills this in when the page has an image. Paste or edit it yourself if not."
+					bind:value={$form.image_url}
+				/>
+			</div>
+			{#if $form.image_url}
+				<img
+					src={$form.image_url}
+					alt=""
+					class="mb-1 h-12 w-12 rounded-card border border-line object-cover"
+				/>
+			{/if}
+		</div>
 		<!-- Editable price (major units) + currency: prefilled from a scrape but editable or
-		     clearable. The amount drives the hidden price_minor the ?/add action reads. The
-		     scraped image rides along read-only as a thumbnail. -->
-		<input type="hidden" name="image_url" bind:value={$form.image_url} />
+		     clearable. The amount drives the hidden price_minor the ?/add action reads. -->
 		<input
 			type="hidden"
 			name="price_minor"
@@ -530,13 +554,6 @@
 			{#if priceAmount != null && !$form.price_currency}
 				<span class="mb-3 font-ui text-ui text-red-600">Add a 3-letter currency for the price.</span
 				>
-			{/if}
-			{#if $form.image_url}
-				<img
-					src={$form.image_url}
-					alt=""
-					class="mb-1 h-10 w-10 rounded-card border border-line object-cover"
-				/>
 			{/if}
 		</div>
 		<label class="block">
@@ -684,6 +701,17 @@
 							name="url"
 							placeholder="Link (optional)"
 							value={item.url ?? ''}
+						/>
+						<!-- Image link (#414): an item's image was previously settable only by a
+						     successful scrape at creation, so a wrong or missing one was permanent.
+						     Emptying this box removes the image, which the link field above cannot
+						     do — see the note in the ?/edit action for why the two differ. -->
+						<input
+							class="h-12 w-full rounded-card border border-line bg-surface px-3 font-ui text-body text-ink placeholder:text-ink-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+							name="image_url"
+							placeholder="Image link (optional — empty removes it)"
+							aria-label="Image link"
+							value={item.image_url ?? ''}
 						/>
 						<!-- Editable price (major units) + currency, prefilled from the item.
 						     Set-if-present: ?/edit includes price only when an amount is entered;

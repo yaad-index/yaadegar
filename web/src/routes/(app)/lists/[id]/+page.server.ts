@@ -11,8 +11,18 @@ const addItemSchema = z.object({
 	url: z.string().url('Must be a valid URL').optional().or(z.literal('')),
 	note: z.string().max(4000).optional(),
 	quantity_wanted: z.coerce.number().int().min(1).default(1),
-	// image_url rides along from a URL preview (scraped, not directly typed).
+	// image_url is prefilled by a URL preview and is also typed directly (#414). It
+	// used to be preview-only, which made the scrape the single source for an item's
+	// image — and the scrape fails often, so a failed one left an item that could not
+	// be finished by hand. The scrape is a convenience over the manual path now, not
+	// the only path.
 	image_url: z.string().optional(),
+	// What the LAST scrape put in image_url, carried on the form so the next scrape can
+	// tell where the current value came from. If image_url still equals this, nobody
+	// has touched it since; if it differs, a person typed it. That distinction is the
+	// whole of the provenance rule below, and it needs no client-side bookkeeping.
+	// Never sent to the backend — it exists only between the form and ?/preview.
+	image_from_scrape: z.string().optional(),
 	// price_minor is driven by the owner-editable price amount (major units → minor,
 	// #128 price editing); an empty amount submits '' which must mean "no price", so
 	// preprocess it to undefined rather than coercing to 0.
@@ -105,14 +115,56 @@ export const actions: Actions = {
 			body: { url: link }
 		});
 		if (err || !data) {
-			return message(form, "Couldn't fetch that page — enter the details manually.");
+			return message(form, "Couldn't fetch that page — fill the fields in by hand.");
 		}
 		if (data.name) form.data.name = data.name;
 		if (data.url) form.data.url = data.url;
-		form.data.image_url = data.image_url ?? undefined;
+		// Provenance, not merely "keep what is there" (#414 review). A scrape that finds
+		// no image must not undo work a PERSON did — but it must not preserve what a
+		// PREVIOUS scrape left either, because that image was typed by nobody and
+		// belongs to a URL no longer in the form. Keeping it produced an item with one
+		// page's name and another page's picture, under a message saying there was no
+		// image while the thumbnail showed one.
+		//
+		// The current value came from the last scrape exactly when it still equals what
+		// that scrape set; anything else means a person edited it.
+		const wasScraped =
+			Boolean(form.data.image_url) && form.data.image_url === form.data.image_from_scrape;
+		let keptTypedImage = false;
+		if (data.image_url) {
+			form.data.image_url = data.image_url;
+			form.data.image_from_scrape = data.image_url;
+		} else if (wasScraped) {
+			form.data.image_url = undefined;
+			form.data.image_from_scrape = undefined;
+		} else {
+			keptTypedImage = Boolean(form.data.image_url);
+		}
 		form.data.price_minor = data.price?.amount_minor ?? undefined;
 		form.data.price_currency = data.price?.currency ?? undefined;
-		return message(form, 'Fetched — review and add.');
+		// Name what came back (#414). An empty image box reads identically whether the
+		// page had no image, the fetch was never run, or it failed — three states with
+		// one appearance, and the owner cannot tell whether to retry, paste one, or
+		// move on. Saying which fields were filled makes the empty ones legible.
+		const filled = [
+			data.name ? 'name' : '',
+			data.price?.amount_minor != null ? 'price' : '',
+			data.image_url ? 'image' : ''
+		].filter(Boolean);
+		if (filled.length === 0) {
+			return message(form, 'Fetched that page, but found nothing to fill in — enter it by hand.');
+		}
+		if (!data.image_url) {
+			// The message has to match what the box actually shows, or it asserts one
+			// thing while the thumbnail displays another.
+			return message(
+				form,
+				keptTypedImage
+					? `Fetched ${filled.join(' and ')} — no image on that page, so the one you entered is unchanged.`
+					: `Fetched ${filled.join(' and ')} — no image on that page, so paste an image link if you want one.`
+			);
+		}
+		return message(form, `Fetched ${filled.join(', ')} — review and add.`);
 	},
 
 	edit: async ({ request, locals }) => {
@@ -125,6 +177,18 @@ export const actions: Actions = {
 		// Per-item co-buy override (#100/#111): 'true'/'false' set it; '' ("use list
 		// default") sends explicit null, which clears the override back to inheriting
 		// the list default (three-state PATCH).
+		// Item image (#414). Sent on every edit that carries the field, so emptying the
+		// box removes a wrong scraped image instead of leaving it stuck — a scrape
+		// guesses, so "replace it" is not enough on its own.
+		//
+		// Absent and blank are kept apart for the same reason as a list title: the
+		// form always carries this input, so a missing one means some other caller,
+		// and clearing an image it never knew about would be a write nobody asked for.
+		// It differs from `url` just above, which is set-if-present and so cannot be
+		// cleared at all. That is the backend's set-if-present PATCH, unchanged here
+		// rather than widened to a field nobody reported.
+		const imageRaw = fd.get('image_url');
+		const image_url = imageRaw === null ? undefined : String(imageRaw).trim();
 		const allowCobuyRaw = String(fd.get('allow_cobuy') ?? '');
 		const allow_cobuy = allowCobuyRaw === 'true' ? true : allowCobuyRaw === 'false' ? false : null;
 		// Per-item thank-you override (#22/#111): "use list default" checkbox → null
@@ -160,6 +224,7 @@ export const actions: Actions = {
 				name,
 				quantity_wanted: Number.isFinite(quantity) ? quantity : 1,
 				url: url || undefined,
+				...(image_url !== undefined ? { image_url } : {}),
 				note: note || undefined,
 				allow_cobuy,
 				thank_you_template,
