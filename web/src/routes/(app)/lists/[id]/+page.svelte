@@ -500,6 +500,9 @@
 		     an ordinary field now, prefilled by Fetch when that works and typed by hand
 		     when it does not. The thumbnail moved here from the price row so the preview
 		     sits with the field it previews rather than beside the currency box. -->
+		<!-- Carries what the last scrape put in the image box, so ?/preview can tell a
+		     scraped value from a typed one without any client-side bookkeeping. -->
+		<input type="hidden" name="image_from_scrape" bind:value={$form.image_from_scrape} />
 		<div class="flex items-end gap-2">
 			<div class="flex-1">
 				<Field

@@ -135,4 +135,64 @@ describe('telling a failed scrape from one that was never run (#414)', () => {
 		})) as { form: { data: Record<string, unknown> } };
 		expect(res.form.data.image_url).toBe('https://img.example/mine.png');
 	});
+
+	it('says the typed image is being kept, rather than telling you to paste one', async () => {
+		const res = await call('preview', {
+			url: 'https://paste.example/noimage',
+			image_url: 'https://img.example/mine.png'
+		});
+		expect(msg(res)).toMatch(/unchanged/i);
+		expect(msg(res)).not.toMatch(/paste an image link/i);
+	});
+});
+
+// Found in the browser, not in the diff: fetch a page with an image, then fetch a
+// DIFFERENT page without one. The first page's image stayed in the box and the
+// thumbnail kept showing it, while the message said there was no image — and adding
+// at that point stored one page's name with another page's picture.
+//
+// "Keep what is there" was the wrong rule. A value a person typed must survive a
+// scrape; a value a previous scrape left behind was typed by nobody and belongs to a
+// URL no longer in the form.
+describe('an image from a previous scrape does not outlive its page (#414 review)', () => {
+	it('drops the earlier scraped image when the next page has none', async () => {
+		const first = (await call('preview', { url: 'https://paste.example/x' })) as {
+			form: { data: Record<string, string> };
+		};
+		expect(first.form.data.image_url).toBe('https://img.example/w.png');
+
+		// The form posts back what the first fetch left, exactly as the browser does.
+		const second = (await call('preview', {
+			url: 'https://paste.example/noimage',
+			image_url: first.form.data.image_url,
+			image_from_scrape: first.form.data.image_from_scrape
+		})) as { form: { data: Record<string, unknown> } };
+
+		expect(second.form.data.image_url).toBeFalsy();
+		expect(msg(second)).toMatch(/no image/i);
+		// The message and the box now agree — that disagreement was the defect.
+		expect(msg(second)).toMatch(/paste an image link/i);
+	});
+
+	it('still keeps an image the person typed over a scraped one', async () => {
+		const first = (await call('preview', { url: 'https://paste.example/x' })) as {
+			form: { data: Record<string, string> };
+		};
+		// The person replaces the scraped image with their own, then fetches again.
+		const second = (await call('preview', {
+			url: 'https://paste.example/noimage',
+			image_url: 'https://img.example/mine.png',
+			image_from_scrape: first.form.data.image_from_scrape
+		})) as { form: { data: Record<string, unknown> } };
+
+		expect(second.form.data.image_url).toBe('https://img.example/mine.png');
+		expect(msg(second)).toMatch(/unchanged/i);
+	});
+
+	it('records the scraped image as scraped so the next fetch can tell', async () => {
+		const res = (await call('preview', { url: 'https://paste.example/x' })) as {
+			form: { data: Record<string, unknown> };
+		};
+		expect(res.form.data.image_from_scrape).toBe('https://img.example/w.png');
+	});
 });

@@ -17,6 +17,12 @@ const addItemSchema = z.object({
 	// be finished by hand. The scrape is a convenience over the manual path now, not
 	// the only path.
 	image_url: z.string().optional(),
+	// What the LAST scrape put in image_url, carried on the form so the next scrape can
+	// tell where the current value came from. If image_url still equals this, nobody
+	// has touched it since; if it differs, a person typed it. That distinction is the
+	// whole of the provenance rule below, and it needs no client-side bookkeeping.
+	// Never sent to the backend — it exists only between the form and ?/preview.
+	image_from_scrape: z.string().optional(),
 	// price_minor is driven by the owner-editable price amount (major units → minor,
 	// #128 price editing); an empty amount submits '' which must mean "no price", so
 	// preprocess it to undefined rather than coercing to 0.
@@ -113,9 +119,27 @@ export const actions: Actions = {
 		}
 		if (data.name) form.data.name = data.name;
 		if (data.url) form.data.url = data.url;
-		// A scrape that returns no image must not overwrite one the owner typed: the
-		// fetch is there to fill gaps, not to undo manual work (#414).
-		if (data.image_url) form.data.image_url = data.image_url;
+		// Provenance, not merely "keep what is there" (#414 review). A scrape that finds
+		// no image must not undo work a PERSON did — but it must not preserve what a
+		// PREVIOUS scrape left either, because that image was typed by nobody and
+		// belongs to a URL no longer in the form. Keeping it produced an item with one
+		// page's name and another page's picture, under a message saying there was no
+		// image while the thumbnail showed one.
+		//
+		// The current value came from the last scrape exactly when it still equals what
+		// that scrape set; anything else means a person edited it.
+		const wasScraped =
+			Boolean(form.data.image_url) && form.data.image_url === form.data.image_from_scrape;
+		let keptTypedImage = false;
+		if (data.image_url) {
+			form.data.image_url = data.image_url;
+			form.data.image_from_scrape = data.image_url;
+		} else if (wasScraped) {
+			form.data.image_url = undefined;
+			form.data.image_from_scrape = undefined;
+		} else {
+			keptTypedImage = Boolean(form.data.image_url);
+		}
 		form.data.price_minor = data.price?.amount_minor ?? undefined;
 		form.data.price_currency = data.price?.currency ?? undefined;
 		// Name what came back (#414). An empty image box reads identically whether the
@@ -131,9 +155,13 @@ export const actions: Actions = {
 			return message(form, 'Fetched that page, but found nothing to fill in — enter it by hand.');
 		}
 		if (!data.image_url) {
+			// The message has to match what the box actually shows, or it asserts one
+			// thing while the thumbnail displays another.
 			return message(
 				form,
-				`Fetched ${filled.join(' and ')} — no image on that page, so paste an image link if you want one.`
+				keptTypedImage
+					? `Fetched ${filled.join(' and ')} — no image on that page, so the one you entered is unchanged.`
+					: `Fetched ${filled.join(' and ')} — no image on that page, so paste an image link if you want one.`
 			);
 		}
 		return message(form, `Fetched ${filled.join(', ')} — review and add.`);
