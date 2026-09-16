@@ -5,8 +5,14 @@ import { z } from 'zod';
 import { backendClient } from '$lib/server/api';
 import type { Actions, PageServerLoad } from './$types';
 
+// The title rule now lives in the backend (#406): the storage write path trims and
+// refuses a blank title, and the API answers 400. This schema restates it only for
+// the fast client-side message — hence `.trim()` before `.min(1)`, which the bare
+// `.min(1)` here lacked, so a whitespace-only title passed creation and then could
+// not be re-saved from settings. Agreeing with the floor, not carrying a rule of
+// its own.
 const createListSchema = z.object({
-	title: z.string().min(1, 'Title is required')
+	title: z.string().trim().min(1, 'Title is required')
 });
 
 export const load: PageServerLoad = async ({ locals, parent }) => {

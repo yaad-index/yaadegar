@@ -480,3 +480,36 @@ func TestPostgres_MatchExpiryVsConfirmRace(t *testing.T) {
 		}
 	}
 }
+
+// TestPostgres_ListTitleFloor runs the #406 title rule against a real Postgres.
+//
+// The rule is Go code above the SQL, so it cannot differ by dialect the way a CHECK
+// constraint could — but "cannot differ" is an argument, and this is the cheap way
+// to have the claim tested in both backends instead. If the rule is ever pushed
+// down into a constraint, this is where the two dialects would start to disagree.
+func TestPostgres_ListTitleFloor(t *testing.T) {
+	ctx := context.Background()
+	st := newPostgresStore(t)
+	suffix := uniqueSuffix(t)
+
+	ten, err := st.CreateTenant(ctx, storage.Tenant{Subdomain: "title-" + suffix})
+	require.NoError(t, err)
+	ts := st.ForTenant(ten)
+	owner, err := ts.Users().Create(ctx, storage.User{Name: "Owner"})
+	require.NoError(t, err)
+
+	// Trailing entry is a non-breaking space: btrim's default set misses it, so a
+	// row screened in SQL can look clean while the rule still refuses it.
+	for _, title := range []string{"", "   ", "\t", "\u00a0"} {
+		_, err := ts.Lists().Create(ctx, storage.List{Title: title}, owner.ID)
+		require.ErrorIs(t, err, storage.ErrInvalidListTitle, "title %q", title)
+	}
+
+	list, err := ts.Lists().Create(ctx, storage.List{Title: "  Padded  "}, owner.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "Padded", list.Title)
+
+	list.Title = "   "
+	_, err = ts.Lists().Update(ctx, list)
+	require.ErrorIs(t, err, storage.ErrInvalidListTitle)
+}
