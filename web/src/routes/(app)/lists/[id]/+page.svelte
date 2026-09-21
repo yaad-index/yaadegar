@@ -157,16 +157,20 @@
 	const liveItems = $derived(data.items.filter((i) => !i.archived_at));
 	const archivedItems = $derived(data.items.filter((i) => i.archived_at));
 
-	// The archive result, read the same way as the import and settings results
-	// above (#337): held by identity so a banner does not outlive the state it
-	// describes. It names the item because by the time it renders, that item's row
-	// has moved to the other group — a message that cannot say WHICH item was
-	// archived is one the owner has to go and verify.
-	let archiveEditedSince = $state.raw<ActionData | undefined>(undefined);
+	// The archive result. It names the item because by the time it renders, that
+	// item's row has moved to the other group — a message that cannot say WHICH
+	// item was archived is one the owner has to go and verify.
+	//
+	// ⚠️ Deliberately NOT held by identity the way the settings and import results
+	// above are (#337), and the difference is in what the message claims rather
+	// than in how it is read. "Settings saved." describes a state the next
+	// keystroke falsifies, so it has to be invalidated when the user starts
+	// editing again. "Archived “X”." describes a completed act, and no later
+	// editing makes it untrue — there is no continuous-input state here to go
+	// stale against. A guard copied across for symmetry would guard nothing while
+	// implying it guarded something (caught in review on #427).
 	const archiveResult = $derived(
-		actionForm && actionForm !== archiveEditedSince && 'archivedName' in actionForm
-			? actionForm
-			: undefined
+		actionForm && 'archivedName' in actionForm ? actionForm : undefined
 	);
 	const archiveError = $derived(
 		actionForm && 'archiveError' in actionForm ? actionForm.archiveError : undefined
