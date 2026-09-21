@@ -342,5 +342,44 @@ export const actions: Actions = {
 		});
 		if (err) return fail(400, { deleteError: 'Could not delete the item.' });
 		return { deleted: true };
+	},
+
+	// Archive (#419). The item name is carried through the form rather than looked
+	// up again, so the confirmation can say WHICH item was archived: the row it came
+	// from has moved to the archived group by the time the result renders, and a
+	// message that cannot name the item is one the owner has to go and verify.
+	archive: async ({ request, locals }) => {
+		const fd = await request.formData();
+		const itemId = String(fd.get('item_id') ?? '');
+		const itemName = String(fd.get('item_name') ?? '');
+		if (!itemId) return fail(400, {});
+		const client = backendClient({ host: locals.host, token: locals.token });
+		const { data, error: err } = await client.POST('/api/v1/items/{itemId}/archive', {
+			params: { path: { itemId } }
+		});
+		if (err) return fail(400, { archiveError: 'Could not archive that item.' });
+		// Warnings are reported even though the archive succeeded — they are things
+		// the owner could not see, not reasons it failed (#419 Q2: warn, not block).
+		return {
+			archived: true,
+			archivedName: itemName,
+			// flatMap rather than map+filter(Boolean): the code is optional in the
+			// generated type and filter(Boolean) does not narrow it, so the page would
+			// be handed (string | undefined)[] to index a copy map with.
+			archiveWarnings: (data?.warnings ?? []).flatMap((w) => (w.code ? [w.code] : []))
+		};
+	},
+
+	unarchive: async ({ request, locals }) => {
+		const fd = await request.formData();
+		const itemId = String(fd.get('item_id') ?? '');
+		const itemName = String(fd.get('item_name') ?? '');
+		if (!itemId) return fail(400, {});
+		const client = backendClient({ host: locals.host, token: locals.token });
+		const { error: err } = await client.DELETE('/api/v1/items/{itemId}/archive', {
+			params: { path: { itemId } }
+		});
+		if (err) return fail(400, { archiveError: 'Could not put that item back.' });
+		return { unarchived: true, archivedName: itemName };
 	}
 };

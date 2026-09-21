@@ -150,6 +150,34 @@
 		purchased: 'bg-surface-alt text-ink-muted'
 	};
 
+	// Archive (#419). Live and archived items arrive in one list — the owner view is
+	// the only read that includes archived ones, because archiving is reversible and
+	// an owner who cannot see an archived item cannot put it back. They are split
+	// here rather than on the server so a single fetch serves both groups.
+	const liveItems = $derived(data.items.filter((i) => !i.archived_at));
+	const archivedItems = $derived(data.items.filter((i) => i.archived_at));
+
+	// The archive result, read the same way as the import and settings results
+	// above (#337): held by identity so a banner does not outlive the state it
+	// describes. It names the item because by the time it renders, that item's row
+	// has moved to the other group — a message that cannot say WHICH item was
+	// archived is one the owner has to go and verify.
+	let archiveEditedSince = $state.raw<ActionData | undefined>(undefined);
+	const archiveResult = $derived(
+		actionForm && actionForm !== archiveEditedSince && 'archivedName' in actionForm
+			? actionForm
+			: undefined
+	);
+	const archiveError = $derived(
+		actionForm && 'archiveError' in actionForm ? actionForm.archiveError : undefined
+	);
+	// Copy for each warning code. The backend sends a code, never a sentence, so the
+	// wording lives here and can be reworded without a contract change (#419 Q2).
+	const archiveWarningCopy: Record<string, string> = {
+		cobuy_match_pending:
+			'Two givers were part-way through arranging a co-buy for it. Their pledges are untouched, but they can no longer finish here.'
+	};
+
 	// Which item's editor is open (only one at a time).
 	let editingId = $state<string | null>(null);
 
@@ -350,6 +378,13 @@
 		<p class="font-display text-title text-ink-heading">Import / export</p>
 		<p class="mt-1 font-ui text-ui text-ink-muted">
 			Back up your items or move them elsewhere. Never includes who reserved.
+		</p>
+		<!-- Disclosed rather than silent (#419): an export that quietly drops rows is a
+		     bad surprise even when the omission is correct. The file has no field that
+		     marks an item finished, so an archived item carried into a backup would come
+		     back from a re-import live and reservable. -->
+		<p class="mt-1 font-ui text-ui text-ink-muted">
+			Archived items are not included — an export is a snapshot of the list as it stands.
 		</p>
 
 		<!-- Same treatment as the settings form above (#337). Both blocks sit on this tab
@@ -573,8 +608,32 @@
 
 	<!-- Your items -->
 	<h2 class="mt-8 font-display text-title text-ink-heading">Your items</h2>
+
+	<!-- Archive feedback (#419). The archive succeeds even when it warns, so the
+	     warning renders under a success line rather than in place of one — the owner
+	     needs to know it happened AND what it affected, and showing only the warning
+	     would read as a refusal. -->
+	{#if archiveError}
+		<p class="mt-2 font-ui text-ui text-red-600" role="status">{archiveError}</p>
+	{:else if archiveResult && 'archived' in archiveResult}
+		<div class="mt-2" role="status">
+			<p class="font-ui text-ui text-green">
+				Archived{archiveResult.archivedName ? ` “${archiveResult.archivedName}”` : ''}. It is off
+				your public list and nobody can reserve it.
+			</p>
+			{#each archiveResult.archiveWarnings ?? [] as code (code)}
+				{#if archiveWarningCopy[code]}
+					<p class="mt-1 font-ui text-ui text-amber-700">{archiveWarningCopy[code]}</p>
+				{/if}
+			{/each}
+		</div>
+	{:else if archiveResult && 'unarchived' in archiveResult}
+		<p class="mt-2 font-ui text-ui text-green" role="status">
+			{archiveResult.archivedName ? `“${archiveResult.archivedName}” is` : 'It is'} back on your list.
+		</p>
+	{/if}
 	<ul class="mt-3 space-y-3">
-		{#each data.items as item (item.id)}
+		{#each liveItems as item (item.id)}
 			{@const id = item.id ?? ''}
 			{@const availability = item.availability ?? 'available'}
 			<li class="rounded-card border border-line bg-surface p-4">
@@ -655,6 +714,15 @@
 						>
 							{editingId === id ? 'Close' : 'Edit'}
 						</button>
+						<!-- Archive sits beside Delete on purpose: they are the two ways to
+						     take an item off the list, and putting them together is what makes
+						     the difference visible at the moment of choosing. Delete stays
+						     destructive-red; archive is ordinary, because it is reversible. -->
+						<form method="post" action="?/archive" use:formEnhance>
+							<input type="hidden" name="item_id" value={id} />
+							<input type="hidden" name="item_name" value={item.name} />
+							<button class="text-ink-muted transition-colors hover:text-ink">Archive</button>
+						</form>
 						<form method="post" action="?/delete" use:formEnhance>
 							<input type="hidden" name="item_id" value={id} />
 							<button class="text-red-600 transition-colors hover:text-red-700">Delete</button>
@@ -789,8 +857,57 @@
 			<li
 				class="rounded-card border border-line bg-surface p-6 text-center font-ui text-body text-ink-muted"
 			>
-				No items yet — add one above.
+				{archivedItems.length > 0
+					? 'Everything on this list is archived.'
+					: 'No items yet — add one above.'}
 			</li>
 		{/each}
 	</ul>
+
+	<!-- Archived items (#419). A separate group rather than muted rows inline: the
+	     working list is what the owner acts on, and finished items mixed into it make
+	     that list longer every time something is bought. They stay visible because
+	     archiving is reversible and an archive nobody can see is a one-way door. -->
+	{#if archivedItems.length > 0}
+		<h2 class="mt-8 font-display text-title text-ink-heading">
+			Archived ({archivedItems.length})
+		</h2>
+		<p class="mt-1 font-ui text-ui text-ink-muted">
+			Items you have finished with. They are off your public list, nobody can reserve them, and any
+			reservation already on them stops being chased. Put one back at any time.
+		</p>
+		<ul class="mt-3 space-y-3">
+			{#each archivedItems as item (item.id)}
+				{@const id = item.id ?? ''}
+				<li class="rounded-card border border-line bg-surface-alt p-4">
+					<div class="flex flex-wrap items-start justify-between gap-3">
+						<div class="min-w-0">
+							<span class="font-ui text-body font-medium text-ink-heading">{item.name}</span>
+							<span
+								class="ml-2 rounded-card bg-surface px-2 py-0.5 font-ui text-chip text-ink-muted"
+							>
+								Archived
+							</span>
+							{#if (item.reserved_quantity ?? 0) > 0}
+								<div class="mt-1 font-ui text-ui text-ink-muted">
+									{item.reserved_quantity} reserved — the giver was told it came off the list.
+								</div>
+							{/if}
+						</div>
+						<div class="flex shrink-0 gap-3 font-ui text-ui">
+							<form method="post" action="?/unarchive" use:formEnhance>
+								<input type="hidden" name="item_id" value={id} />
+								<input type="hidden" name="item_name" value={item.name} />
+								<button class="text-ink-muted transition-colors hover:text-ink">Put back</button>
+							</form>
+							<form method="post" action="?/delete" use:formEnhance>
+								<input type="hidden" name="item_id" value={id} />
+								<button class="text-red-600 transition-colors hover:text-red-700">Delete</button>
+							</form>
+						</div>
+					</div>
+				</li>
+			{/each}
+		</ul>
+	{/if}
 {/if}
