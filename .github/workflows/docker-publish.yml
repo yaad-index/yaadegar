@@ -241,7 +241,7 @@ jobs:
 
       - name: Build the API image single-arch and verify its version stamp
         if: github.event_name == 'release'
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           platforms: linux/amd64
@@ -273,7 +273,7 @@ jobs:
 
       - name: Build the web image single-arch and verify its version stamp
         if: github.event_name == 'release'
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ./web
           platforms: linux/amd64
@@ -326,7 +326,7 @@ jobs:
 
       - name: Build and push the API image by digest
         id: build_api
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -346,7 +346,7 @@ jobs:
 
       - name: Build and push the web image by digest
         id: build_web
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ./web
           platforms: linux/amd64,linux/arm64
