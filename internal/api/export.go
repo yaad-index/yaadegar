@@ -111,13 +111,18 @@ func (s *Server) handleListExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Archived items are left out (#419). The export is deliberately state-free —
-	// no reservation state, no availability, no timestamps, only what the owner
-	// authored — so it has nowhere to say "this one is finished" without changing
-	// that contract. Carrying archived items anyway would make a re-import
-	// resurrect them as live and reservable, which is precisely the bug the
-	// archive exists to prevent, arriving through a different door. So the export
-	// is a snapshot of the live list and round-trips as one.
+	// Archived items are left out (#419), and the reason is the round-trip, not a
+	// claim about what this format could hold. No field in it marks an item as
+	// finished TODAY, so an archived item written into an export would come back
+	// from a re-import live and reservable — precisely the bug the archive exists
+	// to prevent, arriving through a different door. Leaving them out makes the
+	// export a snapshot of the live list that round-trips as one.
+	//
+	// Whether the format SHOULD gain such a field is open and deliberately not
+	// settled here: archiving is something the owner authored rather than
+	// giver-side state, so it is not excluded by the identity-free contract above.
+	// That is a schema decision with its own issue. The omission is documented in
+	// the README so an owner backing up is not quietly surprised by it.
 	items, _, err := ts.Items().ListByList(ctx, listID, storage.Page{Limit: exportItemsCap}, storage.ExcludeArchived)
 	if err != nil {
 		writeProblem(w, http.StatusInternalServerError, "internal error")

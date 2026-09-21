@@ -94,6 +94,14 @@ re-import it. The export is deliberately **identity-free**: it never includes wh
 reserved, reservation state, availability, funded amounts, ids, or timestamps —
 only the fields you authored.
 
+> **Archived items are not included.** An export is a snapshot of the list as it
+> stands, not of everything it has ever held. The format carries no field today
+> that marks an item as finished, so an archived item written into a backup would
+> come back from a re-import as a live, reservable item — exactly what archiving it
+> prevented. If you are backing up in order to keep a record of what you already
+> bought, the export is not that record: archived items stay on the list in the
+> app, where you can un-archive them.
+
 Download from a list's page, or directly:
 
 ```
