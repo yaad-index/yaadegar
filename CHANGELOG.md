@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.21.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.20.0...yaadegar-v0.21.0) (2026-09-21)
+
+
+### Features
+
+* archive an item so a bought one cannot return to the list ([#424](https://github.com/yaad-index/yaadegar/issues/424)) ([07eb9c7](https://github.com/yaad-index/yaadegar/commit/07eb9c7cbea4c9bd26b7a3065443e0222519435e)), closes [#419](https://github.com/yaad-index/yaadegar/issues/419)
+* let an owner archive an item and put it back ([#427](https://github.com/yaad-index/yaadegar/issues/427)) ([40ad1ff](https://github.com/yaad-index/yaadegar/commit/40ad1ff902bce5c2babd1540bb51ad409e3a3951)), closes [#419](https://github.com/yaad-index/yaadegar/issues/419)
+
 ## [0.20.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.19.1...yaadegar-v0.20.0) (2026-09-16)
 
 
