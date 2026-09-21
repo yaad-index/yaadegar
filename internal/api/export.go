@@ -111,7 +111,14 @@ func (s *Server) handleListExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, _, err := ts.Items().ListByList(ctx, listID, storage.Page{Limit: exportItemsCap})
+	// Archived items are left out (#419). The export is deliberately state-free —
+	// no reservation state, no availability, no timestamps, only what the owner
+	// authored — so it has nowhere to say "this one is finished" without changing
+	// that contract. Carrying archived items anyway would make a re-import
+	// resurrect them as live and reservable, which is precisely the bug the
+	// archive exists to prevent, arriving through a different door. So the export
+	// is a snapshot of the live list and round-trips as one.
+	items, _, err := ts.Items().ListByList(ctx, listID, storage.Page{Limit: exportItemsCap}, storage.ExcludeArchived)
 	if err != nil {
 		writeProblem(w, http.StatusInternalServerError, "internal error")
 		return

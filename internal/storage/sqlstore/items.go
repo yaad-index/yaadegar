@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/yaad-index/yaadegar/internal/storage"
 )
@@ -13,7 +14,7 @@ type itemRepo struct{ baseRepo }
 
 const itemCols = `id, tenant_id, list_id, name, url, image_url,
 	price_amount_minor, price_currency, note, priority, quantity_wanted, allow_cobuy,
-	thank_you_template, created_at`
+	thank_you_template, created_at, archived_at`
 
 func scanItem(s scanner) (storage.Item, error) {
 	var (
@@ -26,13 +27,18 @@ func scanItem(s scanner) (storage.Item, error) {
 		allowCobuy sql.NullInt64
 		thankYou   sql.NullString
 		createdAt  string
+		archivedAt sql.NullString
 	)
 	if err := s.Scan(&it.ID, &it.TenantID, &it.ListID, &it.Name, &url, &imageURL,
 		&amount, &currency, &note, &it.Priority, &it.QuantityWanted, &allowCobuy,
-		&thankYou, &createdAt); err != nil {
+		&thankYou, &createdAt, &archivedAt); err != nil {
 		return storage.Item{}, err
 	}
 	ts, err := parseTime(createdAt)
+	if err != nil {
+		return storage.Item{}, err
+	}
+	archived, err := timePtr(archivedAt)
 	if err != nil {
 		return storage.Item{}, err
 	}
@@ -43,6 +49,7 @@ func scanItem(s scanner) (storage.Item, error) {
 	it.AllowCobuy = allowCobuyFromStorage(allowCobuy)
 	it.ThankYouTemplate = strPtr(thankYou)
 	it.CreatedAt = ts
+	it.ArchivedAt = archived
 	return it, nil
 }
 
@@ -65,10 +72,11 @@ func (r itemRepo) prep(it storage.Item) storage.Item {
 func (r itemRepo) insert(ctx context.Context, x execer, it storage.Item) error {
 	amount, currency := priceCols(it.Price)
 	_, err := x.ExecContext(ctx, r.rb(
-		`INSERT INTO items (`+itemCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+		`INSERT INTO items (`+itemCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
 		it.ID, it.TenantID, it.ListID, it.Name, nullStr(it.URL), nullStr(it.ImageURL),
 		amount, currency, nullStr(it.Note), it.Priority, it.QuantityWanted,
-		allowCobuyToStorage(it.AllowCobuy), nullStr(it.ThankYouTemplate), fmtTime(it.CreatedAt))
+		allowCobuyToStorage(it.AllowCobuy), nullStr(it.ThankYouTemplate), fmtTime(it.CreatedAt),
+		nullTime(it.ArchivedAt))
 	return err
 }
 
@@ -120,17 +128,31 @@ func (r itemRepo) Get(ctx context.Context, id string) (storage.Item, error) {
 	return it, nil
 }
 
-func (r itemRepo) ListByList(ctx context.Context, listID string, p storage.Page) ([]storage.Item, int, error) {
+// archivedPredicate is the SQL fragment that narrows a read to live items, or
+// nothing at all when archived ones are wanted too. It is written once and shared
+// by the count and the page below, because a count taken over a different set
+// from the page it describes is a paging bug that only shows up once somebody
+// archives something.
+func archivedPredicate(f storage.ArchivedFilter) string {
+	if f == storage.IncludeArchived {
+		return ""
+	}
+	return " AND archived_at IS NULL"
+}
+
+func (r itemRepo) ListByList(ctx context.Context, listID string, p storage.Page, archived storage.ArchivedFilter) ([]storage.Item, int, error) {
+	pred := archivedPredicate(archived)
+
 	var total int
 	if err := r.db.QueryRowContext(ctx, r.rb(
-		`SELECT COUNT(*) FROM items WHERE tenant_id = ? AND list_id = ?`),
+		`SELECT COUNT(*) FROM items WHERE tenant_id = ? AND list_id = ?`+pred),
 		r.tenantID, listID).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
 	rows, err := r.db.QueryContext(ctx, r.rb(
 		`SELECT `+itemCols+` FROM items
-		  WHERE tenant_id = ? AND list_id = ?
+		  WHERE tenant_id = ? AND list_id = ?`+pred+`
 		  ORDER BY priority DESC, created_at, id
 		  LIMIT ? OFFSET ?`),
 		r.tenantID, listID, p.Limit, p.Offset)
@@ -173,6 +195,61 @@ func (r itemRepo) Update(ctx context.Context, it storage.Item) (storage.Item, er
 		return storage.Item{}, err
 	}
 	return r.Get(ctx, it.ID)
+}
+
+// Archive stamps archived_at, reporting whether this call is the one that did it.
+//
+// The guard is `archived_at IS NULL` rather than a read-then-write, so two
+// concurrent archives produce exactly one true: the caller uses that to send the
+// giver notification once. Re-archiving an already-archived item is not an error
+// — it is simply not news — and the stamp is left at the original moment rather
+// than being refreshed, because it records when the owner finished with the item.
+func (r itemRepo) Archive(ctx context.Context, id string, at time.Time) (bool, error) {
+	res, err := r.db.ExecContext(ctx, r.rb(
+		`UPDATE items SET archived_at = ?
+		  WHERE tenant_id = ? AND id = ? AND archived_at IS NULL`),
+		fmtTime(at), r.tenantID, id)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if n == 0 {
+		// Either the item is gone or it was already archived — distinguish, so a
+		// caller can return 404 for the first and a no-op success for the second.
+		if _, err := r.Get(ctx, id); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	return true, nil
+}
+
+// Unarchive clears the stamp, reporting whether this call is the one that did it.
+// The item becomes reservable again and its reservations resume decaying — the
+// archive is undone exactly, with no residue, which is what makes it safe for an
+// owner to use on an item they are not sure about.
+func (r itemRepo) Unarchive(ctx context.Context, id string) (bool, error) {
+	res, err := r.db.ExecContext(ctx, r.rb(
+		`UPDATE items SET archived_at = NULL
+		  WHERE tenant_id = ? AND id = ? AND archived_at IS NOT NULL`),
+		r.tenantID, id)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if n == 0 {
+		if _, err := r.Get(ctx, id); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	return true, nil
 }
 
 func (r itemRepo) Delete(ctx context.Context, id string) error {
@@ -313,6 +390,7 @@ func (r itemRepo) PreviewsByLists(ctx context.Context, listIDs []string, perList
 		                             ORDER BY priority DESC, created_at, id) AS rn
 		     FROM items
 		    WHERE tenant_id = ? AND list_id IN (`+strings.Join(ph, ", ")+`)
+		      AND archived_at IS NULL
 		 ) ranked
 		 WHERE rn <= ?
 		 ORDER BY list_id, rn`), args...)

@@ -61,6 +61,28 @@ type Page struct {
 	Offset int
 }
 
+// ArchivedFilter says whether a read includes archived items (#419).
+//
+// It is a named type rather than a bool because the call sites are what decide
+// whether an archived item is visible to a giver, and `true` at a call site says
+// nothing about which way it points. The zero value EXCLUDES, deliberately: a
+// caller added later that does not think about archiving gets the giver-safe
+// reading, and the failure that leaves is an owner who cannot see an item they
+// archived — annoying and immediately visible — rather than an archived item
+// still sitting on a public list, which is silent and is the bug this exists to
+// fix.
+type ArchivedFilter int
+
+const (
+	// ExcludeArchived omits archived items. The default, and correct for every
+	// giver-facing read.
+	ExcludeArchived ArchivedFilter = iota
+	// IncludeArchived returns archived items alongside live ones. Owner-facing
+	// reads use it, because archiving is reversible and an owner who cannot see
+	// an archived item cannot un-archive it.
+	IncludeArchived
+)
+
 // Store is the top-level persistence handle. Tenant resolution and migrations
 // live here; **all domain data access is reached only through ForTenant**, so no
 // query can be issued without a tenant scope (ADR-0003 §2). CreateTenant and the
@@ -229,7 +251,11 @@ type ItemRepo interface {
 	// created or none (the #26 import guarantee: no half-imported list on a DB error).
 	CreateMany(ctx context.Context, items []Item) ([]Item, error)
 	Get(ctx context.Context, id string) (Item, error)
-	ListByList(ctx context.Context, listID string, p Page) ([]Item, int, error)
+	// ListByList returns one page of a list's items. archived selects whether
+	// archived items are included; the total returned counts the same set the page
+	// is drawn from, so a caller paginating an owner view and a caller rendering a
+	// public list never disagree about how many items there are.
+	ListByList(ctx context.Context, listID string, p Page, archived ArchivedFilter) ([]Item, int, error)
 	Update(ctx context.Context, it Item) (Item, error)
 	Delete(ctx context.Context, id string) error
 
@@ -255,6 +281,16 @@ type ItemRepo interface {
 	// so the previews match the list's own item order. Lists with no items are
 	// absent from the map; an empty listIDs or perList <= 0 returns an empty map.
 	PreviewsByLists(ctx context.Context, listIDs []string, perList int) (map[string][]ItemPreview, error)
+
+	// Archive marks an item finished (#419), returning false if it was already
+	// archived so a caller can tell a fresh archive from a repeat — the giver
+	// notification and the decay stop should fire once, not on every retry.
+	// Reversible via Unarchive.
+	Archive(ctx context.Context, id string, at time.Time) (bool, error)
+	// Unarchive returns an archived item to the list, returning false if it was
+	// not archived. The item becomes reservable again and its reservations resume
+	// decaying, which is the point: un-archiving undoes the archive exactly.
+	Unarchive(ctx context.Context, id string) (bool, error)
 }
 
 // ReservationRepo persists reservations within the bound tenant.

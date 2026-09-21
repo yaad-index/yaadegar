@@ -122,6 +122,17 @@ func (r reservationRepo) Renew(ctx context.Context, id string, at time.Time) (bo
 // tenants, joined with the item name and the list's decay-period override (nil =
 // inherit the instance default). Trusted system read; the sweeper resolves the
 // effective period and never compares the raw override.
+//
+// 🔑 Archived items are excluded (#419), and that single predicate is the fix for
+// the bug the archive exists for, not merely list hygiene. "Reserved" is
+// state IN ('active','reserver_notified'); decay moves an unanswered reservation
+// to 'expired', which drops it out of that set and puts the item back on the
+// list. A giver who bought the item and then ignored the reminder therefore
+// handed it to a second giver, silently, on both sides. Decay cannot tell "lost
+// interest" from "already done" — so the item carries that distinction, and a
+// reservation on an archived item simply never becomes a candidate again. It
+// stops where it is rather than being transitioned to some terminal state,
+// because un-archiving has to resume it exactly where it left off.
 func (s *sqlStore) DecayCandidates(ctx context.Context) ([]storage.DecayCandidate, error) {
 	rows, err := s.db.QueryContext(ctx, s.d.rebind(
 		`SELECT r.tenant_id, r.id, r.item_id, i.name, r.giver_email,
@@ -129,7 +140,7 @@ func (s *sqlStore) DecayCandidates(ctx context.Context) ([]storage.DecayCandidat
 		   FROM reservations r
 		   JOIN items i ON i.tenant_id = r.tenant_id AND i.id = r.item_id
 		   JOIN lists l ON l.tenant_id = r.tenant_id AND l.id = i.list_id
-		  WHERE r.state != ? AND l.active = 1
+		  WHERE r.state != ? AND l.active = 1 AND i.archived_at IS NULL
 		  ORDER BY r.tenant_id, r.id`),
 		string(storage.StateExpired))
 	if err != nil {
