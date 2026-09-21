@@ -132,7 +132,13 @@ func (r reservationRepo) Renew(ctx context.Context, id string, at time.Time) (bo
 // interest" from "already done" — so the item carries that distinction, and a
 // reservation on an archived item simply never becomes a candidate again. It
 // stops where it is rather than being transitioned to some terminal state,
-// because un-archiving has to resume it exactly where it left off.
+// because un-archiving has to give the hold back rather than having to recreate
+// it.
+//
+// ⚠️ This predicate suspends CANDIDACY, not the clock: the sweeper compares
+// absolute wall time, so the archived interval still elapses. ItemRepo.Unarchive
+// is what stops that becoming an unearned expiry, by restarting the decay clocks
+// when the item comes back. The two belong together — neither is correct alone.
 func (s *sqlStore) DecayCandidates(ctx context.Context) ([]storage.DecayCandidate, error) {
 	rows, err := s.db.QueryContext(ctx, s.d.rebind(
 		`SELECT r.tenant_id, r.id, r.item_id, i.name, r.giver_email,

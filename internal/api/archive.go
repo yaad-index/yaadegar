@@ -73,9 +73,12 @@ func (s *Server) ArchiveItem(ctx context.Context, req gen.ArchiveItemRequestObje
 	}), nil
 }
 
-// UnarchiveItem returns an archived item to the list. No giver is emailed: nothing
-// about their reservation changed when the item was archived — it was held, not
-// released — so there is nothing to tell them now.
+// UnarchiveItem returns an archived item to the list, restarting the decay clocks
+// the archive suspended (see ItemRepo.Unarchive for why a restart is needed and
+// why it is a restart rather than a resume).
+//
+// No giver is emailed: nothing about their reservation changed when the item was
+// archived — it was held, not released — so there is nothing to tell them now.
 func (s *Server) UnarchiveItem(ctx context.Context, req gen.UnarchiveItemRequestObject) (gen.UnarchiveItemResponseObject, error) {
 	ts, _, ok := s.tenantStore(ctx)
 	if !ok {
@@ -99,7 +102,7 @@ func (s *Server) UnarchiveItem(ctx context.Context, req gen.UnarchiveItemRequest
 			ForbiddenApplicationProblemPlusJSONResponse: forbidden("not an owner of this list"),
 		}, nil
 	}
-	if _, err := ts.Items().Unarchive(ctx, it.ID); err != nil {
+	if _, err := ts.Items().Unarchive(ctx, it.ID, s.clock.Now()); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			return gen.UnarchiveItem404ApplicationProblemPlusJSONResponse{
 				NotFoundApplicationProblemPlusJSONResponse: notFound("item not found"),

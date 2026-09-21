@@ -196,6 +196,67 @@ func TestABoughtItemStaysGoneWhenArchived(t *testing.T) {
 		"an un-archived item is still held by the giver who reserved it")
 }
 
+// TestUnarchivingDoesNotHandTheGiverAnUnearnedExpiry covers the gap between the
+// two halves of the fix: the predicate suspends a reservation's CANDIDACY for
+// decay, never the wall clock the sweeper measures against. So an item archived
+// for longer than the decay period comes back already past it, and without the
+// clock restart its giver is chased on the very next sweep for time that passed
+// while the item was off the list and they could do nothing about it.
+//
+// The second half of the test is what stops the fix being "decay is now disabled
+// forever on anything that was ever archived": after a fresh full period the
+// reservation does decay again.
+func TestUnarchivingDoesNotHandTheGiverAnUnearnedExpiry(t *testing.T) {
+	h := newHarness(t)
+	list := h.createDecayingList("Birthday", 30)
+	item := h.createItem(*list.Id, "Item", 1)
+	require.Equal(t, http.StatusCreated, h.reserveAs(*list.ShareSlug, *item.Id, "giver@example.com").StatusCode)
+
+	require.Equal(t, http.StatusOK, mustStatus(h.archive(*item.Id)))
+
+	// Archived for far longer than the decay period.
+	h.clk.Advance(200 * 24 * time.Hour)
+	require.Equal(t, http.StatusOK, h.unarchive(*item.Id).StatusCode)
+
+	before := len(h.email.Sent())
+	h.sweepDecay()
+	assert.Equal(t, []storage.ReservationState{storage.StateActive}, h.reservationStates(*item.Id),
+		"the archived interval is not the giver's fault and must not be charged to them")
+	assert.Empty(t, h.email.Sent()[before:],
+		"and they are not chased about it either")
+
+	// But the clock RESTARTED, it did not stop: a fresh full period still decays.
+	h.clk.Advance(31 * 24 * time.Hour)
+	h.sweepDecay()
+	assert.Equal(t, []storage.ReservationState{storage.StateReserverNotified}, h.reservationStates(*item.Id),
+		"un-archiving restarts decay, it does not disable it")
+}
+
+// TestUnarchivingRestartsTheClockForAnAlreadyNotifiedReservation is the half that
+// a fix touching only last_activity_at would miss. Two of the three decay states
+// are driven by state_at, and the reserver_notified path is the worst one to get
+// wrong: its expiry sends no email at all, so the giver's hold would vanish in
+// silence on the first sweep after the item came back.
+func TestUnarchivingRestartsTheClockForAnAlreadyNotifiedReservation(t *testing.T) {
+	h := newHarness(t)
+	list := h.createDecayingList("Birthday", 30)
+	item := h.createItem(*list.Id, "Item", 1)
+	require.Equal(t, http.StatusCreated, h.reserveAs(*list.ShareSlug, *item.Id, "giver@example.com").StatusCode)
+
+	// Drive it to reserver_notified for real, rather than seeding the state.
+	h.clk.Advance(31 * 24 * time.Hour)
+	h.sweepDecay()
+	require.Equal(t, []storage.ReservationState{storage.StateReserverNotified}, h.reservationStates(*item.Id))
+
+	require.Equal(t, http.StatusOK, mustStatus(h.archive(*item.Id)))
+	h.clk.Advance(30 * 24 * time.Hour) // far past the 24h response window
+	require.Equal(t, http.StatusOK, h.unarchive(*item.Id).StatusCode)
+
+	h.sweepDecay()
+	assert.NotContains(t, h.reservationStates(*item.Id), storage.StateExpired,
+		"a notified reservation must not expire in silence for time spent archived")
+}
+
 // --- surfaces ----------------------------------------------------------------
 
 func TestArchivedItemLeavesTheGiverSurfaceButNotTheOwnerView(t *testing.T) {

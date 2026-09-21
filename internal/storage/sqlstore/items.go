@@ -231,8 +231,14 @@ func (r itemRepo) Archive(ctx context.Context, id string, at time.Time) (bool, e
 // The item becomes reservable again and its reservations resume decaying — the
 // archive is undone exactly, with no residue, which is what makes it safe for an
 // owner to use on an item they are not sure about.
-func (r itemRepo) Unarchive(ctx context.Context, id string) (bool, error) {
-	res, err := r.db.ExecContext(ctx, r.rb(
+func (r itemRepo) Unarchive(ctx context.Context, id string, at time.Time) (bool, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	res, err := tx.ExecContext(ctx, r.rb(
 		`UPDATE items SET archived_at = NULL
 		  WHERE tenant_id = ? AND id = ? AND archived_at IS NOT NULL`),
 		r.tenantID, id)
@@ -248,6 +254,44 @@ func (r itemRepo) Unarchive(ctx context.Context, id string) (bool, error) {
 			return false, err
 		}
 		return false, nil
+	}
+
+	// Restart the decay clocks the archive suspended. This reaches into
+	// reservations from the item repo on purpose, and in the same transaction,
+	// because the two halves are one operation: an item whose archive flag is
+	// cleared while its reservations still carry pre-archive timestamps is the
+	// broken state, not a step toward the fixed one.
+	//
+	// ⚠️ The archive suspends CANDIDACY, not the clock. Sweeper.step compares
+	// absolute wall time — now.Sub(last_activity_at) for active, now.Sub(state_at)
+	// for pending_confirmation and reserver_notified — so an item archived for
+	// longer than the window comes back already past it, and the giver is chased
+	// or expired on the very next sweep for time that passed while the item was
+	// off the list and they could do nothing about it.
+	//
+	// RESTART rather than resume, and both columns rather than only the one that
+	// drives `active`. Restart, because the alternative — shifting the stamps
+	// forward by the archived duration to preserve elapsed-time-within-state —
+	// hands a reserver_notified giver whatever slice of the response window was
+	// left, which after a long archive can be minutes. Erring toward keeping the
+	// hold is the safe direction here: an item that stays reserved slightly too
+	// long is recoverable, an item wrongly freed is the double-buy this whole
+	// issue is about. Both columns, because state_at drives two of the three
+	// states and fixing only last_activity_at would leave a notified reservation
+	// silently expiring on the next sweep — the worst of the three, since that
+	// path sends no email at all.
+	//
+	// Expired reservations are left alone: they are terminal and restarting their
+	// clock would say something false about a hold that no longer exists.
+	if _, err := tx.ExecContext(ctx, r.rb(
+		`UPDATE reservations SET last_activity_at = ?, state_at = ?
+		  WHERE tenant_id = ? AND item_id = ? AND state != ?`),
+		fmtTime(at), fmtTime(at), r.tenantID, id, string(storage.StateExpired)); err != nil {
+		return false, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, err
 	}
 	return true, nil
 }

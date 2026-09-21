@@ -287,10 +287,17 @@ type ItemRepo interface {
 	// notification and the decay stop should fire once, not on every retry.
 	// Reversible via Unarchive.
 	Archive(ctx context.Context, id string, at time.Time) (bool, error)
-	// Unarchive returns an archived item to the list, returning false if it was
-	// not archived. The item becomes reservable again and its reservations resume
-	// decaying, which is the point: un-archiving undoes the archive exactly.
-	Unarchive(ctx context.Context, id string) (bool, error)
+	// Unarchive returns an archived item to the list at time `at`, returning false
+	// if it was not archived. The item becomes reservable again AND the decay
+	// clocks on its live reservations restart from `at`.
+	//
+	// The restart is not incidental. The archive suspends a reservation's
+	// candidacy for decay, never the wall clock the sweeper measures against, so
+	// without it an item archived for longer than the decay period returns already
+	// past it and its giver is chased — or, from reserver_notified, silently
+	// expired — on the very next sweep, for time that passed while the item was
+	// off the list and they could do nothing about it.
+	Unarchive(ctx context.Context, id string, at time.Time) (bool, error)
 }
 
 // ReservationRepo persists reservations within the bound tenant.
