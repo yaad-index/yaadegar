@@ -1,0 +1,28 @@
+-- Item archive (#419): an owner-side "this one is finished" that keeps the item.
+--
+-- Until now the only way to take a completed item off a list was to DELETE it,
+-- which threw away the item and its reservation history. The archive is the
+-- non-destructive alternative: the row stays, the item leaves the public list,
+-- and un-archiving puts it back.
+--
+-- The column is what fixes the silent bug, not just the list hygiene. "Is this
+-- item reserved" is answered by state IN ('active','reserver_notified'), and the
+-- decay sweep moves an unanswered reservation to 'expired', which drops it out of
+-- that set and makes the item available again. A giver who bought the item and
+-- then ignored the decay reminder therefore handed it back to the list, and a
+-- second giver could buy the same thing. Decay cannot tell "lost interest" from
+-- "already done", so the distinction has to be recorded somewhere, and it belongs
+-- on the item: the thing that is finished is the item, not the reservation.
+-- DecayCandidates excludes archived items, so a live reservation on one stops
+-- advancing and never expires its way back into availability.
+--
+-- Deliberately NOT a new reservation state: the reservation's own lifecycle is
+-- unchanged, and nothing new about WHO reserved becomes visible to anyone, which
+-- keeps this clear of ADR-0002 §5.
+--
+-- NULL means "not archived", and is therefore the correct value for every
+-- existing row — no backfill, and the default needs no thought at insert time.
+-- TEXT to match every other nullable timestamp in this schema (see
+-- reservations.email_confirmed_at, 0008): the store formats and parses times in
+-- Go so both dialects hold the same representation.
+ALTER TABLE items ADD COLUMN archived_at TEXT;

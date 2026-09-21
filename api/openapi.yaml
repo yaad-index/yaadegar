@@ -781,6 +781,56 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/v1/items/{itemId}/archive:
+    parameters:
+      - $ref: "#/components/parameters/ItemId"
+    post:
+      operationId: archiveItem
+      tags: [items]
+      summary: Archive an item the owner has finished with
+      description: >
+        Marks the item finished (#419): it leaves the public list, stops being
+        reservable, and its live reservations stop decaying, which is what keeps a
+        bought item from expiring its way back onto the list. The item and its
+        history are kept, and the archive is reversible with DELETE on the same path.
+
+
+        This is a POST rather than a field on the item PATCH because archiving has
+        effects beyond the row: any giver holding a live reservation is emailed, and
+        the response may carry warnings the owner should see. A PATCH that silently
+        emailed givers would be the wrong shape for both.
+
+
+        Idempotent: archiving an already-archived item succeeds and changes nothing,
+        and the giver notification is sent only by the call that actually archived it.
+      responses:
+        "200":
+          description: The archived item, with any warnings raised by archiving it.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ItemArchiveResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: unarchiveItem
+      tags: [items]
+      summary: Return an archived item to the list
+      description: >
+        Undoes an archive exactly: the item is reservable again and its reservations
+        resume decaying. Idempotent — un-archiving a live item succeeds and changes
+        nothing. Givers are not emailed, because nothing about their reservation
+        changed: it was never released.
+      responses:
+        "200":
+          description: The item, no longer archived.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Item" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /api/v1/item-previews:
     post:
       operationId: previewItem
@@ -1952,6 +2002,47 @@ components:
           description: >
             The per-item thank-you override (#22), owner view: null inherits the list
             default, "" is a per-item opt-out, any other value overrides the body.
+        archived_at:
+          type: [string, "null"]
+          format: date-time
+          description: >
+            When the owner archived this item (#419); null for a live item. An
+            archived item keeps its row and its reservation history, does not appear
+            on the public list, cannot be reserved or contributed to, and its live
+            reservations stop decaying — so a bought item cannot expire its way back
+            onto the list. Owner view only: the public item carries no such field,
+            because an archived item is simply absent from a giver's list.
+
+    ItemArchiveResult:
+      type: object
+      description: >
+        The result of archiving an item (#419): the item itself, plus anything the
+        owner should know about what archiving it affected. Warnings never block the
+        archive — the list belongs to its owner — they report giver-side state the
+        owner cannot otherwise see.
+      properties:
+        item: { $ref: "#/components/schemas/Item" }
+        warnings:
+          type: array
+          items: { $ref: "#/components/schemas/ArchiveWarning" }
+
+    ArchiveWarning:
+      type: object
+      description: >
+        One thing archiving affected that the owner could not see. `code` is the
+        contract and is what a client should branch on; `detail` is an English
+        fallback for a client that does not know the code, and is expected to be
+        reworded without that being a breaking change.
+      properties:
+        code:
+          type: string
+          enum: [cobuy_match_pending]
+          description: >
+            cobuy_match_pending — givers are mid-handshake on a co-buy for this item:
+            a match has been proposed and they have not both confirmed yet. Archiving
+            is allowed anyway (the list belongs to its owner) but it strands a
+            negotiation the owner cannot see.
+        detail: { type: string }
 
     ItemPreview:
       type: object
