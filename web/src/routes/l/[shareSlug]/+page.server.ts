@@ -235,7 +235,25 @@ export const actions: Actions = {
 		// token alone previously mis-reported this — the primary email-confirm path — as a
 		// failure while the reservation was actually created.
 		if (data.status === 'pending_confirmation' || !data.capability_token) {
-			return message(form, 'Almost there — check your email to confirm your reservation.');
+			// The item and the deadline ride their own key rather than widening the message
+			// type: that type is shared with reserve's failure paths and with pledge and
+			// withdraw, and only this branch has either to carry. itemId comes back so the
+			// page can put the instruction on the row that was acted on instead of at the
+			// top of the document, which on a phone is above the scroll position and is
+			// never shown to the giver at all (#430).
+			message(form, 'Almost there — check your email to confirm your reservation.');
+			return {
+				form,
+				pendingConfirmation: {
+					itemId: form.data.item_id,
+					// ABSENT means no deadline EXISTS rather than that one is unknown: a zero
+					// effective window disables the confirm sweep, so the reservation waits
+					// indefinitely. null must therefore render no deadline at all — naming one
+					// would tell the giver to act by a time at which nothing happens. See
+					// ReservationCreated.confirm_deadline in the spec.
+					deadline: data.confirm_deadline ?? null
+				}
+			};
 		}
 		// full_guest tier: the reservation is active now and a one-time capability token
 		// is returned (201) — persist it server-side; it never touches client JS.
