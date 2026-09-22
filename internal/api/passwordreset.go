@@ -148,12 +148,13 @@ func (s *Server) sendResetEmailAsync(tenant storage.Tenant, userID, to, rawToken
 			s.logger.ErrorContext(ctx, "password reset: persist token failed", "error", err)
 			return
 		}
-		if err := s.email.Send(ctx, email.Message{
-			To:      to,
-			Subject: "Reset your password",
-			Body: "Reset your password: " + link +
-				"\n\nThis link can be used once and expires soon. If you didn't request it, you can ignore this email.",
-		}); err != nil {
+		c := email.Content{
+			Title:  "Reset your password",
+			Intro:  []string{"Use the link below to choose a new password."},
+			Action: &email.Action{Label: "Reset your password", URL: link},
+			Outro:  []string{"This link can be used once and expires soon. If you didn't request it, you can ignore this email."},
+		}
+		if err := s.email.Send(ctx, c.Message(to, "Reset your password")); err != nil {
 			s.logger.ErrorContext(ctx, "password reset: send email failed", "error", err)
 		}
 	}()
@@ -167,12 +168,13 @@ func (s *Server) sendInviteEmailAsync(tenant storage.Tenant, to, rawToken string
 	link := s.resetLink(tenant, rawToken)
 	go func() {
 		ctx := context.Background()
-		if err := s.email.Send(ctx, email.Message{
-			To:      to,
-			Subject: "Set your password",
-			Body: "An account was created for you. Set your password to finish setting up and sign in: " + link +
-				"\n\nThis link can be used once and expires in a few days. If it expires, use the \"forgot password\" link on the sign-in page to get a new one.",
-		}); err != nil {
+		c := email.Content{
+			Title:  "Set your password",
+			Intro:  []string{"An account was created for you. Set a password to finish setting up and sign in."},
+			Action: &email.Action{Label: "Set your password", URL: link},
+			Outro:  []string{`This link can be used once and expires in a few days. If it expires, use the "forgot password" link on the sign-in page to get a new one.`},
+		}
+		if err := s.email.Send(ctx, c.Message(to, "Set your password")); err != nil {
 			s.logger.ErrorContext(ctx, "invite: send email failed", "error", err)
 		}
 	}()

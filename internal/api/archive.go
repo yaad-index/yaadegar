@@ -178,17 +178,19 @@ func (s *Server) notifyReserversArchived(ctx context.Context, ts storage.TenantS
 		if r.GiverEmail == nil || *r.GiverEmail == "" {
 			continue
 		}
-		subject := "A gift you reserved has come off the list"
-		body := "The owner has marked " + item.Name + " as finished, so it is no longer on their list. " +
-			"There is nothing you need to do — your reservation has not been cancelled, and you will not be " +
-			"asked about it again."
-		if item.Name == "" {
-			subject = "A gift you reserved has come off the list"
-			body = "The owner has marked an item you reserved as finished, so it is no longer on their list. " +
-				"There is nothing you need to do — your reservation has not been cancelled, and you will not be " +
-				"asked about it again."
+		const subject = "A gift you reserved has come off the list"
+		what := "an item you reserved"
+		if item.Name != "" {
+			what = item.Name
 		}
-		if err := s.email.Send(ctx, email.Message{To: *r.GiverEmail, Subject: subject, Body: body}); err != nil {
+		// No action: this tells the giver a thing has happened and explicitly that
+		// there is nothing for them to do, so a button would contradict the words.
+		c := email.Content{
+			Title: subject,
+			Intro: []string{"The owner has marked " + what + " as finished, so it is no longer on their list."},
+			Outro: []string{"There is nothing you need to do — your reservation has not been cancelled, and you will not be asked about it again."},
+		}
+		if err := s.email.Send(ctx, c.Message(*r.GiverEmail, subject)); err != nil {
 			s.logger.ErrorContext(ctx, "archive notification email failed (ignored)",
 				"item_id", item.ID, "reservation_id", r.ID, "error", err)
 		}

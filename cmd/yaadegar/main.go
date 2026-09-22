@@ -33,6 +33,7 @@ import (
 	"github.com/yaad-index/yaadegar/internal/email"
 	"github.com/yaad-index/yaadegar/internal/oauthlogin"
 	"github.com/yaad-index/yaadegar/internal/server"
+	"github.com/yaad-index/yaadegar/internal/settings"
 	"github.com/yaad-index/yaadegar/internal/storage"
 	"github.com/yaad-index/yaadegar/internal/storage/sqlstore"
 )
@@ -127,6 +128,14 @@ type ServeCmd struct {
 
 	ReserverConfirmWindow time.Duration `name:"reserver-confirm-window" default:"30m" env:"YAADEGAR_RESERVER_CONFIRM_WINDOW" help:"How long an email_confirmed reservation may sit unconfirmed before it auto-expires and frees the item (ADR-0007). 0 disables the confirm-window sweep."`
 	ReserverDefaultTier   string        `name:"reserver-default-tier" default:"full_guest" env:"YAADEGAR_RESERVER_DEFAULT_TIER" help:"Instance-default reserver tier for lists that set no override (ADR-0007): full_guest | email_confirmed | registered."`
+
+	// Timezone is the instance's wall clock for any absolute time shown to a person
+	// (#438). An email carries no locale, so the server cannot know a giver's own
+	// zone; rendering in the instance's is correct for the single-region instance
+	// that is the common case, and the zone is always named so a reader elsewhere
+	// can see what the time is relative to. Defaults to UTC so no existing
+	// deployment silently shifts the times it has been sending.
+	Timezone string `name:"timezone" env:"YAADEGAR_TIMEZONE" help:"IANA timezone name (e.g. Europe/Berlin) for absolute times shown to people, such as the reservation confirm deadline. Empty means UTC. The zone is always named in the rendered time."`
 
 	// RegistrationPolicy gates unauthenticated self-registration (ADR-0009 Decision 2,
 	// ADR-0012). Defaults to disabled — an existing instance keeps its unchanged
@@ -231,9 +240,9 @@ func (c *ServeCmd) Run(cli *CLI) error {
 
 	// The public link base (giver-facing site) feeds every emailed link; the old
 	// --decay-link-base is honoured as a back-compat alias when it is unset.
-	linkBase := c.PublicLinkBase
-	if linkBase == "" {
-		linkBase = c.DecayLinkBase
+	linkBase, err := resolveLinkBase(c.PublicLinkBase, c.DecayLinkBase)
+	if err != nil {
+		return err
 	}
 	// Fail closed on a bogus instance-default tier rather than silently reserving
 	// as full_guest (ADR-0007).
@@ -260,6 +269,14 @@ func (c *ServeCmd) Run(cli *CLI) error {
 		return err
 	}
 
+	// Resolved before the server starts: an unknown zone name is a startup failure,
+	// not a silent fall back to UTC. An instance that meant local time and kept
+	// mailing UTC would be indistinguishable from one that meant UTC.
+	displayLocation, err := settings.ParseLocation(c.Timezone)
+	if err != nil {
+		return fmt.Errorf("invalid --timezone %q: %w", c.Timezone, err)
+	}
+
 	handler := api.NewHandler(store, api.Options{
 		BaseDomain:          c.BaseDomain,
 		Logger:              logger,
@@ -276,6 +293,7 @@ func (c *ServeCmd) Run(cli *CLI) error {
 		// to both so the deadline shown to the giver and the deadline enforced by the
 		// sweep cannot come from different settings.
 		ReserverConfirmWindow: c.ReserverConfirmWindow,
+		DisplayLocation:       displayLocation,
 		OAuth:                 oauthAuth,
 		RegistrationPolicy:    registrationPolicy,
 		Captcha:               captchaVerifier,
@@ -448,4 +466,38 @@ func main() {
 		kong.UsageOnError(),
 	)
 	kctx.FatalIfErrorf(kctx.Run(cli))
+}
+
+// resolveLinkBase picks the giver-facing base URL for emailed links and refuses
+// one that cannot work.
+//
+// ⚠️ Validated at startup rather than at send time, and stricter than before. An
+// emailed link has no document to resolve against, so a relative or empty base
+// produces a confirm mail whose link cannot be followed — and the reservation then
+// expires silently, which is the failure #430 is about. The shared email layout
+// refuses to render an action that is not a web URL, so without this check the
+// mail goes out looking complete with nothing to click.
+//
+// This makes a previously-optional setting required for any instance that sends
+// mail. The trade is deliberate and it is about who can act on the breakage: with
+// no check the cost lands on givers, who can neither see nor fix it, and looks
+// identical to a giver who ignored the mail. A boot failure puts it in front of
+// the operator, who is the only person who can fix it, with the fix named.
+//
+// The deprecated --decay-link-base is honoured first, so an instance configured
+// entirely through the older name keeps starting. Failing those operators would
+// make a correctness fix into an upgrade trap for exactly the people who followed
+// the older documentation.
+func resolveLinkBase(publicBase, decayBase string) (string, error) {
+	base := publicBase
+	if base == "" {
+		base = decayBase
+	}
+	lower := strings.ToLower(base)
+	if !strings.HasPrefix(lower, "https://") && !strings.HasPrefix(lower, "http://") {
+		return "", fmt.Errorf("--public-link-base (or the deprecated --decay-link-base) must be an "+
+			"absolute http(s) URL of the giver-facing site, got %q: emailed confirm and keep/release "+
+			"links cannot be followed without it", base)
+	}
+	return base, nil
 }

@@ -246,12 +246,18 @@ export const actions: Actions = {
 				form,
 				pendingConfirmation: {
 					itemId: form.data.item_id,
+					// The instant already written for a person, in the instance's timezone
+					// and naming that zone (#438). The page shows what the server rendered
+					// rather than formatting confirm_deadline itself: the same deadline is
+					// stated in the confirm email, a giver may have both in front of them,
+					// and two formatters of one instant produce wordings that do not match
+					// even when both are correct.
+					//
 					// ABSENT means no deadline EXISTS rather than that one is unknown: a zero
 					// effective window disables the confirm sweep, so the reservation waits
 					// indefinitely. null must therefore render no deadline at all — naming one
-					// would tell the giver to act by a time at which nothing happens. See
-					// ReservationCreated.confirm_deadline in the spec.
-					deadline: data.confirm_deadline ?? null
+					// would tell the giver to act by a time at which nothing happens.
+					deadline: data.confirm_deadline_display ?? null
 				}
 			};
 		}

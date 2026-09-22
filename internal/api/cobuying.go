@@ -553,11 +553,15 @@ func (s *Server) dissolveMatch(ctx context.Context, ts storage.TenantStore, m st
 // only that the item is funded and can be confirmed.
 func (s *Server) emailMatch(ctx context.Context, contribs []storage.Contribution, links map[string]string) {
 	for _, c := range contribs {
-		body := "A group gift you pledged toward is now fully funded. " +
-			"Confirm or decline the group buy: " + links[c.ID]
-		if err := s.email.Send(ctx, email.Message{
-			To: c.ContactEmail, Subject: "A co-buying match is proposed", Body: body,
-		}); err != nil {
+		const subject = "A co-buying match is proposed"
+		// Still reveals nothing about the other parties — only that the item is
+		// funded and can be confirmed.
+		body := email.Content{
+			Title:  subject,
+			Intro:  []string{"A group gift you pledged toward is now fully funded."},
+			Action: &email.Action{Label: "Confirm or decline the group buy", URL: links[c.ID]},
+		}
+		if err := s.email.Send(ctx, body.Message(c.ContactEmail, subject)); err != nil {
 			s.logger.Error("co-buying email failed", "err", err, "contribution", c.ID)
 		}
 	}
@@ -573,8 +577,15 @@ func (s *Server) emailReveal(ctx context.Context, contribs []storage.Contributio
 				others = append(others, o.ContactEmail)
 			}
 		}
-		body := "Both parties confirmed. Coordinate the gift with: " + strings.Join(others, ", ")
-		if err := s.email.Send(ctx, email.Message{To: c.ContactEmail, Subject: "Your co-buying match is confirmed", Body: body}); err != nil {
+		const subject = "Your co-buying match is confirmed"
+		// The contacts are the payload here, so they are a paragraph rather than an
+		// action: there is nothing to click, and a mailto button would pick one of
+		// them arbitrarily.
+		body := email.Content{
+			Title: subject,
+			Intro: []string{"Both parties confirmed.", "Coordinate the gift with: " + strings.Join(others, ", ")},
+		}
+		if err := s.email.Send(ctx, body.Message(c.ContactEmail, subject)); err != nil {
 			s.logger.Error("co-buying reveal email failed", "err", err, "contribution", c.ID)
 		}
 	}

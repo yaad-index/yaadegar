@@ -34,31 +34,6 @@
 		if (typeof itemId !== 'string' || itemId === '') return undefined;
 		return { itemId, deadline: typeof deadline === 'string' ? deadline : null };
 	}
-
-	// The confirm deadline as the giver reads it (#430). Same shape as the confirm
-	// email's own line ("2026-01-02 15:04 UTC") because a giver may well have both in
-	// front of them, and two renderings of one instant invite the question of which is
-	// the real one.
-	//
-	// The page states the INSTANT and never a countdown, which is the opposite of the
-	// email's "you have 30 minutes". The email is read once, so a duration is the more
-	// useful half there. A page can sit open, and a duration rendered once into it is
-	// silently wrong from the second afterwards, with nothing on screen to say so. An
-	// instant cannot go stale.
-	//
-	// An unparseable value yields '' so the caller omits the sentence rather than
-	// printing "Invalid Date" at the giver — an unreadable deadline and no deadline are
-	// both "we cannot tell you when", and only one of them says so.
-	export function formatConfirmDeadline(iso: string | null | undefined): string {
-		if (!iso) return '';
-		const at = new Date(iso);
-		if (Number.isNaN(at.getTime())) return '';
-		const pad = (n: number) => String(n).padStart(2, '0');
-		return (
-			`${at.getUTCFullYear()}-${pad(at.getUTCMonth() + 1)}-${pad(at.getUTCDate())} ` +
-			`${pad(at.getUTCHours())}:${pad(at.getUTCMinutes())} UTC`
-		);
-	}
 </script>
 
 <script lang="ts">
@@ -150,7 +125,10 @@
 			? pendingConfirmation
 			: undefined
 	);
-	const pendingDeadline = $derived(formatConfirmDeadline(pendingRow?.deadline));
+	// Rendered by the server, in the instance's timezone and naming that zone
+	// (#438). The page deliberately does no formatting of its own: this exact string
+	// is also what the confirm email states, and the giver may be holding both.
+	const pendingDeadline = $derived(pendingRow?.deadline ?? '');
 
 	// email_required (#144): an email-confirm list rejects a reservation with no giver
 	// email server-side. Mirror that in the UI — mark the email field required and block

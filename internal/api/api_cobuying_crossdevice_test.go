@@ -33,7 +33,11 @@ func (h *harness) scopedTokenFor(contact string) string {
 	for _, m := range h.email.Sent() {
 		if m.To == contact && strings.Contains(m.Body, "/cobuy/") {
 			if _, t, ok := strings.Cut(m.Body, "?t="); ok {
-				tok = strings.TrimSpace(t)
+				// Stop at the first whitespace. The old bodies ended with the URL, so
+				// trimming was enough; a shared layout puts a signature after it.
+				if f := strings.Fields(t); len(f) > 0 {
+					tok = f[0]
+				}
 			}
 		}
 	}

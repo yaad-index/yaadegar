@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { render, screen } from '@testing-library/svelte';
-import Page, { formatConfirmDeadline, pendingConfirmationOf } from './+page.svelte';
+import Page, { pendingConfirmationOf } from './+page.svelte';
 import type { ActionData, PageData } from './$types';
 
 // #430. On an email_confirmed list a reserve is held pending the giver's confirmation.
@@ -68,7 +68,7 @@ describe('the pending instruction is drawn in the row that was acted on (#430)',
 	it('puts the instruction inside the acted-on item row, not at the top of the page', () => {
 		const { container } = render(Page, {
 			data: listData(),
-			form: pendingForm('item-one', '2026-09-22T15:04:09Z')
+			form: pendingForm('item-one', '2026-09-22 20:28 CEST')
 		});
 
 		expect(instructionEls()).toHaveLength(1);
@@ -95,7 +95,7 @@ describe('the pending instruction is drawn in the row that was acted on (#430)',
 		// result would then say nothing at all, which is worse than the bug.
 		const { container } = render(Page, {
 			data: listData(),
-			form: pendingForm('item-gone', '2026-09-22T15:04:09Z')
+			form: pendingForm('item-gone', '2026-09-22 20:28 CEST')
 		});
 		expect(instructionEls()).toHaveLength(1);
 		expect(instructionEls()[0].closest('li')).toBeNull();
@@ -141,10 +141,22 @@ describe('a pending reservation stops reading as a finished one (#430)', () => {
 });
 
 describe('the deadline is named only when one exists (#430)', () => {
-	it('states the instant the sweep will enforce, in the same shape as the email', () => {
-		render(Page, { data: listData(), form: pendingForm('item-one', '2026-09-22T15:04:09Z') });
+	it('shows exactly the string the server rendered, zone and all', () => {
+		// The page formats nothing itself (#438): the confirm email states this same
+		// deadline, a giver may hold both, and the zone is named so a reader
+		// elsewhere does not take it for their own clock.
+		render(Page, { data: listData(), form: pendingForm('item-one', '2026-09-22 20:28 CEST') });
 		expect(
-			screen.getByText(/Confirm by 2026-09-22 15:04 UTC, or the item is released/)
+			screen.getByText(/Confirm by 2026-09-22 20:28 CEST, or the item is released/)
+		).toBeInTheDocument();
+	});
+
+	it('passes an offset-named zone through unchanged too', () => {
+		// Not every zone has a letter abbreviation; some render as an offset. The
+		// page must not care — it prints what it was given.
+		render(Page, { data: listData(), form: pendingForm('item-one', '2026-09-22 21:58 +0330') });
+		expect(
+			screen.getByText(/Confirm by 2026-09-22 21:58 \+0330, or the item is released/)
 		).toBeInTheDocument();
 	});
 
@@ -158,40 +170,15 @@ describe('the deadline is named only when one exists (#430)', () => {
 	});
 });
 
-describe('formatConfirmDeadline', () => {
-	it('renders UTC in the shape the confirm email uses', () => {
-		expect(formatConfirmDeadline('2026-01-02T15:04:05Z')).toBe('2026-01-02 15:04 UTC');
-	});
-
-	it('pads every field, so the width never moves', () => {
-		expect(formatConfirmDeadline('2026-01-02T05:04:00Z')).toBe('2026-01-02 05:04 UTC');
-	});
-
-	it('reads the instant in UTC rather than the machine timezone', () => {
-		// The same instant written with an offset must format identically, or the string
-		// would mean something different depending on where the server runs.
-		//
-		// ⚠️ The timezone is pinned rather than inherited, and that is the whole force of
-		// this test. CI runs in UTC, where a formatter built on the machine's local
-		// getters produces exactly the same string — so inherited, this assertion would
-		// pass against the bug it exists to catch and would only ever have failed on a
-		// developer box that happened not to be in UTC. UTC+14 puts a local-time read on
-		// a different day as well as a different hour, so the failure is unmissable.
-		vi.stubEnv('TZ', 'Pacific/Kiritimati');
-		try {
-			expect(formatConfirmDeadline('2026-01-02T16:04:00+01:00')).toBe('2026-01-02 15:04 UTC');
-		} finally {
-			vi.unstubAllEnvs();
-		}
-	});
-
-	it('yields nothing for an absent or unreadable value, so no sentence is printed', () => {
-		expect(formatConfirmDeadline(null)).toBe('');
-		expect(formatConfirmDeadline(undefined)).toBe('');
-		expect(formatConfirmDeadline('')).toBe('');
-		expect(formatConfirmDeadline('the day after tomorrow')).toBe('');
-	});
-});
+// The deadline string itself is no longer built here. It is rendered server-side
+// in the instance's timezone (#438) and the page shows exactly what it was given,
+// because the confirm email states the same deadline and a giver may hold both.
+//
+// That also retires a hazard rather than moving it: the old client formatter had
+// to be tested with the timezone PINNED, since CI runs in UTC where a local-time
+// implementation produces an identical string and the assertion could not fail.
+// The Go formatter takes its location as an argument, so there is no ambient value
+// for a test to inherit in the first place.
 
 describe('pendingConfirmationOf', () => {
 	it('reads the item and deadline the action sent', () => {
@@ -264,14 +251,17 @@ describe('the reserve action hands the page what it needs to place the instructi
 			data: {
 				reservation_id: 'r1',
 				status: 'pending_confirmation',
-				confirm_deadline: '2026-09-22T15:04:09Z'
+				confirm_deadline: '2026-09-22T18:28:00Z',
+				confirm_deadline_display: '2026-09-22 20:28 CEST'
 			},
 			error: undefined,
 			response: { status: 202 }
 		});
+		// The DISPLAY string is what travels, not the instant. Passing the raw
+		// instant through would make the page format it a second time.
 		expect(pendingOf(res)).toEqual({
 			itemId: 'item-one',
-			deadline: '2026-09-22T15:04:09Z'
+			deadline: '2026-09-22 20:28 CEST'
 		});
 		// The message is unchanged — this adds a key, it does not move the text.
 		expect((res as { form?: { message?: string } }).form?.message).toBe(INSTRUCTION);
@@ -280,6 +270,23 @@ describe('the reserve action hands the page what it needs to place the instructi
 	it('carries a null deadline when the backend states none', async () => {
 		const res = await callReserve({
 			data: { reservation_id: 'r1', status: 'pending_confirmation' },
+			error: undefined,
+			response: { status: 202 }
+		});
+		expect(pendingOf(res)).toEqual({ itemId: 'item-one', deadline: null });
+	});
+
+	it('states no deadline when the backend sends an instant but no rendering of it', async () => {
+		// A backend older than the timezone setting sends confirm_deadline and no
+		// display string. Showing nothing is the right degradation: the page cannot
+		// render the instant without re-introducing a second formatter, and the
+		// instruction itself is unaffected.
+		const res = await callReserve({
+			data: {
+				reservation_id: 'r1',
+				status: 'pending_confirmation',
+				confirm_deadline: '2026-09-22T18:28:00Z'
+			},
 			error: undefined,
 			response: { status: 202 }
 		});
