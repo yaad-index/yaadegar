@@ -47,7 +47,11 @@ func (h *harness) lastConfirmToken() string {
 	body := sent[len(sent)-1].Body
 	_, tok, ok := strings.Cut(body, "token=")
 	require.True(h.t, ok, "no token= in email body: %q", body)
-	return tok
+	// Stop at the first whitespace: the shared layout puts a signature after the
+	// link, where the old hand-built body ended with it.
+	f := strings.Fields(tok)
+	require.NotEmpty(h.t, f, "empty token in email body: %q", body)
+	return f[0]
 }
 
 func (h *harness) confirmReservation(token string) (*http.Response, gen.ReservationConfirmed) {

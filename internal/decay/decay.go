@@ -168,13 +168,17 @@ func (s *Sweeper) notifyReserver(ctx context.Context, c storage.DecayCandidate, 
 	}
 	keepLink := s.cfg.LinkBase + "/decay-keep?token=" + keepRaw
 	releaseLink := s.cfg.LinkBase + "/decay-release?token=" + releaseRaw
-	body := "You reserved " + c.ItemName + " a while ago — still planning to buy it? " +
-		"Keep your reservation: " + keepLink + "  ·  Or release it for someone else: " + releaseLink
-	if err := s.email.Send(ctx, email.Message{
-		To:      *c.GiverEmail,
-		Subject: "Still planning to buy your reserved gift?",
-		Body:    body,
-	}); err != nil {
+	const subject = "Still planning to buy your reserved gift?"
+	// Keep is the primary action and release the secondary one: this is a nudge, and
+	// the expected answer is that nothing changes. Two equal buttons would present a
+	// routine reminder as a decision with no default.
+	body := email.Content{
+		Title:     subject,
+		Intro:     []string{"You reserved " + c.ItemName + " a while ago. If you are still planning to buy it, keep your reservation and we will stop asking for now."},
+		Action:    &email.Action{Label: "Keep my reservation", URL: keepLink},
+		Secondary: &email.Action{Label: "Release it for someone else", URL: releaseLink},
+	}
+	if err := s.email.Send(ctx, body.Message(*c.GiverEmail, subject)); err != nil {
 		s.logger.Error("decay reserver email failed", "err", err, "reservation", c.ReservationID)
 		return err
 	}

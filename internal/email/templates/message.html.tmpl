@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ .Title }}</title>
+</head>
+<!--
+  Mail clients are a hostile rendering target, so this is table layout with inlined
+  CSS rather than anything a browser would make easy: no external stylesheet (many
+  clients strip <style>), no flexbox or grid, no web font, and NO REMOTE IMAGES —
+  images are blocked by default in most clients, so a layout that depends on one
+  renders broken for the reader who most needs to trust it.
+
+  The palette follows the web app; the typefaces cannot, since the app self-hosts
+  them and a mail may not fetch. Georgia and a system sans stack are the closest
+  things that are already on the reader's machine.
+-->
+<body style="margin:0;padding:0;background-color:#fcfaf6;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fcfaf6;">
+<tr>
+<td align="center" style="padding:24px 12px;">
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background-color:#ffffff;border:1px solid #e8e2db;border-radius:12px;">
+<tr>
+<td style="padding:28px 28px 8px 28px;">
+<span style="font-family:Georgia,'Times New Roman',serif;font-size:20px;font-weight:600;color:#a85a68;">Yaadegar</span>
+</td>
+</tr>
+
+{{ with .Title }}
+<tr>
+<td style="padding:8px 28px 0 28px;font-family:Georgia,'Times New Roman',serif;font-size:22px;line-height:30px;font-weight:600;color:#3a342e;">{{ . }}</td>
+</tr>
+{{ end }}
+
+{{ range .Intro }}
+<tr>
+<td style="padding:16px 28px 0 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:16px;line-height:24px;color:#2e2824;">{{ . }}</td>
+</tr>
+{{ end }}
+
+{{ with .Action }}
+<tr>
+<td style="padding:24px 28px 0 28px;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td align="center" bgcolor="#a85a68" style="border-radius:8px;">
+<a href="{{ .URL }}" style="display:inline-block;padding:12px 22px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:16px;line-height:20px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">{{ .Label }}</a>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+<!--
+  The same URL again as selectable text. A button whose href a client has stripped,
+  rewritten, or refused to make clickable leaves the reader with nothing otherwise,
+  and this mail is often the only way to complete what they started.
+-->
+<tr>
+<td style="padding:12px 28px 0 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px;line-height:20px;color:#aea69f;word-break:break-all;">
+Or paste this into your browser:<br>{{ .URL }}
+</td>
+</tr>
+{{ end }}
+
+{{ with .Secondary }}
+<tr>
+<td style="padding:14px 28px 0 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#2e2824;">
+<a href="{{ .URL }}" style="color:#ad6472;">{{ .Label }}</a>
+</td>
+</tr>
+{{ end }}
+
+{{ range .Outro }}
+<tr>
+<td style="padding:16px 28px 0 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:16px;line-height:24px;color:#2e2824;">{{ . }}</td>
+</tr>
+{{ end }}
+
+<tr>
+<td style="padding:28px 28px 28px 28px;">
+<div style="border-top:1px solid #e8e2db;padding-top:16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px;line-height:20px;color:#aea69f;">Yaadegar</div>
+</td>
+</tr>
+
+</table>
+
+</td>
+</tr>
+</table>
+</body>
+</html>

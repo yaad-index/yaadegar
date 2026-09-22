@@ -11,10 +11,17 @@ import (
 )
 
 // Message is one outbound email.
+//
+// Body is the plain-text part and is always present. HTML is an optional
+// alternative: when it is empty the message goes out single-part text/plain
+// exactly as it always has, so a sender that has nothing to gain from markup
+// stays simple and cannot regress. Build both together with Content.Message
+// rather than setting these by hand (#437).
 type Message struct {
 	To      string
 	Subject string
 	Body    string
+	HTML    string
 }
 
 // Sender delivers messages. Implementations must surface failures (return an

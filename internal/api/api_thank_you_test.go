@@ -51,7 +51,10 @@ func TestThankYou_FullGuestSentAndAnonymous(t *testing.T) {
 	assert.Equal(t, "ada@example.com", m.To)
 	assert.Equal(t, "Thank you for reserving Blender", m.Subject)
 	assert.Contains(t, m.Body, "Blender", "{item} is substituted with the item name")
-	assert.Equal(t, "Thanks so much for Blender! — the host", m.Body)
+	// The note is a paragraph inside the shared layout now rather than the whole
+	// body, so this is containment. The anonymity assertions below are unchanged and
+	// are the ones that matter — they are about what must NOT be there.
+	assert.Contains(t, m.Body, "Thanks so much for Blender! — the host")
 	// Anonymity: the note must not leak the reserver's identity back to the owner.
 	assert.NotContains(t, m.Body, "Grandma Ada")
 	assert.NotContains(t, m.Subject, "Grandma Ada")
@@ -77,7 +80,7 @@ func TestThankYou_EmailConfirmedSentOnConfirm(t *testing.T) {
 
 	sent := h.email.Sent()
 	require.Len(t, sent, 2)
-	assert.Equal(t, "Thank you for Kettle.", sent[1].Body)
+	assert.Contains(t, sent[1].Body, "Thank you for Kettle.")
 	assert.Equal(t, "reserver@example.com", sent[1].To)
 }
 
@@ -91,7 +94,7 @@ func TestThankYou_ItemOverrideBeatsList(t *testing.T) {
 
 	h.reserveGuest(t, *list.ShareSlug, *item.Id, "G", "g@example.com")
 	require.Len(t, h.email.Sent(), 1)
-	assert.Equal(t, "special Lamp note", h.email.Sent()[0].Body)
+	assert.Contains(t, h.email.Sent()[0].Body, "special Lamp note")
 }
 
 // Per-item opt-out: an explicit empty-string item override suppresses the note
@@ -112,7 +115,7 @@ func TestThankYou_EmptyItemOverrideSuppressesEvenWithListDefault(t *testing.T) {
 	h.setItemThankYou(t, *item2.Id, nil) // null → inherit
 	h.reserveGuest(t, *list.ShareSlug, *item2.Id, "G", "g2@example.com")
 	require.Len(t, h.email.Sent(), 1)
-	assert.Equal(t, "thanks for Clock", h.email.Sent()[0].Body)
+	assert.Contains(t, h.email.Sent()[0].Body, "thanks for Clock")
 }
 
 // No note is sent when neither level configures one, or the reserver left no email.

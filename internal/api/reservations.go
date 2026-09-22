@@ -199,11 +199,15 @@ func (s *Server) deliverThankYou(ctx context.Context, item storage.Item, list st
 	if item.Name != "" {
 		subject = renderThankYou(subj.withItem, item.Name)
 	}
-	if err := s.email.Send(ctx, email.Message{
-		To:      recipient,
-		Subject: subject,
-		Body:    renderThankYou(tmpl, item.Name),
-	}); err != nil {
+	// The note is the owner's own words, so it is the whole body and there is
+	// nothing to click. Paragraphs preserves the breaks they wrote; the layout
+	// escapes the text, which matters more here than anywhere else because this is
+	// the one body a user authors rather than the code.
+	note := email.Content{
+		Title: subject,
+		Intro: email.Paragraphs(renderThankYou(tmpl, item.Name)),
+	}
+	if err := s.email.Send(ctx, note.Message(recipient, subject)); err != nil {
 		s.logger.ErrorContext(ctx, "thank-you email send failed (ignored)", append(logKV, "error", err)...)
 	}
 }
@@ -282,17 +286,28 @@ func (s *Server) reserveEmailConfirmed(ctx context.Context, ts storage.TenantSto
 	deadline := s.confirmDeadline(list, res)
 
 	link := s.publicLinkBase + "/confirm?token=" + confirmRaw
-	body := "Confirm your reservation for " + item.Name + ": " + link
-	if deadline != nil {
-		body += "\n\nYou have " + humanDuration(deadline.Sub(res.StateAt)) +
-			" to confirm, until " + deadline.UTC().Format("2006-01-02 15:04 UTC") +
-			". After that the item is released for someone else to give."
+	const subject = "Confirm your reservation"
+	// An item with no name is possible, and "Confirm your reservation for ." is not
+	// a sentence — the previous body concatenated the name unconditionally.
+	what := "the item you reserved"
+	if item.Name != "" {
+		what = item.Name
 	}
-	if err := s.email.Send(ctx, email.Message{
-		To:      *giverEmail,
-		Subject: "Confirm your reservation",
-		Body:    body,
-	}); err != nil {
+	body := email.Content{
+		Title:  subject,
+		Intro:  []string{"You reserved " + what + ". Confirm it so the owner knows it is taken."},
+		Action: &email.Action{Label: "Confirm the reservation", URL: link},
+	}
+	if deadline != nil {
+		// The relative half needs no timezone and is correct for every reader. Only
+		// the absolute instant does, and it is rendered in the instance's zone with
+		// that zone named, so a giver elsewhere can see what it is relative to
+		// instead of reading it as their own clock (#438).
+		body.Outro = []string{"You have " + humanDuration(deadline.Sub(res.StateAt)) +
+			" to confirm, until " + settings.FormatInstant(*deadline, s.displayLocation) +
+			". After that the item is released for someone else to give."}
+	}
+	if err := s.email.Send(ctx, body.Message(*giverEmail, subject)); err != nil {
 		s.logger.ErrorContext(ctx, "confirm email send failed; rolling back the pending hold",
 			"reservation_id", res.ID, "error", err)
 		if derr := ts.Reservations().Delete(ctx, res.ID); derr != nil {
@@ -312,6 +327,13 @@ func (s *Server) reserveEmailConfirmed(ctx context.Context, ts storage.TenantSto
 		Status:        gen.ReservationCreatedStatusPendingConfirmation,
 	}
 	out.ConfirmDeadline = deadline
+	if deadline != nil {
+		// The same string the email carries, rendered once here (#438). The page
+		// shows this rather than formatting the instant itself: the giver may have
+		// the mail and the page open together, and two formatters of one instant
+		// produce wordings that do not match even when both are right.
+		out.ConfirmDeadlineDisplay = ptr(settings.FormatInstant(*deadline, s.displayLocation))
+	}
 	return gen.CreateReservation202JSONResponse(out), nil
 }
 

@@ -1,12 +1,18 @@
 package email
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"log/slog"
+	"mime"
+	"mime/multipart"
+	"mime/quotedprintable"
 	"net"
 	"net/smtp"
+	"net/textproto"
 	"strings"
 	"syscall"
 	"time"
@@ -158,18 +164,83 @@ func (s *SMTPSender) send(ctx context.Context, m Message) error {
 }
 
 // buildMessage renders an RFC 5322 message. Header values are sanitized against
-// CRLF injection and the body is CRLF-normalized.
+// CRLF injection.
+//
+// A message with an HTML part goes out as multipart/alternative; one without stays
+// single-part text/plain (#437).
+//
+// ⚠️ Both are quoted-printable, which the single-part path was NOT before, so its
+// bytes on the wire change even though its content does not — a body containing
+// "=" now carries "=3D" until a client decodes it. That is a deliberate fix rather
+// than churn: RFC 5322 caps a line at 998 octets and the previous encoding was
+// declared nowhere, so a long item name or any 8-bit character was already a
+// latent wire-format bug. An inlined-CSS HTML part would have made it a certain
+// one. Encoding removes the cap as something a caller can violate at all.
 func buildMessage(from string, m Message) []byte {
-	var b strings.Builder
+	var b bytes.Buffer
 	fmt.Fprintf(&b, "From: %s\r\n", sanitizeHeader(from))
 	fmt.Fprintf(&b, "To: %s\r\n", sanitizeHeader(m.To))
-	fmt.Fprintf(&b, "Subject: %s\r\n", sanitizeHeader(m.Subject))
+	fmt.Fprintf(&b, "Subject: %s\r\n", encodeSubject(m.Subject))
 	fmt.Fprintf(&b, "Date: %s\r\n", time.Now().UTC().Format(time.RFC1123Z))
 	b.WriteString("MIME-Version: 1.0\r\n")
-	b.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
+
+	if strings.TrimSpace(m.HTML) == "" {
+		b.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
+		b.WriteString("Content-Transfer-Encoding: quoted-printable\r\n")
+		b.WriteString("\r\n")
+		writeQuotedPrintable(&b, m.Body)
+		return b.Bytes()
+	}
+
+	// The parts are built first so the boundary is known before the header that
+	// declares it is written.
+	var parts bytes.Buffer
+	mw := multipart.NewWriter(&parts)
+	// Least-faithful alternative first: a client picks the last part it can render,
+	// so text before HTML is what makes an HTML-capable reader see the HTML and a
+	// text-only one see something sensible (RFC 2046 §5.1.4).
+	writePart(mw, "text/plain; charset=utf-8", m.Body)
+	writePart(mw, "text/html; charset=utf-8", m.HTML)
+	_ = mw.Close()
+
+	fmt.Fprintf(&b, "Content-Type: multipart/alternative; boundary=%q\r\n", mw.Boundary())
 	b.WriteString("\r\n")
-	b.WriteString(strings.ReplaceAll(strings.ReplaceAll(m.Body, "\r\n", "\n"), "\n", "\r\n"))
-	return []byte(b.String())
+	b.Write(parts.Bytes())
+	return b.Bytes()
+}
+
+// writePart adds one quoted-printable alternative.
+func writePart(mw *multipart.Writer, contentType, body string) {
+	h := make(textproto.MIMEHeader)
+	h.Set("Content-Type", contentType)
+	h.Set("Content-Transfer-Encoding", "quoted-printable")
+	w, err := mw.CreatePart(h)
+	if err != nil {
+		return
+	}
+	writeQuotedPrintable(w, body)
+}
+
+// writeQuotedPrintable normalizes to LF first so a mixed-ending body cannot become
+// a doubled CR once the encoder writes its own CRLFs.
+func writeQuotedPrintable(w io.Writer, body string) {
+	qp := quotedprintable.NewWriter(w)
+	_, _ = qp.Write([]byte(strings.ReplaceAll(body, "\r\n", "\n")))
+	_ = qp.Close()
+}
+
+// encodeSubject RFC 2047-encodes a subject that is not plain ASCII, so a non-ASCII
+// item or list name in a subject line arrives readable rather than as mojibake.
+// CRLF is stripped either way — the encoder would escape it, but the guarantee
+// against header injection should not depend on which branch runs.
+func encodeSubject(v string) string {
+	v = sanitizeHeader(v)
+	for i := 0; i < len(v); i++ {
+		if v[i] > 127 {
+			return mime.QEncoding.Encode("utf-8", v)
+		}
+	}
+	return v
 }
 
 // sanitizeHeader strips CR/LF to prevent header injection via a crafted address

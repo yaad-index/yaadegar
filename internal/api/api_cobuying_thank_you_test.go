@@ -3,6 +3,7 @@ package api_test
 import (
 	"errors"
 	"net/http"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -59,16 +60,25 @@ func TestCoBuyThankYou_SentToEachContributorAtBothConfirmed(t *testing.T) {
 		got[m.To] = m.Body
 		assert.Equal(t, "Thank you for chipping in on Espresso machine", m.Subject,
 			"co-buy-fitting subject, {item} substituted")
-		assert.Equal(t, "Thanks for chipping in on Espresso machine! — the host", m.Body,
+		// Containment, not equality: the owner's note is a paragraph inside the
+		// shared layout now rather than the entire body.
+		assert.Contains(t, m.Body, "Thanks for chipping in on Espresso machine! — the host",
 			"{item} substituted, owner-authored body")
 		// Anonymity: the note must not carry any giver's identity.
 		assert.NotContains(t, m.Body, aEmail)
 		assert.NotContains(t, m.Body, bEmail)
 	}
-	assert.Equal(t, map[string]string{
-		aEmail: "Thanks for chipping in on Espresso machine! — the host",
-		bEmail: "Thanks for chipping in on Espresso machine! — the host",
-	}, got, "each contributor's own contact is the recipient, once each")
+	// The claim is about RECIPIENTS — each contributor's own contact, once each —
+	// so it is asserted on the keys. Rebuilding the expected map out of `got` would
+	// compare a value with itself and pass whatever the code did.
+	recipients := make([]string, 0, len(got))
+	for to := range got {
+		recipients = append(recipients, to)
+	}
+	sort.Strings(recipients)
+	want := []string{aEmail, bEmail}
+	sort.Strings(want)
+	assert.Equal(t, want, recipients, "each contributor's own contact is the recipient, once each")
 }
 
 // The per-item / list two-level resolution carries over: with no template
