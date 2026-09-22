@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.21.0...yaadegar-v0.22.0) (2026-09-22)
+
+
+### Features
+
+* state the confirm deadline in the reserve response and the confirm email ([#432](https://github.com/yaad-index/yaadegar/issues/432)) ([b1b3f77](https://github.com/yaad-index/yaadegar/commit/b1b3f77c37292098158c87b15d185214c1bc3842))
+
 ## [0.21.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.20.0...yaadegar-v0.21.0) (2026-09-21)
 
 
