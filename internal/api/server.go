@@ -41,6 +41,16 @@ type Server struct {
 	// cobuyConfirmWindow is how long a scoped match-action token stays valid after a
 	// match is proposed (#96). Non-positive means the token never expires.
 	cobuyConfirmWindow time.Duration
+	// reserverConfirmWindow is the instance default for how long an email_confirmed
+	// reservation may sit unconfirmed before the decay sweep frees the item
+	// (ADR-0007 §3). A list may override it. Non-positive disables that expiry, so
+	// there is no deadline to state rather than an immediate one.
+	//
+	// The sweeper owns the expiry; this copy exists only so the reserve response can
+	// tell the giver the deadline that sweep will apply. Both resolve the same
+	// override against the same default through settings.ResolveMinutes, so the
+	// number shown and the number enforced come from one rule.
+	reserverConfirmWindow time.Duration
 	// oauth is the OIDC login client (ADR-0008). nil when no Google client is
 	// configured, in which case every OAuth endpoint reports 404 (the method is
 	// absent, not a failure).
@@ -119,6 +129,10 @@ type Options struct {
 	// CobuyConfirmWindow is how long a scoped match-action token stays valid after
 	// a match is proposed (#96). Non-positive means it never expires.
 	CobuyConfirmWindow time.Duration
+	// ReserverConfirmWindow is the instance default confirm window for an
+	// email_confirmed reservation (ADR-0007 §3); a list may override it.
+	// Non-positive disables the confirm-window expiry entirely.
+	ReserverConfirmWindow time.Duration
 	// OAuth is the OIDC owner-login client (ADR-0008). nil disables Google login
 	// (the endpoints report 404). Built at startup from the env config once the
 	// three client fields are present; a partial config fails startup, not here.
@@ -156,29 +170,30 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 		panic("api: Options.Auth is required (owner surface must not fall open)")
 	}
 	s := &Server{
-		store:               store,
-		baseDomain:          opts.BaseDomain,
-		version:             opts.Version,
-		email:               opts.Email,
-		clock:               opts.Clock,
-		previewer:           opts.Previewer,
-		resolver:            opts.Resolver,
-		auth:                opts.Auth,
-		trustForwardedHost:  opts.TrustForwardedHost,
-		loginLimiter:        opts.LoginLimiter,
-		domainCNAMETarget:   opts.DomainCNAMETarget,
-		domainClaimTTL:      opts.DomainClaimTTL,
-		defaultReserverTier: opts.DefaultReserverTier,
-		publicLinkBase:      opts.PublicLinkBase,
-		cobuyConfirmWindow:  opts.CobuyConfirmWindow,
-		oauth:               opts.OAuth,
-		ticketGuard:         opts.TicketGuard,
-		registrationPolicy:  opts.RegistrationPolicy,
-		captcha:             opts.Captcha,
-		captchaEnabled:      opts.Captcha != nil,
-		captchaProvider:     opts.CaptchaProvider,
-		captchaSiteKey:      opts.CaptchaSiteKey,
-		logger:              opts.Logger,
+		store:                 store,
+		baseDomain:            opts.BaseDomain,
+		version:               opts.Version,
+		email:                 opts.Email,
+		clock:                 opts.Clock,
+		previewer:             opts.Previewer,
+		resolver:              opts.Resolver,
+		auth:                  opts.Auth,
+		trustForwardedHost:    opts.TrustForwardedHost,
+		loginLimiter:          opts.LoginLimiter,
+		domainCNAMETarget:     opts.DomainCNAMETarget,
+		domainClaimTTL:        opts.DomainClaimTTL,
+		defaultReserverTier:   opts.DefaultReserverTier,
+		publicLinkBase:        opts.PublicLinkBase,
+		cobuyConfirmWindow:    opts.CobuyConfirmWindow,
+		reserverConfirmWindow: opts.ReserverConfirmWindow,
+		oauth:                 opts.OAuth,
+		ticketGuard:           opts.TicketGuard,
+		registrationPolicy:    opts.RegistrationPolicy,
+		captcha:               opts.Captcha,
+		captchaEnabled:        opts.Captcha != nil,
+		captchaProvider:       opts.CaptchaProvider,
+		captchaSiteKey:        opts.CaptchaSiteKey,
+		logger:                opts.Logger,
 	}
 	if s.captcha == nil {
 		s.captcha = captcha.NoopVerifier{}

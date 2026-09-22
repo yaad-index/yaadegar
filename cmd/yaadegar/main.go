@@ -272,12 +272,16 @@ func (c *ServeCmd) Run(cli *CLI) error {
 		DefaultReserverTier: defaultTier,
 		PublicLinkBase:      linkBase,
 		CobuyConfirmWindow:  c.CobuyConfirmWindow,
-		OAuth:               oauthAuth,
-		RegistrationPolicy:  registrationPolicy,
-		Captcha:             captchaVerifier,
-		CaptchaProvider:     c.CaptchaProvider,
-		CaptchaSiteKey:      c.CaptchaSiteKey,
-		Version:             reportedVersion(),
+		// The same value the decay sweeper below gets as ConfirmWindow. It is passed
+		// to both so the deadline shown to the giver and the deadline enforced by the
+		// sweep cannot come from different settings.
+		ReserverConfirmWindow: c.ReserverConfirmWindow,
+		OAuth:                 oauthAuth,
+		RegistrationPolicy:    registrationPolicy,
+		Captcha:               captchaVerifier,
+		CaptchaProvider:       c.CaptchaProvider,
+		CaptchaSiteKey:        c.CaptchaSiteKey,
+		Version:               reportedVersion(),
 	})
 
 	// Run the reservation-decay sweeper on a ticker alongside the server.
