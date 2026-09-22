@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.22.0...yaadegar-v0.23.0) (2026-09-22)
+
+
+### Features
+
+* **web:** put the confirm instruction in the row the giver just reserved ([#440](https://github.com/yaad-index/yaadegar/issues/440)) ([f34da8f](https://github.com/yaad-index/yaadegar/commit/f34da8f7c3165185393d8411b3cc498a1a71a8dd))
+
 ## [0.22.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.21.0...yaadegar-v0.22.0) (2026-09-22)
 
 
