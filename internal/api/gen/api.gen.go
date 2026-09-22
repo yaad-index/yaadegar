@@ -869,7 +869,11 @@ type ReservationCreate struct {
 type ReservationCreated struct {
 	// CapabilityToken The release handle, returned once. Present only for an active reservation; absent while pending_confirmation (issued at confirm).
 	CapabilityToken *string `json:"capability_token,omitempty"`
-	ReservationId   string  `json:"reservation_id"`
+
+	// ConfirmDeadline The instant an unconfirmed reservation is released, so the giver can be told how long they have. Derived from the reservation's own state_at plus the effective confirm window (the list override if set, else the instance default), which is the same pair the expiry sweep compares — so this is the deadline that will actually be enforced, not an estimate.
+	// ABSENT means there is no deadline, not that one is unknown: the effective window resolves to zero, which disables the confirm-window expiry, so the reservation waits indefinitely. A client must not present a deadline when this is absent. Only ever present alongside status pending_confirmation.
+	ConfirmDeadline *time.Time `json:"confirm_deadline,omitempty"`
+	ReservationId   string     `json:"reservation_id"`
 
 	// Status active — the reservation holds the item now (full_guest tier). pending_confirmation — an email_confirmed reservation holding the item provisionally until the giver confirms via the emailed link; no capability token is issued until then.
 	Status ReservationCreatedStatus `json:"status"`

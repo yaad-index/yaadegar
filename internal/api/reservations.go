@@ -89,7 +89,7 @@ func (s *Server) CreateReservation(ctx context.Context, req gen.CreateReservatio
 	}
 
 	if tier == storage.TierEmailConfirmed {
-		return s.reserveEmailConfirmed(ctx, ts, item, qty, giverName, giverEmail)
+		return s.reserveEmailConfirmed(ctx, ts, list, item, qty, giverName, giverEmail)
 	}
 	if tier == storage.TierRegistered {
 		// A registered-tier list refuses the anonymous path (ADR-0012 Decision 4): a
@@ -213,7 +213,7 @@ func (s *Server) deliverThankYou(ctx context.Context, item storage.Item, list st
 // capability token — the token is issued only once the giver confirms. The giver
 // never learns any other reserver's identity, and the response carries no reserver
 // contact (ADR-0002 §5, ADR-0007 §3).
-func (s *Server) reserveEmailConfirmed(ctx context.Context, ts storage.TenantStore, item storage.Item, qty int, giverName, giverEmail *string) (gen.CreateReservationResponseObject, error) {
+func (s *Server) reserveEmailConfirmed(ctx context.Context, ts storage.TenantStore, list storage.List, item storage.Item, qty int, giverName, giverEmail *string) (gen.CreateReservationResponseObject, error) {
 	// A confirmable reservation needs a deliverable address; a light
 	// well-formedness check keeps an obviously-bad address from taking a slot only
 	// to expire unconfirmed. The low-trust CAPTCHA (ADR-0013) already ran in
@@ -293,10 +293,25 @@ func (s *Server) reserveEmailConfirmed(ctx context.Context, ts storage.TenantSto
 		), nil
 	}
 
-	return gen.CreateReservation202JSONResponse(gen.ReservationCreated{
+	out := gen.ReservationCreated{
 		ReservationId: res.ID,
 		Status:        gen.ReservationCreatedStatusPendingConfirmation,
-	}), nil
+	}
+	// The deadline the confirm-window sweep will apply to this hold, resolved
+	// through the helper that sweep resolves with and anchored to the same
+	// state_at it compares against — so the giver is told the instant that will
+	// actually be enforced rather than one computed a second time from a second
+	// clock.
+	//
+	// A non-positive window disables that expiry, and then the field stays absent.
+	// Absent means "no deadline exists", which is why it is not filled with the
+	// reservation's own instant or a far-future one: either would read to a client
+	// as a deadline, and the copy keyed off it would tell the giver they must act
+	// by a time at which nothing happens.
+	if window := settings.ResolveMinutes(list.ReserverConfirmWindowMinutes, s.reserverConfirmWindow); window > 0 {
+		out.ConfirmDeadline = ptr(res.StateAt.Add(window))
+	}
+	return gen.CreateReservation202JSONResponse(out), nil
 }
 
 // ConfirmReservation activates a pending_confirmation reservation from the one-time
