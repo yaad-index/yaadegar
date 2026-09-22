@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/mail"
+	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -273,11 +275,23 @@ func (s *Server) reserveEmailConfirmed(ctx context.Context, ts storage.TenantSto
 	// would occupy the slot until the confirm window expires. So on a send failure
 	// we roll the hold back (delete frees the slot immediately, sentinel and all)
 	// and return 503 so the giver can retry now rather than wait out the window.
+	// Resolved once, before the send, so the deadline in the message the giver acts
+	// FROM and the deadline in the response the page reads are the same instant. The
+	// email is the surface that matters most here: the confirm happens from it, and
+	// by then the page that could have shown a deadline is gone.
+	deadline := s.confirmDeadline(list, res)
+
 	link := s.publicLinkBase + "/confirm?token=" + confirmRaw
+	body := "Confirm your reservation for " + item.Name + ": " + link
+	if deadline != nil {
+		body += "\n\nYou have " + humanDuration(deadline.Sub(res.StateAt)) +
+			" to confirm, until " + deadline.UTC().Format("2006-01-02 15:04 UTC") +
+			". After that the item is released for someone else to give."
+	}
 	if err := s.email.Send(ctx, email.Message{
 		To:      *giverEmail,
 		Subject: "Confirm your reservation",
-		Body:    "Confirm your reservation for " + item.Name + ": " + link,
+		Body:    body,
 	}); err != nil {
 		s.logger.ErrorContext(ctx, "confirm email send failed; rolling back the pending hold",
 			"reservation_id", res.ID, "error", err)
@@ -297,21 +311,52 @@ func (s *Server) reserveEmailConfirmed(ctx context.Context, ts storage.TenantSto
 		ReservationId: res.ID,
 		Status:        gen.ReservationCreatedStatusPendingConfirmation,
 	}
-	// The deadline the confirm-window sweep will apply to this hold, resolved
-	// through the helper that sweep resolves with and anchored to the same
-	// state_at it compares against — so the giver is told the instant that will
-	// actually be enforced rather than one computed a second time from a second
-	// clock.
-	//
-	// A non-positive window disables that expiry, and then the field stays absent.
-	// Absent means "no deadline exists", which is why it is not filled with the
-	// reservation's own instant or a far-future one: either would read to a client
-	// as a deadline, and the copy keyed off it would tell the giver they must act
-	// by a time at which nothing happens.
-	if window := settings.ResolveMinutes(list.ReserverConfirmWindowMinutes, s.reserverConfirmWindow); window > 0 {
-		out.ConfirmDeadline = ptr(res.StateAt.Add(window))
-	}
+	out.ConfirmDeadline = deadline
 	return gen.CreateReservation202JSONResponse(out), nil
+}
+
+// confirmDeadline is the instant the confirm-window sweep will release this hold,
+// or nil when nothing will release it.
+//
+// It resolves through the helper that sweep resolves with, and anchors to the same
+// state_at the sweep compares against — so the giver is told the instant that will
+// actually be enforced, rather than one computed a second time from a second clock.
+//
+// nil means no deadline EXISTS, not that one is unknown: a non-positive window
+// disables the confirm-window expiry and the hold waits indefinitely. Returning any
+// instant in that case would have every caller state a deadline at which nothing
+// happens, which is worse than stating none.
+func (s *Server) confirmDeadline(list storage.List, res storage.Reservation) *time.Time {
+	window := settings.ResolveMinutes(list.ReserverConfirmWindowMinutes, s.reserverConfirmWindow)
+	if window <= 0 {
+		return nil
+	}
+	return ptr(res.StateAt.Add(window))
+}
+
+// humanDuration renders a confirm window the way someone would say it. It is exact
+// rather than rounded: a window is a promise about when something is taken away, so
+// a tidier number that overstates it would be a promise the sweep does not keep.
+//
+// Whole days and whole hours get their own unit because the window is configured in
+// minutes and a multi-day one would otherwise read as several thousand of them.
+// Anything that divides into neither stays in minutes, which is always true if
+// occasionally blunt.
+func humanDuration(d time.Duration) string {
+	unit := func(n int, name string) string {
+		if n == 1 {
+			return "1 " + name
+		}
+		return strconv.Itoa(n) + " " + name + "s"
+	}
+	switch {
+	case d >= 24*time.Hour && d%(24*time.Hour) == 0:
+		return unit(int(d/(24*time.Hour)), "day")
+	case d >= time.Hour && d%time.Hour == 0:
+		return unit(int(d/time.Hour), "hour")
+	default:
+		return unit(int(d/time.Minute), "minute")
+	}
 }
 
 // ConfirmReservation activates a pending_confirmation reservation from the one-time

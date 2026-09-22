@@ -170,3 +170,84 @@ func TestAnImmediateReservationStatesNoDeadline(t *testing.T) {
 	require.Equal(t, gen.ReservationCreatedStatusActive, created.Status)
 	assert.Nil(t, created.ConfirmDeadline, "an active reservation has no confirm deadline")
 }
+
+// lastEmail returns the most recently sent message.
+func (h *harness) lastEmail() string {
+	h.t.Helper()
+	sent := h.email.Sent()
+	require.NotEmpty(h.t, sent)
+	return sent[len(sent)-1].Body
+}
+
+// TestTheConfirmEmailCarriesTheSameDeadlineAsTheResponse puts the deadline on the
+// surface the giver actually acts from.
+//
+// 🔑 The email is the load-bearing surface for this, not the page: the confirm
+// happens by following the link, and by then the page that could have shown a
+// deadline has been left. A deadline named only on the page is named in the one
+// place the giver is no longer looking.
+//
+// The instant is asserted to be the SAME one the response carries rather than
+// merely present, because two surfaces each computing their own deadline is the
+// failure this whole change is arranged to avoid.
+func TestTheConfirmEmailCarriesTheSameDeadlineAsTheResponse(t *testing.T) {
+	const window = 30 * time.Minute
+
+	h := newHarnessConfirmWindow(t, window)
+	list, item := h.confirmList("placeholder list", nil)
+	created := h.reservePending(*list.ShareSlug, *item.Id)
+	require.NotNil(t, created.ConfirmDeadline)
+
+	body := h.lastEmail()
+	assert.Contains(t, body, "30 minutes", "the window as someone would say it")
+	assert.Contains(t, body, created.ConfirmDeadline.UTC().Format("2006-01-02 15:04 UTC"),
+		"the email must name the instant the response returned, not its own")
+	assert.Contains(t, body, "/confirm?token=", "the link must survive the addition")
+}
+
+// TestTheConfirmEmailSaysNothingAboutADeadlineWhenNothingWillExpire is the omission
+// half. A hold on a list with the window disabled is never released, so any sentence
+// about running out of time would be false — and it would be false in the direction
+// that makes someone hurry for no reason.
+func TestTheConfirmEmailSaysNothingAboutADeadlineWhenNothingWillExpire(t *testing.T) {
+	h := newHarnessConfirmWindow(t, 0)
+	list, item := h.confirmList("placeholder list", nil)
+	require.Nil(t, h.reservePending(*list.ShareSlug, *item.Id).ConfirmDeadline)
+
+	body := h.lastEmail()
+	assert.NotContains(t, body, "to confirm, until")
+	assert.NotContains(t, body, "released")
+	assert.Contains(t, body, "/confirm?token=", "the link is still the point of the email")
+}
+
+// TestTheConfirmWindowReadsNaturallyAtEveryScale drives the rendering through the
+// real email rather than calling the formatter, which keeps it in this package's
+// one test-package convention and checks what a giver is actually sent.
+//
+// ⚠️ The window is configured in MINUTES, so a multi-day list would otherwise be
+// described as several thousand of them. The cases that matter are the boundaries
+// and the singular, plus a window that divides into neither hours nor days: that one
+// stays in minutes deliberately, because the alternative is rounding, and rounding a
+// deadline either invents time the sweep will not honour or takes away time it would.
+func TestTheConfirmWindowReadsNaturallyAtEveryScale(t *testing.T) {
+	h := newHarnessConfirmWindow(t, time.Hour) // never used: every case overrides
+
+	for _, tc := range []struct {
+		minutes int
+		want    string
+	}{
+		{1, "1 minute"},
+		{45, "45 minutes"},
+		{60, "1 hour"},
+		{120, "2 hours"},
+		{90, "90 minutes"},
+		{1440, "1 day"},
+		{4320, "3 days"},
+	} {
+		t.Run(tc.want, func(t *testing.T) {
+			list, item := h.confirmList("placeholder list", ptr(tc.minutes))
+			h.reservePending(*list.ShareSlug, *item.Id)
+			assert.Contains(t, h.lastEmail(), "You have "+tc.want+" to confirm")
+		})
+	}
+}
