@@ -96,13 +96,12 @@ func (s *Sweeper) step(ctx context.Context, now time.Time, c storage.DecayCandid
 		//
 		// Effective window: the per-list override if set, else the instance default
 		// (mirrors the decay-period resolution). The override is minutes; resolve
-		// through settings.Resolve and never compare the raw value. 0 disables.
-		var confirmOverride *time.Duration
-		if c.ReserverConfirmWindowMinutes != nil {
-			d := time.Duration(*c.ReserverConfirmWindowMinutes) * time.Minute
-			confirmOverride = &d
-		}
-		confirmWindow := settings.Resolve(confirmOverride, s.cfg.ConfirmWindow)
+		// through settings and never compare the raw value. 0 disables.
+		//
+		// The reserve handler resolves the same window through this same helper to
+		// tell the giver their deadline. That shared call is what makes the deadline
+		// they are shown the one enforced here.
+		confirmWindow := settings.ResolveMinutes(c.ReserverConfirmWindowMinutes, s.cfg.ConfirmWindow)
 		if confirmWindow <= 0 || now.Sub(c.StateAt) < confirmWindow {
 			return nil
 		}

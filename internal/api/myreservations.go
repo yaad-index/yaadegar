@@ -59,6 +59,11 @@ func (s *Server) CreateMyReservation(ctx context.Context, req gen.CreateMyReserv
 		}
 		return nil, err
 	}
+	if archived(item) {
+		return gen.CreateMyReservation410ApplicationProblemPlusJSONResponse(
+			problemDetail(410, itemGoneDetail),
+		), nil
+	}
 
 	qty := 1
 	if req.Body.Quantity != nil && *req.Body.Quantity > 0 {

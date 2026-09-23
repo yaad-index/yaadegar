@@ -38,6 +38,21 @@ func (e AdminUserRole) Valid() bool {
 	}
 }
 
+// Defines values for ArchiveWarningCode.
+const (
+	CobuyMatchPending ArchiveWarningCode = "cobuy_match_pending"
+)
+
+// Valid indicates whether the value is a known member of the ArchiveWarningCode enum.
+func (e ArchiveWarningCode) Valid() bool {
+	switch e {
+	case CobuyMatchPending:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ContributionStatus.
 const (
 	ContributionStatusConfirmed ContributionStatus = "confirmed"
@@ -363,6 +378,16 @@ type AltchaChallenge struct {
 	Signature string `json:"signature"`
 }
 
+// ArchiveWarning One thing archiving affected that the owner could not see. `code` is the contract and is what a client should branch on; `detail` is an English fallback for a client that does not know the code, and is expected to be reworded without that being a breaking change.
+type ArchiveWarning struct {
+	// Code cobuy_match_pending — givers are mid-handshake on a co-buy for this item: a match has been proposed and they have not both confirmed yet. Archiving is allowed anyway (the list belongs to its owner) but it strands a negotiation the owner cannot see.
+	Code   *ArchiveWarningCode `json:"code,omitempty"`
+	Detail *string             `json:"detail,omitempty"`
+}
+
+// ArchiveWarningCode cobuy_match_pending — givers are mid-handshake on a co-buy for this item: a match has been proposed and they have not both confirmed yet. Archiving is allowed anyway (the list belongs to its owner) but it strands a negotiation the owner cannot see.
+type ArchiveWarningCode string
+
 // ChangePasswordRequest defines model for ChangePasswordRequest.
 type ChangePasswordRequest struct {
 	// CurrentPassword The caller's current password, re-verified before the change.
@@ -431,6 +456,9 @@ type Item struct {
 	// AllowCobuy The per-item co-buy override (#100), owner view: null means inheriting the list default, true/false an explicit override.
 	AllowCobuy *bool `json:"allow_cobuy,omitempty"`
 
+	// ArchivedAt When the owner archived this item (#419); null for a live item. An archived item keeps its row and its reservation history, does not appear on the public list, cannot be reserved or contributed to, and its live reservations stop decaying — so a bought item cannot expire its way back onto the list. Owner view only: the public item carries no such field, because an archived item is simply absent from a giver's list.
+	ArchivedAt *time.Time `json:"archived_at,omitempty"`
+
 	// Availability Availability only. Never reveals who reserved or is buying.
 	Availability *ItemAvailability `json:"availability,omitempty"`
 	Id           *string           `json:"id,omitempty"`
@@ -450,6 +478,12 @@ type Item struct {
 	// ThankYouTemplate The per-item thank-you override (#22), owner view: null inherits the list default, "" is a per-item opt-out, any other value overrides the body.
 	ThankYouTemplate *string `json:"thank_you_template,omitempty"`
 	Url              *string `json:"url,omitempty"`
+}
+
+// ItemArchiveResult The result of archiving an item (#419): the item itself, plus anything the owner should know about what archiving it affected. Warnings never block the archive — the list belongs to its owner — they report giver-side state the owner cannot otherwise see.
+type ItemArchiveResult struct {
+	Item     *Item             `json:"item,omitempty"`
+	Warnings *[]ArchiveWarning `json:"warnings,omitempty"`
 }
 
 // ItemAvailability Availability only. Never reveals who reserved or is buying.
@@ -835,7 +869,11 @@ type ReservationCreate struct {
 type ReservationCreated struct {
 	// CapabilityToken The release handle, returned once. Present only for an active reservation; absent while pending_confirmation (issued at confirm).
 	CapabilityToken *string `json:"capability_token,omitempty"`
-	ReservationId   string  `json:"reservation_id"`
+
+	// ConfirmDeadline The instant an unconfirmed reservation is released, so the giver can be told how long they have. Derived from the reservation's own state_at plus the effective confirm window (the list override if set, else the instance default), which is the same pair the expiry sweep compares — so this is the deadline that will actually be enforced, not an estimate.
+	// ABSENT means there is no deadline, not that one is unknown: the effective window resolves to zero, which disables the confirm-window expiry, so the reservation waits indefinitely. A client must not present a deadline when this is absent. Only ever present alongside status pending_confirmation.
+	ConfirmDeadline *time.Time `json:"confirm_deadline,omitempty"`
+	ReservationId   string     `json:"reservation_id"`
 
 	// Status active — the reservation holds the item now (full_guest tier). pending_confirmation — an email_confirmed reservation holding the item provisionally until the giver confirms via the emailed link; no capability token is issued until then.
 	Status ReservationCreatedStatus `json:"status"`
@@ -1126,6 +1164,12 @@ type ServerInterface interface {
 	// UpdateItem Update an item
 	// (PATCH /api/v1/items/{itemId})
 	UpdateItem(w http.ResponseWriter, r *http.Request, itemId ItemId)
+	// UnarchiveItem Return an archived item to the list
+	// (DELETE /api/v1/items/{itemId}/archive)
+	UnarchiveItem(w http.ResponseWriter, r *http.Request, itemId ItemId)
+	// ArchiveItem Archive an item the owner has finished with
+	// (POST /api/v1/items/{itemId}/archive)
+	ArchiveItem(w http.ResponseWriter, r *http.Request, itemId ItemId)
 	// ListLists List the owner's lists
 	// (GET /api/v1/lists)
 	ListLists(w http.ResponseWriter, r *http.Request, params ListListsParams)
@@ -1644,6 +1688,58 @@ func (siw *ServerInterfaceWrapper) UpdateItem(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateItem(w, r, itemId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UnarchiveItem operation middleware
+func (siw *ServerInterfaceWrapper) UnarchiveItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "itemId" -------------
+	var itemId ItemId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "itemId", r.PathValue("itemId"), &itemId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "itemId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UnarchiveItem(w, r, itemId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ArchiveItem operation middleware
+func (siw *ServerInterfaceWrapper) ArchiveItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "itemId" -------------
+	var itemId ItemId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "itemId", r.PathValue("itemId"), &itemId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "itemId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ArchiveItem(w, r, itemId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2546,6 +2642,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/lists/{listId}/items", wrapper.CreateItem)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/items/{itemId}", wrapper.DeleteItem)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/items/{itemId}", wrapper.UpdateItem)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/items/{itemId}/archive", wrapper.UnarchiveItem)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/items/{itemId}/archive", wrapper.ArchiveItem)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/item-previews", wrapper.PreviewItem)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/domains", wrapper.ListDomains)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/domains", wrapper.AddDomain)
@@ -3839,6 +3937,146 @@ type UpdateItem404ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response UpdateItem404ApplicationProblemPlusJSONResponse) VisitUpdateItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UnarchiveItemRequestObject struct {
+	ItemId ItemId `json:"itemId"`
+}
+
+type UnarchiveItemResponseObject interface {
+	VisitUnarchiveItemResponse(w http.ResponseWriter) error
+}
+
+type UnarchiveItem200JSONResponse Item
+
+func (response UnarchiveItem200JSONResponse) VisitUnarchiveItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UnarchiveItem401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response UnarchiveItem401ApplicationProblemPlusJSONResponse) VisitUnarchiveItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UnarchiveItem403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response UnarchiveItem403ApplicationProblemPlusJSONResponse) VisitUnarchiveItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UnarchiveItem404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response UnarchiveItem404ApplicationProblemPlusJSONResponse) VisitUnarchiveItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ArchiveItemRequestObject struct {
+	ItemId ItemId `json:"itemId"`
+}
+
+type ArchiveItemResponseObject interface {
+	VisitArchiveItemResponse(w http.ResponseWriter) error
+}
+
+type ArchiveItem200JSONResponse ItemArchiveResult
+
+func (response ArchiveItem200JSONResponse) VisitArchiveItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ArchiveItem401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response ArchiveItem401ApplicationProblemPlusJSONResponse) VisitArchiveItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ArchiveItem403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response ArchiveItem403ApplicationProblemPlusJSONResponse) VisitArchiveItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ArchiveItem404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response ArchiveItem404ApplicationProblemPlusJSONResponse) VisitArchiveItemResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -5757,6 +5995,12 @@ type StrictServerInterface interface {
 	// UpdateItem Update an item
 	// (PATCH /api/v1/items/{itemId})
 	UpdateItem(ctx context.Context, request UpdateItemRequestObject) (UpdateItemResponseObject, error)
+	// UnarchiveItem Return an archived item to the list
+	// (DELETE /api/v1/items/{itemId}/archive)
+	UnarchiveItem(ctx context.Context, request UnarchiveItemRequestObject) (UnarchiveItemResponseObject, error)
+	// ArchiveItem Archive an item the owner has finished with
+	// (POST /api/v1/items/{itemId}/archive)
+	ArchiveItem(ctx context.Context, request ArchiveItemRequestObject) (ArchiveItemResponseObject, error)
 	// ListLists List the owner's lists
 	// (GET /api/v1/lists)
 	ListLists(ctx context.Context, request ListListsRequestObject) (ListListsResponseObject, error)
@@ -6445,6 +6689,58 @@ func (sh *strictHandler) UpdateItem(w http.ResponseWriter, r *http.Request, item
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateItemResponseObject); ok {
 		if err := validResponse.VisitUpdateItemResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UnarchiveItem operation middleware
+func (sh *strictHandler) UnarchiveItem(w http.ResponseWriter, r *http.Request, itemId ItemId) {
+	var request UnarchiveItemRequestObject
+
+	request.ItemId = itemId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UnarchiveItem(ctx, request.(UnarchiveItemRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UnarchiveItem")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UnarchiveItemResponseObject); ok {
+		if err := validResponse.VisitUnarchiveItemResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ArchiveItem operation middleware
+func (sh *strictHandler) ArchiveItem(w http.ResponseWriter, r *http.Request, itemId ItemId) {
+	var request ArchiveItemRequestObject
+
+	request.ItemId = itemId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ArchiveItem(ctx, request.(ArchiveItemRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ArchiveItem")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ArchiveItemResponseObject); ok {
+		if err := validResponse.VisitArchiveItemResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

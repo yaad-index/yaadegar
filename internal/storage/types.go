@@ -295,6 +295,13 @@ type Item struct {
 	// other value overrides the body. Resolved against List.ThankYouTemplate.
 	ThankYouTemplate *string
 	CreatedAt        time.Time
+	// ArchivedAt marks an item the owner has finished with (#419): nil is a live
+	// item, non-nil the moment it was archived. An archived item keeps its row and
+	// its reservation history, leaves the public list, cannot be reserved or
+	// contributed to, and — the part that fixes the bug rather than the list
+	// hygiene — its live reservations stop decaying, so a bought item cannot
+	// expire its way back into availability. Archiving is reversible.
+	ArchivedAt *time.Time
 }
 
 // ReservationState tracks a reservation through its lifecycle. The email_confirmed
