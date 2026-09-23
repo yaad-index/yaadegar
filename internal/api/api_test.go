@@ -85,7 +85,7 @@ type captchaConfig struct {
 // newHarnessCaptcha builds a harness with a captcha verifier configured, for the
 // low-trust reserve-gate tests.
 func newHarnessCaptcha(t *testing.T, cc captchaConfig) *harness {
-	return newHarnessFull(t, nil, false, "", cc, "")
+	return newHarnessFull(t, nil, false, "", cc, "", 0)
 }
 
 // newHarnessRegistrationCaptcha builds a harness with BOTH self-registration enabled
@@ -93,20 +93,28 @@ func newHarnessCaptcha(t *testing.T, cc captchaConfig) *harness {
 // neither newHarnessRegistration (no verifier) nor newHarnessCaptcha (registration
 // disabled, so every request 403s before the gate) can produce on its own.
 func newHarnessRegistrationCaptcha(t *testing.T, policy storage.RegistrationPolicy, cc captchaConfig) *harness {
-	return newHarnessFull(t, nil, false, policy, cc, "")
+	return newHarnessFull(t, nil, false, policy, cc, "", 0)
 }
 
 func newHarnessOpts(t *testing.T, limiter auth.Limiter, trustForwardedHost bool, registrationPolicy storage.RegistrationPolicy) *harness {
-	return newHarnessFull(t, limiter, trustForwardedHost, registrationPolicy, captchaConfig{}, "")
+	return newHarnessFull(t, limiter, trustForwardedHost, registrationPolicy, captchaConfig{}, "", 0)
+}
+
+// newHarnessConfirmWindow builds a harness with an instance-default confirm window
+// for an email_confirmed reservation. The other builders pass 0, which DISABLES the
+// confirm-window expiry — so a deadline is absent under every other harness, and a
+// test that wants one has to ask for it here.
+func newHarnessConfirmWindow(t *testing.T, window time.Duration) *harness {
+	return newHarnessFull(t, nil, false, "", captchaConfig{}, "", window)
 }
 
 // newHarnessVersion builds a harness whose API reports a set build version, for the
 // GET /api/v1/version tests (ADR-0014 §3).
 func newHarnessVersion(t *testing.T, version string) *harness {
-	return newHarnessFull(t, nil, false, "", captchaConfig{}, version)
+	return newHarnessFull(t, nil, false, "", captchaConfig{}, version, 0)
 }
 
-func newHarnessFull(t *testing.T, limiter auth.Limiter, trustForwardedHost bool, registrationPolicy storage.RegistrationPolicy, cc captchaConfig, version string) *harness {
+func newHarnessFull(t *testing.T, limiter auth.Limiter, trustForwardedHost bool, registrationPolicy storage.RegistrationPolicy, cc captchaConfig, version string, reserverConfirmWindow time.Duration) *harness {
 	t.Helper()
 	ctx := context.Background()
 	dsn := "file:" + filepath.Join(t.TempDir(), "api.db")
@@ -127,22 +135,23 @@ func newHarnessFull(t *testing.T, limiter auth.Limiter, trustForwardedHost bool,
 	authSvc, err := auth.NewService(auth.Config{JWTSecret: testJWTSecret, PasswordEnabled: true}, clk)
 	require.NoError(t, err)
 	h := api.NewHandler(store, api.Options{
-		BaseDomain:         baseDomain,
-		Logger:             slog.New(slog.DiscardHandler),
-		Email:              fake,
-		Clock:              clk,
-		Previewer:          preview.New(pf),
-		Resolver:           fr,
-		Auth:               authSvc,
-		TrustForwardedHost: trustForwardedHost,
-		LoginLimiter:       limiter,
-		DomainCNAMETarget:  "cname.yaadegar.test",
-		DomainClaimTTL:     testDomainClaimTTL,
-		RegistrationPolicy: registrationPolicy,
-		Captcha:            cc.verifier,
-		CaptchaProvider:    cc.provider,
-		CaptchaSiteKey:     cc.siteKey,
-		Version:            version,
+		BaseDomain:            baseDomain,
+		Logger:                slog.New(slog.DiscardHandler),
+		Email:                 fake,
+		Clock:                 clk,
+		Previewer:             preview.New(pf),
+		Resolver:              fr,
+		Auth:                  authSvc,
+		TrustForwardedHost:    trustForwardedHost,
+		LoginLimiter:          limiter,
+		DomainCNAMETarget:     "cname.yaadegar.test",
+		DomainClaimTTL:        testDomainClaimTTL,
+		RegistrationPolicy:    registrationPolicy,
+		Captcha:               cc.verifier,
+		CaptchaProvider:       cc.provider,
+		CaptchaSiteKey:        cc.siteKey,
+		Version:               version,
+		ReserverConfirmWindow: reserverConfirmWindow,
 	})
 	return &harness{t: t, h: h, store: store, tenant: tenant, owner: owner, email: fake, clk: clk, preview: pf, resolver: fr, authSvc: authSvc}
 }

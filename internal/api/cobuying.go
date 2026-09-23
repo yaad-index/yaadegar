@@ -61,6 +61,11 @@ func (s *Server) CreateContribution(ctx context.Context, req gen.CreateContribut
 		}
 		return nil, err
 	}
+	if archived(item) {
+		return gen.CreateContribution410ApplicationProblemPlusJSONResponse(
+			problemDetail(410, itemGoneDetail),
+		), nil
+	}
 	if item.Price == nil {
 		return gen.CreateContribution400ApplicationProblemPlusJSONResponse{
 			BadRequestApplicationProblemPlusJSONResponse: badRequest("this item has no price to co-buy toward"),

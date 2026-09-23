@@ -122,7 +122,7 @@ func TestItemCRUDAndNullables(t *testing.T) {
 	assert.Nil(t, updated.Price)
 	assert.Equal(t, "Headphones v2", updated.Name)
 
-	items, total, err := ts.Items().ListByList(ctx, list.ID, storage.Page{Limit: 100})
+	items, total, err := ts.Items().ListByList(ctx, list.ID, storage.Page{Limit: 100}, storage.ExcludeArchived)
 	require.NoError(t, err)
 	assert.Equal(t, 2, total)
 	assert.Len(t, items, 2)

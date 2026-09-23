@@ -492,6 +492,36 @@ export interface paths {
         patch: operations["updateItem"];
         trace?: never;
     };
+    "/api/v1/items/{itemId}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: components["parameters"]["ItemId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archive an item the owner has finished with
+         * @description Marks the item finished (#419): it leaves the public list, stops being reservable, and its live reservations stop decaying, which is what keeps a bought item from expiring its way back onto the list. The item and its history are kept, and the archive is reversible with DELETE on the same path.
+         *
+         *     This is a POST rather than a field on the item PATCH because archiving has effects beyond the row: any giver holding a live reservation is emailed, and the response may carry warnings the owner should see. A PATCH that silently emailed givers would be the wrong shape for both.
+         *
+         *     Idempotent: archiving an already-archived item succeeds and changes nothing, and the giver notification is sent only by the call that actually archived it.
+         */
+        post: operations["archiveItem"];
+        /**
+         * Return an archived item to the list
+         * @description Undoes an archive exactly: the item is reservable again and its reservations resume decaying. Idempotent — un-archiving a live item succeeds and changes nothing. Givers are not emailed, because nothing about their reservation changed: it was never released.
+         */
+        delete: operations["unarchiveItem"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/item-previews": {
         parameters: {
             query?: never;
@@ -1150,6 +1180,25 @@ export interface components {
             allow_cobuy?: boolean | null;
             /** @description The per-item thank-you override (#22), owner view: null inherits the list default, "" is a per-item opt-out, any other value overrides the body. */
             thank_you_template?: string | null;
+            /**
+             * Format: date-time
+             * @description When the owner archived this item (#419); null for a live item. An archived item keeps its row and its reservation history, does not appear on the public list, cannot be reserved or contributed to, and its live reservations stop decaying — so a bought item cannot expire its way back onto the list. Owner view only: the public item carries no such field, because an archived item is simply absent from a giver's list.
+             */
+            archived_at?: string | null;
+        };
+        /** @description The result of archiving an item (#419): the item itself, plus anything the owner should know about what archiving it affected. Warnings never block the archive — the list belongs to its owner — they report giver-side state the owner cannot otherwise see. */
+        ItemArchiveResult: {
+            item?: components["schemas"]["Item"];
+            warnings?: components["schemas"]["ArchiveWarning"][];
+        };
+        /** @description One thing archiving affected that the owner could not see. `code` is the contract and is what a client should branch on; `detail` is an English fallback for a client that does not know the code, and is expected to be reworded without that being a breaking change. */
+        ArchiveWarning: {
+            /**
+             * @description cobuy_match_pending — givers are mid-handshake on a co-buy for this item: a match has been proposed and they have not both confirmed yet. Archiving is allowed anyway (the list belongs to its owner) but it strands a negotiation the owner cannot see.
+             * @enum {string}
+             */
+            code?: "cobuy_match_pending";
+            detail?: string;
         };
         /** @description One item's thumbnail for the list-summary preview cluster (#207). Carries only what the cluster renders — no reserver or availability data (the cluster shows the list's objects, not people). image_url is null when the item has no image of its own; the card then renders a gift glyph on the card's category-accent tint. */
         ItemPreview: {
@@ -1228,6 +1277,12 @@ export interface components {
             status: "active" | "pending_confirmation";
             /** @description The release handle, returned once. Present only for an active reservation; absent while pending_confirmation (issued at confirm). */
             capability_token?: string;
+            /**
+             * Format: date-time
+             * @description The instant an unconfirmed reservation is released, so the giver can be told how long they have. Derived from the reservation's own state_at plus the effective confirm window (the list override if set, else the instance default), which is the same pair the expiry sweep compares — so this is the deadline that will actually be enforced, not an estimate.
+             *     ABSENT means there is no deadline, not that one is unknown: the effective window resolves to zero, which disables the confirm-window expiry, so the reservation waits indefinitely. A client must not present a deadline when this is absent. Only ever present alongside status pending_confirmation.
+             */
+            confirm_deadline?: string;
         };
         MyReservationCreate: {
             /** @description The share slug of the list holding the item. */
@@ -2280,6 +2335,56 @@ export interface operations {
         };
         responses: {
             /** @description The updated item. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Item"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    archiveItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: components["parameters"]["ItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The archived item, with any warnings raised by archiving it. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemArchiveResult"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    unarchiveItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: components["parameters"]["ItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The item, no longer archived. */
             200: {
                 headers: {
                     [name: string]: unknown;
