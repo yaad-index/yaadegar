@@ -70,6 +70,20 @@ func nullTime(t *time.Time) any {
 	return fmtTime(*t)
 }
 
+// timePtr maps a nullable full-timestamp column back to an optional time. The
+// counterpart to nullTime; datePtr below is the date-only form and the two are
+// not interchangeable, because the layouts differ.
+func timePtr(ns sql.NullString) (*time.Time, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	t, err := parseTime(ns.String)
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
 // datePtr maps a nullable date-only column back to an optional date.
 func datePtr(ns sql.NullString) (*time.Time, error) {
 	if !ns.Valid {

@@ -97,7 +97,9 @@ func (s *Server) ListItems(ctx context.Context, req gen.ListItemsRequestObject) 
 	}
 
 	page := pageParams(req.Params.Limit, req.Params.Offset)
-	items, total, err := ts.Items().ListByList(ctx, req.ListId, page)
+	// The owner sees archived items too (#419), marked as archived: archiving is
+	// reversible, and an owner who cannot see an archived item cannot un-archive it.
+	items, total, err := ts.Items().ListByList(ctx, req.ListId, page, storage.IncludeArchived)
 	if err != nil {
 		return nil, err
 	}

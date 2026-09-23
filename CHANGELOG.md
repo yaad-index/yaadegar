@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.23.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.22.0...yaadegar-v0.23.0) (2026-09-22)
+
+
+### Features
+
+* **web:** put the confirm instruction in the row the giver just reserved ([#440](https://github.com/yaad-index/yaadegar/issues/440)) ([f34da8f](https://github.com/yaad-index/yaadegar/commit/f34da8f7c3165185393d8411b3cc498a1a71a8dd))
+
+## [0.22.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.21.0...yaadegar-v0.22.0) (2026-09-22)
+
+
+### Features
+
+* state the confirm deadline in the reserve response and the confirm email ([#432](https://github.com/yaad-index/yaadegar/issues/432)) ([b1b3f77](https://github.com/yaad-index/yaadegar/commit/b1b3f77c37292098158c87b15d185214c1bc3842))
+
+## [0.21.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.20.0...yaadegar-v0.21.0) (2026-09-21)
+
+
+### Features
+
+* archive an item so a bought one cannot return to the list ([#424](https://github.com/yaad-index/yaadegar/issues/424)) ([07eb9c7](https://github.com/yaad-index/yaadegar/commit/07eb9c7cbea4c9bd26b7a3065443e0222519435e)), closes [#419](https://github.com/yaad-index/yaadegar/issues/419)
+* let an owner archive an item and put it back ([#427](https://github.com/yaad-index/yaadegar/issues/427)) ([40ad1ff](https://github.com/yaad-index/yaadegar/commit/40ad1ff902bce5c2babd1540bb51ad409e3a3951)), closes [#419](https://github.com/yaad-index/yaadegar/issues/419)
+
 ## [0.20.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.19.1...yaadegar-v0.20.0) (2026-09-16)
 
 

@@ -143,6 +143,7 @@ func toGenItem(it storage.Item, avail storage.Availability, reservedQty int) gen
 		ReservedQuantity: ptr(reservedQty),
 		AllowCobuy:       it.AllowCobuy,       // *bool: nil = inheriting the list default (#100)
 		ThankYouTemplate: it.ThankYouTemplate, // *string: nil = inheriting the list default (#22)
+		ArchivedAt:       it.ArchivedAt,       // *time.Time: nil = a live item (#419)
 	}
 }
 

@@ -38,7 +38,10 @@ func (s *Server) GetPublicList(ctx context.Context, req gen.GetPublicListRequest
 		), nil
 	}
 
-	items, _, err := ts.Items().ListByList(ctx, list.ID, storage.Page{Limit: publicItemsCap})
+	// Archived items are off the list for a giver (#419): invisible here, and the
+	// reserve path refuses them, so the two surfaces cannot disagree about whether
+	// an item is still on offer.
+	items, _, err := ts.Items().ListByList(ctx, list.ID, storage.Page{Limit: publicItemsCap}, storage.ExcludeArchived)
 	if err != nil {
 		return nil, err
 	}
@@ -78,6 +81,20 @@ func (s *Server) GetPublicList(ctx context.Context, req gen.GetPublicListRequest
 func listDisabled(l storage.List, now time.Time) bool {
 	return !l.Active || (l.EventDate != nil && l.EventDate.Before(startOfDay(now)))
 }
+
+// itemGoneDetail is the giver-facing wording for a reserve or contribute attempt
+// on an archived item (#419). 410 rather than 404, matching how a disabled list
+// reads on the same endpoints: the item WAS on the list and the giver may well be
+// looking at it on a page loaded a minute ago, so "no longer available" is the
+// true statement and "not found" is not. Archiving is the owner's act on their own
+// item, and the giver holding the link already knew the item existed, so 410
+// discloses nothing 404 would have hidden.
+const itemGoneDetail = "this item is no longer available"
+
+// archived reports whether an item has been archived by its owner (#419) and is
+// therefore off the giver surface. One predicate, used by every giving path, so
+// they cannot drift apart into disagreeing about what an archived item is.
+func archived(it storage.Item) bool { return it.ArchivedAt != nil }
 
 // startOfDay is midnight UTC of now; event dates are compared against it so a
 // list stays live through its whole event day and disables the day after.

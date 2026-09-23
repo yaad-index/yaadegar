@@ -11,6 +11,54 @@
 	): boolean {
 		return actionSearch === '?/reserve' && emailRequired && email.trim() === '';
 	}
+
+	// What the reserve action hands back when the reservation is held pending the
+	// giver's email confirmation (#430): which item it was, and when the hold lapses.
+	export type PendingConfirmation = { itemId: string; deadline: string | null };
+
+	// Read out of the action result rather than narrowed from ActionData with `in`.
+	// That type is a union over every action on this page, and narrowing it that way
+	// widens this key's value to {}, since the actions that do not return it carry it
+	// as optional-never. Checking the shape rather than asserting it is also truthful:
+	// this value has been serialized and back, so the type is a claim about the other
+	// side of that boundary, not something the compiler saw.
+	//
+	// A missing or non-string deadline becomes null, which renders no deadline at all —
+	// the same outcome as a list whose confirm window is zero, and the safe one: the
+	// alternative is telling a giver to act by a time nobody will enforce.
+	export function pendingConfirmationOf(form: unknown): PendingConfirmation | undefined {
+		if (!form || typeof form !== 'object' || !('pendingConfirmation' in form)) return undefined;
+		const raw = (form as { pendingConfirmation?: unknown }).pendingConfirmation;
+		if (!raw || typeof raw !== 'object') return undefined;
+		const { itemId, deadline } = raw as { itemId?: unknown; deadline?: unknown };
+		if (typeof itemId !== 'string' || itemId === '') return undefined;
+		return { itemId, deadline: typeof deadline === 'string' ? deadline : null };
+	}
+
+	// The confirm deadline as the giver reads it (#430). Same shape as the confirm
+	// email's own line ("2026-01-02 15:04 UTC") because a giver may well have both in
+	// front of them, and two renderings of one instant invite the question of which is
+	// the real one.
+	//
+	// The page states the INSTANT and never a countdown, which is the opposite of the
+	// email's "you have 30 minutes". The email is read once, so a duration is the more
+	// useful half there. A page can sit open, and a duration rendered once into it is
+	// silently wrong from the second afterwards, with nothing on screen to say so. An
+	// instant cannot go stale.
+	//
+	// An unparseable value yields '' so the caller omits the sentence rather than
+	// printing "Invalid Date" at the giver — an unreadable deadline and no deadline are
+	// both "we cannot tell you when", and only one of them says so.
+	export function formatConfirmDeadline(iso: string | null | undefined): string {
+		if (!iso) return '';
+		const at = new Date(iso);
+		if (Number.isNaN(at.getTime())) return '';
+		const pad = (n: number) => String(n).padStart(2, '0');
+		return (
+			`${at.getUTCFullYear()}-${pad(at.getUTCMonth() + 1)}-${pad(at.getUTCDate())} ` +
+			`${pad(at.getUTCHours())}:${pad(at.getUTCMinutes())} UTC`
+		);
+	}
 </script>
 
 <script lang="ts">
@@ -81,6 +129,28 @@
 		form && 'pledgeForm' in form ? form.pledgeForm?.errors?.contact_email?.[0] : undefined
 	);
 	const withdrawError = $derived(form && 'withdrawError' in form ? form.withdrawError : undefined);
+
+	// #430. A pending_confirmation reserve is the one success that is not finished, and
+	// the page used to say so only in the banner above the header — which on a phone
+	// sits above the scroll position of the row the giver just tapped, so the one
+	// instruction telling them they are not done was never rendered into view.
+	//
+	// The action hands back the item it acted on, so the instruction can be drawn in
+	// that row instead. That is what makes "in view" structural rather than measured:
+	// the giver's viewport is on that row because they just pressed a button in it, so
+	// no scrolling has to be asked for or detected.
+	const pendingConfirmation = $derived(pendingConfirmationOf(form));
+	// ...but only while that row is actually on the page. If the item has gone from the
+	// list between the POST and this render, an in-row instruction would render nowhere
+	// and the giver would be told nothing at all, so the banner has to stay the
+	// fallback. This is the condition the banner is suppressed on — not the mere
+	// presence of a pending result.
+	const pendingRow = $derived(
+		pendingConfirmation && (data.list?.items ?? []).some((i) => i.id === pendingConfirmation.itemId)
+			? pendingConfirmation
+			: undefined
+	);
+	const pendingDeadline = $derived(formatConfirmDeadline(pendingRow?.deadline));
 
 	// email_required (#144): an email-confirm list rejects a reservation with no giver
 	// email server-side. Mirror that in the UI — mark the email field required and block
@@ -163,8 +233,12 @@
 </svelte:head>
 
 <!-- Post-reserve / post-pledge success is a full-width banner ABOVE the header, not a
-     box inside the page column (per the export). -->
-{#if reserveMessage}
+     box inside the page column (per the export).
+     For a reserve still awaiting confirmation the instruction is drawn in the item's
+     own row instead, so this banner stands down for exactly that case (#430) — the
+     giver is not scrolled here and would never see it. It remains the fallback when
+     that row is not on the page. -->
+{#if reserveMessage && !pendingRow}
 	<div
 		class="w-full bg-green-50 py-3 text-center font-ui text-ui font-medium text-green-800"
 		role="status"
@@ -375,6 +449,10 @@
 					     double-buy. The backend always populates this; the default guards the day that
 					     stops being true (#235 review). -->
 						{@const availability = item.availability ?? 'reserved'}
+						<!-- #430: this row is the one the giver just reserved and has not confirmed.
+						     Held by the action result, so it is true for the render that follows the
+						     reserve and not afterwards. -->
+						{@const awaitingConfirm = !!pendingRow && pendingRow.itemId === item.id}
 						<li
 							class={`rounded-card border bg-surface p-4 ${reservedByYou ? 'border-gold ring-1 ring-gold' : 'border-line'}`}
 						>
@@ -419,11 +497,25 @@
 										<div class="flex flex-wrap items-center gap-2">
 											<span class="font-ui text-body font-medium text-ink-heading">{item.name}</span
 											>
-											<span
-												class={`rounded-card px-2 py-0.5 font-ui text-chip ${availabilityChip[availability] ?? 'bg-surface-alt text-ink-muted'}`}
-											>
-												{availabilityLabel[availability] ?? 'Available'}
-											</span>
+											<!-- The hold itself is unchanged and still reads as taken to everyone
+											     else (ADR-0007 §3) — this relabels the chip only in the browser that
+											     just made the reservation, and only until the page is left. To the
+											     giver mid-flow "Reserved" is the signal that says the job is done,
+											     which is the whole defect in #430: it is the strongest, most
+											     familiar thing on the row and it disagrees with the instruction. -->
+											{#if awaitingConfirm}
+												<span
+													class="rounded-card bg-primary-tint px-2 py-0.5 font-ui text-chip text-primary"
+												>
+													Awaiting your confirmation
+												</span>
+											{:else}
+												<span
+													class={`rounded-card px-2 py-0.5 font-ui text-chip ${availabilityChip[availability] ?? 'bg-surface-alt text-ink-muted'}`}
+												>
+													{availabilityLabel[availability] ?? 'Available'}
+												</span>
+											{/if}
 										</div>
 										{#if item.id && data.noteHtml[item.id]}
 											<!-- data.noteHtml is sanitized server-side (marked → sanitize-html tight
@@ -530,7 +622,13 @@
 										<Button type="button" onclick={() => item.id && openChipIn(item.id)}>
 											Chip in the rest
 										</Button>
-									{:else}
+									{:else if !awaitingConfirm}
+										<!-- Guarded on awaitingConfirm because this branch is the one a
+										     pending row would otherwise fall through to, and it renders the
+										     word "Reserved" — contradicting the chip beside it and repeating
+										     the signal #430 is about. The row's state is on the chip and its
+										     instruction is in the panel below; a third copy here would say
+										     the opposite of both. -->
 										<span class="font-ui text-ui text-ink-muted"
 											>{availabilityLabel[availability] ?? 'Taken'}</span
 										>
@@ -546,6 +644,30 @@
 									{/if}
 								</div>
 							</div>
+
+							<!-- #430: the instruction, in the row that was just acted on. This is the
+							     load-bearing half of the fix — not the wording and not the deadline.
+							     The giver is looking here because they just pressed a button here, so
+							     placing it in the row is what puts it in front of them; the banner it
+							     replaces sits above the page header, which on a phone is above the
+							     scroll position and never enters the viewport. -->
+							{#if awaitingConfirm}
+								<div
+									class="mt-3 rounded-card border border-primary bg-primary-tint p-4"
+									role="status"
+								>
+									<p class="font-ui text-body font-medium text-ink-heading">{reserveMessage}</p>
+									{#if pendingDeadline}
+										<!-- Only when the backend gave one. A list whose effective confirm
+										     window is zero has no deadline at all — the reservation waits
+										     indefinitely — and naming a time there would be false. -->
+										<p class="mt-1 font-ui text-ui text-ink">
+											Confirm by {pendingDeadline}, or the item is released for someone else to
+											give.
+										</p>
+									{/if}
+								</div>
+							{/if}
 
 							{#if openPledge === item.id && item.price && chipInAllowed(item)}
 								<!-- Inline chip-in form for this item. Amount is in the item's currency
