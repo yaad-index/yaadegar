@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { backendClient } from '$lib/server/api';
 import { capsForList, addCap, removeCap } from '$lib/server/caps';
 import { contribCapsForList, addContribCap, removeContribCap } from '$lib/server/caps';
+import { pendingForList, addPending } from '$lib/server/pending';
 import { renderNote } from '$lib/server/markdown';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -170,6 +171,14 @@ export const load: PageServerLoad = async ({ params, locals, cookies, url }) => 
 		// the httpOnly cookie and are read server-side in the release action; they are
 		// deliberately NOT returned here, so they never reach client JS (ADR-0006 §4).
 		reservedItemIds: Object.keys(capsForList(cookies, params.shareSlug)),
+		// Items this browser is still waiting to confirm (#441). Unlike reservedItemIds
+		// these are NOT backed by a capability — an email_confirmed reserve issues no
+		// token — so they drive display only, and the release action never consults them.
+		// Markers past their confirm deadline are already dropped by pendingForList, so
+		// a lapsed hold stops claiming the giver owes it something.
+		pendingConfirmations: Object.entries(pendingForList(cookies, params.shareSlug)).map(
+			([itemId, entry]) => ({ itemId, deadline: entry.deadline })
+		),
 		// This browser's own co-buy pledges (id + status), same server-only token rule.
 		pledged,
 		// Notes rendered to sanitized HTML server-side; {@html} only touches this map.
@@ -241,6 +250,16 @@ export const actions: Actions = {
 			// page can put the instruction on the row that was acted on instead of at the
 			// top of the document, which on a phone is above the scroll position and is
 			// never shown to the giver at all (#430).
+			// Remember it for this browser so the instruction survives a reload (#441).
+			// The marker's lifetime is the deadline the backend just computed — the same
+			// value the expiry sweep will enforce — rather than any duration chosen here.
+			addPending(
+				cookies,
+				params.shareSlug,
+				form.data.item_id,
+				{ reservation_id: data.reservation_id, deadline: data.confirm_deadline ?? null },
+				isSecure(url)
+			);
 			message(form, 'Almost there — check your email to confirm your reservation.');
 			return {
 				form,
