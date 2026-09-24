@@ -1,8 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { render, screen } from '@testing-library/svelte';
-import Page, { formatConfirmDeadline, pendingConfirmationOf } from './+page.svelte';
+import Page, { pendingConfirmationOf } from './+page.svelte';
 import type { ActionData, PageData } from './$types';
+import { PENDING_COOKIE } from '$lib/server/pending';
 
 // #430. On an email_confirmed list a reserve is held pending the giver's confirmation.
 // The hold is correct and unchanged — ADR-0007 §3 requires it to read as taken so no
@@ -46,10 +47,10 @@ const listData = (): PageData =>
 // The shape the reserve action returns on the pending path. `message` is what the
 // banner and the in-row panel both read, so a test that stops seeing it stops seeing
 // the instruction in either place.
-const pendingForm = (itemId: string, deadline: string | null) =>
+const pendingForm = (itemId: string, deadlineDisplay: string | null) =>
 	({
 		form: { message: INSTRUCTION, data: { item_id: itemId }, errors: {}, valid: true },
-		pendingConfirmation: { itemId, deadline }
+		pendingConfirmation: { itemId, deadlineDisplay }
 	}) as unknown as ActionData;
 
 // Substring matching, deliberately. The banner renders the message with a "✓ " in
@@ -68,7 +69,7 @@ describe('the pending instruction is drawn in the row that was acted on (#430)',
 	it('puts the instruction inside the acted-on item row, not at the top of the page', () => {
 		const { container } = render(Page, {
 			data: listData(),
-			form: pendingForm('item-one', '2026-09-22T15:04:09Z')
+			form: pendingForm('item-one', '2026-09-22 20:28 CEST')
 		});
 
 		expect(instructionEls()).toHaveLength(1);
@@ -95,7 +96,7 @@ describe('the pending instruction is drawn in the row that was acted on (#430)',
 		// result would then say nothing at all, which is worse than the bug.
 		const { container } = render(Page, {
 			data: listData(),
-			form: pendingForm('item-gone', '2026-09-22T15:04:09Z')
+			form: pendingForm('item-gone', '2026-09-22 20:28 CEST')
 		});
 		expect(instructionEls()).toHaveLength(1);
 		expect(instructionEls()[0].closest('li')).toBeNull();
@@ -141,10 +142,22 @@ describe('a pending reservation stops reading as a finished one (#430)', () => {
 });
 
 describe('the deadline is named only when one exists (#430)', () => {
-	it('states the instant the sweep will enforce, in the same shape as the email', () => {
-		render(Page, { data: listData(), form: pendingForm('item-one', '2026-09-22T15:04:09Z') });
+	it('shows exactly the string the server rendered, zone and all', () => {
+		// The page formats nothing itself (#438): the confirm email states this same
+		// deadline, a giver may hold both, and the zone is named so a reader
+		// elsewhere does not take it for their own clock.
+		render(Page, { data: listData(), form: pendingForm('item-one', '2026-09-22 20:28 CEST') });
 		expect(
-			screen.getByText(/Confirm by 2026-09-22 15:04 UTC, or the item is released/)
+			screen.getByText(/Confirm by 2026-09-22 20:28 CEST, or the item is released/)
+		).toBeInTheDocument();
+	});
+
+	it('passes an offset-named zone through unchanged too', () => {
+		// Not every zone has a letter abbreviation; some render as an offset. The
+		// page must not care — it prints what it was given.
+		render(Page, { data: listData(), form: pendingForm('item-one', '2026-09-22 21:58 +0330') });
+		expect(
+			screen.getByText(/Confirm by 2026-09-22 21:58 \+0330, or the item is released/)
 		).toBeInTheDocument();
 	});
 
@@ -158,48 +171,23 @@ describe('the deadline is named only when one exists (#430)', () => {
 	});
 });
 
-describe('formatConfirmDeadline', () => {
-	it('renders UTC in the shape the confirm email uses', () => {
-		expect(formatConfirmDeadline('2026-01-02T15:04:05Z')).toBe('2026-01-02 15:04 UTC');
-	});
-
-	it('pads every field, so the width never moves', () => {
-		expect(formatConfirmDeadline('2026-01-02T05:04:00Z')).toBe('2026-01-02 05:04 UTC');
-	});
-
-	it('reads the instant in UTC rather than the machine timezone', () => {
-		// The same instant written with an offset must format identically, or the string
-		// would mean something different depending on where the server runs.
-		//
-		// ⚠️ The timezone is pinned rather than inherited, and that is the whole force of
-		// this test. CI runs in UTC, where a formatter built on the machine's local
-		// getters produces exactly the same string — so inherited, this assertion would
-		// pass against the bug it exists to catch and would only ever have failed on a
-		// developer box that happened not to be in UTC. UTC+14 puts a local-time read on
-		// a different day as well as a different hour, so the failure is unmissable.
-		vi.stubEnv('TZ', 'Pacific/Kiritimati');
-		try {
-			expect(formatConfirmDeadline('2026-01-02T16:04:00+01:00')).toBe('2026-01-02 15:04 UTC');
-		} finally {
-			vi.unstubAllEnvs();
-		}
-	});
-
-	it('yields nothing for an absent or unreadable value, so no sentence is printed', () => {
-		expect(formatConfirmDeadline(null)).toBe('');
-		expect(formatConfirmDeadline(undefined)).toBe('');
-		expect(formatConfirmDeadline('')).toBe('');
-		expect(formatConfirmDeadline('the day after tomorrow')).toBe('');
-	});
-});
+// The deadline string itself is no longer built here. It is rendered server-side
+// in the instance's timezone (#438) and the page shows exactly what it was given,
+// because the confirm email states the same deadline and a giver may hold both.
+//
+// That also retires a hazard rather than moving it: the old client formatter had
+// to be tested with the timezone PINNED, since CI runs in UTC where a local-time
+// implementation produces an identical string and the assertion could not fail.
+// The Go formatter takes its location as an argument, so there is no ambient value
+// for a test to inherit in the first place.
 
 describe('pendingConfirmationOf', () => {
 	it('reads the item and deadline the action sent', () => {
 		expect(
 			pendingConfirmationOf({
-				pendingConfirmation: { itemId: 'i1', deadline: '2026-01-02T15:04:00Z' }
+				pendingConfirmation: { itemId: 'i1', deadlineDisplay: '2026-01-02 15:04 UTC' }
 			})
-		).toEqual({ itemId: 'i1', deadline: '2026-01-02T15:04:00Z' });
+		).toEqual({ itemId: 'i1', deadlineDisplay: '2026-01-02 15:04 UTC' });
 	});
 
 	it('is undefined for every result that is not a pending reserve', () => {
@@ -221,11 +209,13 @@ describe('pendingConfirmationOf', () => {
 		// deadline must not lose the instruction with it.
 		expect(pendingConfirmationOf({ pendingConfirmation: { itemId: 'i1' } })).toEqual({
 			itemId: 'i1',
-			deadline: null
+			deadlineDisplay: null
 		});
-		expect(pendingConfirmationOf({ pendingConfirmation: { itemId: 'i1', deadline: 5 } })).toEqual({
+		expect(
+			pendingConfirmationOf({ pendingConfirmation: { itemId: 'i1', deadlineDisplay: 5 } })
+		).toEqual({
 			itemId: 'i1',
-			deadline: null
+			deadlineDisplay: null
 		});
 	});
 });
@@ -255,7 +245,7 @@ const callReserve = (next: unknown) => {
 };
 
 const pendingOf = (res: unknown) =>
-	(res as { pendingConfirmation?: { itemId: string; deadline: string | null } })
+	(res as { pendingConfirmation?: { itemId: string; deadlineDisplay: string | null } })
 		.pendingConfirmation;
 
 describe('the reserve action hands the page what it needs to place the instruction (#430)', () => {
@@ -264,14 +254,17 @@ describe('the reserve action hands the page what it needs to place the instructi
 			data: {
 				reservation_id: 'r1',
 				status: 'pending_confirmation',
-				confirm_deadline: '2026-09-22T15:04:09Z'
+				confirm_deadline: '2026-09-22T18:28:00Z',
+				confirm_deadline_display: '2026-09-22 20:28 CEST'
 			},
 			error: undefined,
 			response: { status: 202 }
 		});
+		// The DISPLAY string is what travels, not the instant. Passing the raw
+		// instant through would make the page format it a second time.
 		expect(pendingOf(res)).toEqual({
 			itemId: 'item-one',
-			deadline: '2026-09-22T15:04:09Z'
+			deadlineDisplay: '2026-09-22 20:28 CEST'
 		});
 		// The message is unchanged — this adds a key, it does not move the text.
 		expect((res as { form?: { message?: string } }).form?.message).toBe(INSTRUCTION);
@@ -283,7 +276,71 @@ describe('the reserve action hands the page what it needs to place the instructi
 			error: undefined,
 			response: { status: 202 }
 		});
-		expect(pendingOf(res)).toEqual({ itemId: 'item-one', deadline: null });
+		expect(pendingOf(res)).toEqual({ itemId: 'item-one', deadlineDisplay: null });
+	});
+
+	it('states no deadline when the backend sends an instant but no rendering of it', async () => {
+		// A backend older than the timezone setting sends confirm_deadline and no
+		// display string. Showing nothing is the right degradation: the page cannot
+		// render the instant without re-introducing a second formatter, and the
+		// instruction itself is unaffected.
+		const res = await callReserve({
+			data: {
+				reservation_id: 'r1',
+				status: 'pending_confirmation',
+				confirm_deadline: '2026-09-22T18:28:00Z'
+			},
+			error: undefined,
+			response: { status: 202 }
+		});
+		expect(pendingOf(res)).toEqual({ itemId: 'item-one', deadlineDisplay: null });
+	});
+
+	it('writes BOTH the machine instant and the rendered string into the marker', async () => {
+		// The reload path (#441) reads this cookie, not the action result, so the
+		// rendered string has to survive into it or a reload silently loses the
+		// deadline while every other assertion here still passes.
+		//
+		// Both values are kept on purpose and they are not interchangeable: the ISO
+		// instant is what pendingForList does arithmetic on to decide the marker has
+		// expired, and a human string there would make every marker unparseable —
+		// which that module treats as expired, dropping a live instruction. The
+		// display string is the one nothing computes with.
+		const written: Record<string, string> = {};
+		// Deliberately in the future: persist() prunes before it writes, so a past
+		// deadline makes the marker expire on the way in and the cookie is DELETED
+		// rather than set. A fixture dated like its neighbours here would make this
+		// test fail for a reason that has nothing to do with what it asserts.
+		state.next = {
+			data: {
+				reservation_id: 'r1',
+				status: 'pending_confirmation',
+				confirm_deadline: '2099-09-22T18:28:00Z',
+				confirm_deadline_display: '2099-09-22 20:28 CEST'
+			},
+			error: undefined,
+			response: { status: 202 }
+		};
+		const fd = new FormData();
+		fd.set('item_id', 'item-one');
+		fd.set('giver_email', 'giver@example.invalid');
+		await (actions.reserve as unknown as ActionFn)({
+			request: new Request('http://t.example/l/s1?/reserve', { method: 'POST', body: fd }),
+			params: { shareSlug: 's1' },
+			locals: { host: 't.example' },
+			cookies: {
+				get: () => undefined,
+				set: (name: string, value: string) => {
+					written[name] = value;
+				},
+				delete: () => {}
+			},
+			url: new URL('http://t.example/l/s1')
+		});
+
+		const marker = JSON.parse(written[PENDING_COOKIE])['s1']['item-one'];
+		expect(marker.deadline).toBe('2099-09-22T18:28:00Z');
+		expect(marker.deadline_display).toBe('2099-09-22 20:28 CEST');
 	});
 
 	it('sends no pending payload on a reservation that is already active', async () => {

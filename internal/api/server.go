@@ -51,6 +51,12 @@ type Server struct {
 	// override against the same default through settings.ResolveMinutes, so the
 	// number shown and the number enforced come from one rule.
 	reserverConfirmWindow time.Duration
+	// displayLocation is the instance's wall clock for any absolute time shown to a
+	// person (#438). nil means UTC. Used for the confirm deadline, which is rendered
+	// once here and sent to every surface rather than re-formatted per surface — the
+	// giver may have the email and the page in front of them at the same time, and
+	// two formatters of one instant disagree in ways neither author sees.
+	displayLocation *time.Location
 	// oauth is the OIDC login client (ADR-0008). nil when no Google client is
 	// configured, in which case every OAuth endpoint reports 404 (the method is
 	// absent, not a failure).
@@ -133,6 +139,9 @@ type Options struct {
 	// email_confirmed reservation (ADR-0007 §3); a list may override it.
 	// Non-positive disables the confirm-window expiry entirely.
 	ReserverConfirmWindow time.Duration
+	// DisplayLocation is the instance timezone for absolute times shown to people
+	// (#438). nil means UTC, which is what an instance that configures nothing keeps.
+	DisplayLocation *time.Location
 	// OAuth is the OIDC owner-login client (ADR-0008). nil disables Google login
 	// (the endpoints report 404). Built at startup from the env config once the
 	// three client fields are present; a partial config fails startup, not here.
@@ -186,6 +195,7 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 		publicLinkBase:        opts.PublicLinkBase,
 		cobuyConfirmWindow:    opts.CobuyConfirmWindow,
 		reserverConfirmWindow: opts.ReserverConfirmWindow,
+		displayLocation:       opts.DisplayLocation,
 		oauth:                 opts.OAuth,
 		ticketGuard:           opts.TicketGuard,
 		registrationPolicy:    opts.RegistrationPolicy,
