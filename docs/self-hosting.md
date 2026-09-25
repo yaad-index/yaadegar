@@ -91,10 +91,12 @@ docker compose -f docs/docker-compose.yml up -d
 ```
 
 Pin the release with `YAADEGAR_IMAGE_TAG` (both images move together); it defaults
-to a pinned version in the file:
+to a pinned version in the file, so the override is only needed to choose a
+different release. Substitute the one you want from the
+[releases page](https://github.com/yaad-index/yaadegar/releases):
 
 ```sh
-YAADEGAR_IMAGE_TAG=0.13.0 docker compose -f docs/docker-compose.yml up -d
+YAADEGAR_IMAGE_TAG=<release> docker compose -f docs/docker-compose.yml up -d
 ```
 
 > `YAADEGAR_IMAGE_TAG` selects the image tag only. Do **not** rename it to
