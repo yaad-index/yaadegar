@@ -277,6 +277,13 @@ func (c *ServeCmd) Run(cli *CLI) error {
 		return fmt.Errorf("invalid --timezone %q: %w", c.Timezone, err)
 	}
 
+	// Stated, not deduced (#453). An unset timezone is a documented default rather
+	// than a mistake, so "showing UTC" alone cannot say whether UTC was chosen —
+	// and the absolute times this instance mails out depend on the answer.
+	logger.Info("timezone resolved",
+		"timezone", displayLocation.String(),
+		"source", settings.LocationSource(c.Timezone))
+
 	handler := api.NewHandler(store, api.Options{
 		BaseDomain:          c.BaseDomain,
 		Logger:              logger,

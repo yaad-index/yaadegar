@@ -127,3 +127,24 @@ func TestAZoneWithNoAbbreviationIsNamedByItsOffset(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "2026-09-22 20:28 CEST (UTC+02:00)", settings.FormatInstant(at, berlin))
 }
+
+func TestTheSourceOfAResolvedZoneIsDistinguishableFromTheZoneItself(t *testing.T) {
+	// The point of #453: an unset timezone and a deliberate "UTC" resolve to the
+	// SAME location, so the zone alone cannot report which happened. The assertion
+	// that carries the requirement is the inequality — a refactor that collapsed
+	// both cases to one label would still satisfy the two Equal checks below while
+	// destroying the only thing this function exists to say.
+	unsetZone, err := settings.ParseLocation("")
+	require.NoError(t, err)
+	chosenZone, err := settings.ParseLocation("UTC")
+	require.NoError(t, err)
+	assert.Equal(t, unsetZone.String(), chosenZone.String(),
+		"the premise: configuring nothing and choosing UTC are indistinguishable by zone")
+
+	assert.NotEqual(t, settings.LocationSource(""), settings.LocationSource("UTC"),
+		"so the source must tell them apart, or the startup line reports nothing")
+
+	assert.Equal(t, "default", settings.LocationSource(""))
+	assert.Equal(t, "config", settings.LocationSource("UTC"))
+	assert.Equal(t, "config", settings.LocationSource("Europe/Berlin"))
+}
