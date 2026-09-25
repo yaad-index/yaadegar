@@ -69,7 +69,7 @@ describe('the pending instruction is drawn in the row that was acted on (#430)',
 	it('puts the instruction inside the acted-on item row, not at the top of the page', () => {
 		const { container } = render(Page, {
 			data: listData(),
-			form: pendingForm('item-one', '2026-09-22 20:28 CEST')
+			form: pendingForm('item-one', '2026-09-22 20:28 CEST (UTC+02:00)')
 		});
 
 		expect(instructionEls()).toHaveLength(1);
@@ -96,7 +96,7 @@ describe('the pending instruction is drawn in the row that was acted on (#430)',
 		// result would then say nothing at all, which is worse than the bug.
 		const { container } = render(Page, {
 			data: listData(),
-			form: pendingForm('item-gone', '2026-09-22 20:28 CEST')
+			form: pendingForm('item-gone', '2026-09-22 20:28 CEST (UTC+02:00)')
 		});
 		expect(instructionEls()).toHaveLength(1);
 		expect(instructionEls()[0].closest('li')).toBeNull();
@@ -146,18 +146,18 @@ describe('the deadline is named only when one exists (#430)', () => {
 		// The page formats nothing itself (#438): the confirm email states this same
 		// deadline, a giver may hold both, and the zone is named so a reader
 		// elsewhere does not take it for their own clock.
-		render(Page, { data: listData(), form: pendingForm('item-one', '2026-09-22 20:28 CEST') });
+		render(Page, { data: listData(), form: pendingForm('item-one', '2026-09-22 20:28 CEST (UTC+02:00)') });
 		expect(
-			screen.getByText(/Confirm by 2026-09-22 20:28 CEST, or the item is released/)
+			screen.getByText(/Confirm by 2026-09-22 20:28 CEST \(UTC\+02:00\), or the item is released/)
 		).toBeInTheDocument();
 	});
 
 	it('passes an offset-named zone through unchanged too', () => {
 		// Not every zone has a letter abbreviation; some render as an offset. The
 		// page must not care — it prints what it was given.
-		render(Page, { data: listData(), form: pendingForm('item-one', '2026-09-22 21:58 +0330') });
+		render(Page, { data: listData(), form: pendingForm('item-one', '2026-09-22 21:58 +0330 (UTC+03:30)') });
 		expect(
-			screen.getByText(/Confirm by 2026-09-22 21:58 \+0330, or the item is released/)
+			screen.getByText(/Confirm by 2026-09-22 21:58 \+0330 \(UTC\+03:30\), or the item is released/)
 		).toBeInTheDocument();
 	});
 
@@ -255,7 +255,7 @@ describe('the reserve action hands the page what it needs to place the instructi
 				reservation_id: 'r1',
 				status: 'pending_confirmation',
 				confirm_deadline: '2026-09-22T18:28:00Z',
-				confirm_deadline_display: '2026-09-22 20:28 CEST'
+				confirm_deadline_display: '2026-09-22 20:28 CEST (UTC+02:00)'
 			},
 			error: undefined,
 			response: { status: 202 }
@@ -264,7 +264,7 @@ describe('the reserve action hands the page what it needs to place the instructi
 		// instant through would make the page format it a second time.
 		expect(pendingOf(res)).toEqual({
 			itemId: 'item-one',
-			deadlineDisplay: '2026-09-22 20:28 CEST'
+			deadlineDisplay: '2026-09-22 20:28 CEST (UTC+02:00)'
 		});
 		// The message is unchanged — this adds a key, it does not move the text.
 		expect((res as { form?: { message?: string } }).form?.message).toBe(INSTRUCTION);
@@ -316,7 +316,7 @@ describe('the reserve action hands the page what it needs to place the instructi
 				reservation_id: 'r1',
 				status: 'pending_confirmation',
 				confirm_deadline: '2099-09-22T18:28:00Z',
-				confirm_deadline_display: '2099-09-22 20:28 CEST'
+				confirm_deadline_display: '2099-09-22 20:28 CEST (UTC+02:00)'
 			},
 			error: undefined,
 			response: { status: 202 }
@@ -340,7 +340,7 @@ describe('the reserve action hands the page what it needs to place the instructi
 
 		const marker = JSON.parse(written[PENDING_COOKIE])['s1']['item-one'];
 		expect(marker.deadline).toBe('2099-09-22T18:28:00Z');
-		expect(marker.deadline_display).toBe('2099-09-22 20:28 CEST');
+		expect(marker.deadline_display).toBe('2099-09-22 20:28 CEST (UTC+02:00)');
 	});
 
 	it('sends no pending payload on a reservation that is already active', async () => {

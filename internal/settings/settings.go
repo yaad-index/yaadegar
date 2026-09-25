@@ -39,10 +39,23 @@ func ResolveMinutes(overrideMinutes *int, instanceDefault time.Duration) time.Du
 }
 
 // DisplayLayout is how an absolute instant is written for a person: a wall-clock
-// time with the zone named. The zone is not decoration — a reader elsewhere needs
-// to know what the time is relative to rather than assuming it is their own clock,
-// which is the failure this replaces (#438).
-const DisplayLayout = "2006-01-02 15:04 MST"
+// time with the zone named AND its offset from UTC. The zone is not decoration — a
+// reader elsewhere needs to know what the time is relative to rather than assuming
+// it is their own clock, which is the failure this replaces (#438).
+//
+// The offset is not redundant with the abbreviation, because abbreviations are not
+// unique: CST is Central US, China and Cuba; IST is India, Ireland and Israel. An
+// instance in any of those would tell a reader elsewhere "confirm by 15:04 IST",
+// and a reader under a different IST would act on the wrong instant and lose the
+// item at the deadline — narrower than the hard-coded UTC this replaces, which was
+// inconvenient but never ambiguous (raised in review on #450). The offset makes the
+// rendered string self-describing, so it no longer depends on the reader resolving
+// an abbreviation the same way the instance did.
+//
+// The offset verb is -07:00 rather than Z07:00 deliberately: Z07:00 prints a bare
+// "Z" at zero offset, so the default an unconfigured instance keeps would read
+// "18:28 UTC (UTCZ)". Measured, not assumed.
+const DisplayLayout = "2006-01-02 15:04 MST (UTC-07:00)"
 
 // FormatInstant renders t as wall-clock time in loc.
 //
@@ -70,6 +83,13 @@ func FormatInstant(t time.Time, loc *time.Location) string {
 // that meant to show local time and quietly kept showing UTC would look exactly
 // like one that meant UTC, and the times it mails out would be wrong with nothing
 // anywhere saying so.
+//
+// Zone data comes from the RUNTIME IMAGE, not the binary: this package does not
+// import time/tzdata, so LoadLocation reads /usr/share/zoneinfo. The pinned
+// distroless/static-debian12 base carries it (1308 entries at the digest in the
+// Dockerfile, checked during review of #450). A base-image bump that dropped
+// zoneinfo would turn a --timezone that had always worked into a startup failure
+// with its cause invisible, so the dependency is named here rather than implied.
 func ParseLocation(name string) (*time.Location, error) {
 	if name == "" {
 		return time.UTC, nil

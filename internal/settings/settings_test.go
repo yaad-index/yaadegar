@@ -30,9 +30,9 @@ func TestFormatInstantRendersWallClockInTheConfiguredZone(t *testing.T) {
 	berlin, err := settings.ParseLocation("Europe/Berlin")
 	require.NoError(t, err)
 
-	assert.Equal(t, "2026-09-22 18:28 UTC", settings.FormatInstant(at, time.UTC))
+	assert.Equal(t, "2026-09-22 18:28 UTC (UTC+00:00)", settings.FormatInstant(at, time.UTC))
 	// Same instant, a different wall clock, and the zone named either way.
-	assert.Equal(t, "2026-09-22 20:28 CEST", settings.FormatInstant(at, berlin))
+	assert.Equal(t, "2026-09-22 20:28 CEST (UTC+02:00)", settings.FormatInstant(at, berlin))
 }
 
 func TestFormatInstantAlwaysNamesTheZone(t *testing.T) {
@@ -44,7 +44,7 @@ func TestFormatInstantAlwaysNamesTheZone(t *testing.T) {
 		loc, err := settings.ParseLocation(name)
 		require.NoError(t, err, name)
 		got := settings.FormatInstant(at, loc)
-		assert.Regexp(t, `^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \S+$`, got, "zone %q", name)
+		assert.Regexp(t, `^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \S+ \(UTC[+-]\d{2}:\d{2}\)$`, got, "zone %q", name)
 	}
 }
 
@@ -79,6 +79,37 @@ func TestTheSameInstantReadsDifferentlyPerZoneButNamesOneMoment(t *testing.T) {
 	assert.Equal(t, at, back.UTC(), "the rendered wall clock must denote the instant it came from")
 }
 
+func TestTwoZonesSharingAnAbbreviationStillReadDifferently(t *testing.T) {
+	// The finding this layout exists for (#450 review): an abbreviation does not
+	// identify a zone. Kolkata and Dublin both print IST, so on the abbreviation
+	// alone a giver under one cannot tell which instant the other meant — and
+	// acting on the wrong one loses the item at the deadline. The offset is what
+	// makes each string denote a single moment.
+	//
+	// A positive control, not a 0-stays-0 test: both strings MUST contain IST, so
+	// the ambiguity is really present and the test cannot pass vacuously.
+	//
+	// The offset assertions are the ones that BIND, and the NotEqual below does
+	// not. Verified by mutation (layout reverted to "MST" alone): NotEqual still
+	// passed, because the two zones also differ by wall clock, and only the
+	// (UTC+HH:MM) assertions failed. Keeping NotEqual as a statement of intent,
+	// but a future reader should not read it as the guard.
+	at := time.Date(2026, 9, 22, 18, 28, 0, 0, time.UTC)
+
+	kolkata, err := settings.ParseLocation("Asia/Kolkata")
+	require.NoError(t, err)
+	dublin, err := settings.ParseLocation("Europe/Dublin")
+	require.NoError(t, err)
+
+	india, ireland := settings.FormatInstant(at, kolkata), settings.FormatInstant(at, dublin)
+	require.Contains(t, india, "IST")
+	require.Contains(t, ireland, "IST")
+	assert.NotEqual(t, india, ireland,
+		"two zones sharing an abbreviation must not render identically")
+	assert.Contains(t, india, "(UTC+05:30)")
+	assert.Contains(t, ireland, "(UTC+01:00)")
+}
+
 func TestAZoneWithNoAbbreviationIsNamedByItsOffset(t *testing.T) {
 	// Worth pinning because it decides what a giver actually reads. Go's zone
 	// element prints a letter abbreviation only where tzdata has one; elsewhere it
@@ -90,9 +121,9 @@ func TestAZoneWithNoAbbreviationIsNamedByItsOffset(t *testing.T) {
 
 	tehran, err := settings.ParseLocation("Asia/Tehran")
 	require.NoError(t, err)
-	assert.Equal(t, "2026-09-22 21:58 +0330", settings.FormatInstant(at, tehran))
+	assert.Equal(t, "2026-09-22 21:58 +0330 (UTC+03:30)", settings.FormatInstant(at, tehran))
 
 	berlin, err := settings.ParseLocation("Europe/Berlin")
 	require.NoError(t, err)
-	assert.Equal(t, "2026-09-22 20:28 CEST", settings.FormatInstant(at, berlin))
+	assert.Equal(t, "2026-09-22 20:28 CEST (UTC+02:00)", settings.FormatInstant(at, berlin))
 }

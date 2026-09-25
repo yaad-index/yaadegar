@@ -230,8 +230,10 @@ func TestTheEmailAndTheResponseStateTheDeadlineInTheSameWords(t *testing.T) {
 
 	// The rendered string denotes the machine-readable instant beside it...
 	assert.Equal(t, settings.FormatInstant(*created.ConfirmDeadline, time.UTC), display)
-	// ...names its zone, so a reader elsewhere is not left assuming their own clock...
-	assert.Regexp(t, `^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \S+$`, display)
+	// ...names its zone AND its offset, so a reader elsewhere is neither left
+	// assuming their own clock nor left resolving an ambiguous abbreviation
+	// (CST and IST each name three zones — #450 review)...
+	assert.Regexp(t, `^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \S+ \(UTC[+-]\d{2}:\d{2}\)$`, display)
 	// ...and is the exact text the giver will read in the mail they act from.
 	assert.Contains(t, h.lastEmail(), display)
 }
@@ -319,8 +321,9 @@ func TestTheInstanceTimezoneReachesBothTheEmailAndTheResponse(t *testing.T) {
 	assert.Equal(t, settings.FormatInstant(*created.ConfirmDeadline, berlin), display)
 	assert.NotEqual(t, settings.FormatInstant(*created.ConfirmDeadline, time.UTC), display,
 		"a UTC rendering here would mean the configured zone never reached the response")
-	// ...the zone is named rather than left for the reader to assume...
-	assert.Regexp(t, `CES?T$`, display)
+	// ...the zone is named rather than left for the reader to assume, and its
+	// offset is spelled out so the name alone is not load-bearing...
+	assert.Regexp(t, `CES?T \(UTC\+0[12]:00\)$`, display)
 	// ...and the email the giver acts from says exactly the same thing.
 	assert.Contains(t, h.lastEmail(), display)
 }
