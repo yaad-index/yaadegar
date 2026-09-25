@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { backendClient } from '$lib/server/api';
 import { capsForList, addCap, removeCap } from '$lib/server/caps';
 import { contribCapsForList, addContribCap, removeContribCap } from '$lib/server/caps';
+import { pendingForList, addPending } from '$lib/server/pending';
 import { renderNote } from '$lib/server/markdown';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -170,6 +171,18 @@ export const load: PageServerLoad = async ({ params, locals, cookies, url }) => 
 		// the httpOnly cookie and are read server-side in the release action; they are
 		// deliberately NOT returned here, so they never reach client JS (ADR-0006 §4).
 		reservedItemIds: Object.keys(capsForList(cookies, params.shareSlug)),
+		// Items this browser is still waiting to confirm (#441). Unlike reservedItemIds
+		// these are NOT backed by a capability — an email_confirmed reserve issues no
+		// token — so they drive display only, and the release action never consults them.
+		// Markers past their confirm deadline are already dropped by pendingForList, so
+		// a lapsed hold stops claiming the giver owes it something.
+		pendingConfirmations: Object.entries(pendingForList(cookies, params.shareSlug)).map(
+			// The rendered string, not the ISO instant (#438). The page states this
+			// deadline and never computes with it, and the same wording is in the
+			// confirm email the giver may have open beside the page. The ISO value
+			// stays in the marker, where pendingForList uses it to decide expiry.
+			([itemId, entry]) => ({ itemId, deadlineDisplay: entry.deadline_display ?? null })
+		),
 		// This browser's own co-buy pledges (id + status), same server-only token rule.
 		pledged,
 		// Notes rendered to sanitized HTML server-side; {@html} only touches this map.
@@ -241,17 +254,40 @@ export const actions: Actions = {
 			// page can put the instruction on the row that was acted on instead of at the
 			// top of the document, which on a phone is above the scroll position and is
 			// never shown to the giver at all (#430).
+			// Remember it for this browser so the instruction survives a reload (#441).
+			// The marker's lifetime is the deadline the backend just computed — the same
+			// value the expiry sweep will enforce — rather than any duration chosen here.
+			addPending(
+				cookies,
+				params.shareSlug,
+				form.data.item_id,
+				{
+					reservation_id: data.reservation_id,
+					deadline: data.confirm_deadline ?? null,
+					// Rendered once by the server in the instance's zone (#438); the ISO
+					// value above is what this marker's expiry is computed from.
+					deadline_display: data.confirm_deadline_display ?? null
+				},
+				isSecure(url)
+			);
 			message(form, 'Almost there — check your email to confirm your reservation.');
 			return {
 				form,
 				pendingConfirmation: {
 					itemId: form.data.item_id,
+					// The instant already written for a person, in the instance's timezone
+					// and naming that zone (#438). The page shows what the server rendered
+					// rather than formatting the instant itself: the same deadline is
+					// stated in the confirm email, a giver may have both in front of them,
+					// and two formatters of one instant produce wordings that do not match
+					// even when both are correct.
+					//
 					// ABSENT means no deadline EXISTS rather than that one is unknown: a zero
 					// effective window disables the confirm sweep, so the reservation waits
 					// indefinitely. null must therefore render no deadline at all — naming one
 					// would tell the giver to act by a time at which nothing happens. See
-					// ReservationCreated.confirm_deadline in the spec.
-					deadline: data.confirm_deadline ?? null
+					// ReservationCreated.confirm_deadline_display in the spec.
+					deadlineDisplay: data.confirm_deadline_display ?? null
 				}
 			};
 		}
