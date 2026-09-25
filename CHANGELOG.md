@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.1](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.24.0...yaadegar-v0.24.1) (2026-09-25)
+
+
+### Bug Fixes
+
+* **config:** log the resolved timezone and whether it came from config ([#454](https://github.com/yaad-index/yaadegar/issues/454)) ([d440250](https://github.com/yaad-index/yaadegar/commit/d44025050913e5c08e2a26abb1f655a7c56b5f4b))
+
 ## [0.24.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.23.0...yaadegar-v0.24.0) (2026-09-25)
 
 
