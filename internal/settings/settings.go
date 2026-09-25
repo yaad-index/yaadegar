@@ -78,10 +78,13 @@ func FormatInstant(t time.Time, loc *time.Location) string {
 
 // ParseLocation resolves an instance's configured timezone name.
 //
-// The unset test is locationUnset below and it is SHARED with LocationSource on
-// purpose: widening or narrowing it here alone makes the reporter describe an
-// instance the resolver disagrees with, which logs a confident false statement
-// rather than a missing one (#453). Change locationUnset, never this branch.
+// The unset test is locationUnset below, SHARED with LocationSource on purpose:
+// a resolver and a reporter that disagree log a confident false statement rather
+// than a missing one (#453). Change locationUnset, never inline a check here.
+// Both paths are guarded and neither relies on someone reading this: editing
+// locationUnset lands on its own warning, and inlining a divergent check here
+// fails TestTheResolverAndTheReporterAgreeOnWhatCountsAsUnset (#456). This note
+// is so the invariant is visible at the function, not the thing enforcing it.
 //
 // An empty name is UTC, preserving the behaviour of an instance that sets nothing.
 // An unknown name is an error rather than a silent fall back to UTC: a deployment
