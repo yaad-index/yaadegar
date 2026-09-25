@@ -14,7 +14,7 @@
 
 	// What the reserve action hands back when the reservation is held pending the
 	// giver's email confirmation (#430): which item it was, and when the hold lapses.
-	export type PendingConfirmation = { itemId: string; deadline: string | null };
+	export type PendingConfirmation = { itemId: string; deadlineDisplay: string | null };
 
 	// Read out of the action result rather than narrowed from ActionData with `in`.
 	// That type is a union over every action on this page, and narrowing it that way
@@ -30,39 +30,37 @@
 		if (!form || typeof form !== 'object' || !('pendingConfirmation' in form)) return undefined;
 		const raw = (form as { pendingConfirmation?: unknown }).pendingConfirmation;
 		if (!raw || typeof raw !== 'object') return undefined;
-		const { itemId, deadline } = raw as { itemId?: unknown; deadline?: unknown };
+		const { itemId, deadlineDisplay } = raw as { itemId?: unknown; deadlineDisplay?: unknown };
 		if (typeof itemId !== 'string' || itemId === '') return undefined;
-		return { itemId, deadline: typeof deadline === 'string' ? deadline : null };
+		return {
+			itemId,
+			deadlineDisplay: typeof deadlineDisplay === 'string' ? deadlineDisplay : null
+		};
 	}
 
-	// The confirm deadline as the giver reads it (#430). Same shape as the confirm
-	// email's own line ("2026-01-02 15:04 UTC") because a giver may well have both in
-	// front of them, and two renderings of one instant invite the question of which is
-	// the real one.
+	// The one sentence that tells a giver they are not finished. It is a constant
+	// rather than the action's flash message because it now has to render on a path
+	// where no action ran at all — a plain reload (#441). Two copies of this sentence,
+	// one per path, is exactly the divergence #441 is about: a page that says different
+	// things about one state depending on how it was reached.
+	export const PENDING_INSTRUCTION = 'Almost there — check your email to confirm your reservation.';
+
+	// #438: the page does NO formatting of the deadline. The server renders the
+	// instant once, in the instance's timezone and naming that zone, and every
+	// surface shows that string — the confirm email states the same deadline and a
+	// giver may be holding both, so a second formatter here is how one instant comes
+	// to be described two ways. What is rendered is still an INSTANT and never a
+	// countdown: a page can sit open, and a duration written into it once is silently
+	// wrong from the second afterwards with nothing on screen saying so.
 	//
-	// The page states the INSTANT and never a countdown, which is the opposite of the
-	// email's "you have 30 minutes". The email is read once, so a duration is the more
-	// useful half there. A page can sit open, and a duration rendered once into it is
-	// silently wrong from the second afterwards, with nothing on screen to say so. An
-	// instant cannot go stale.
-	//
-	// An unparseable value yields '' so the caller omits the sentence rather than
-	// printing "Invalid Date" at the giver — an unreadable deadline and no deadline are
-	// both "we cannot tell you when", and only one of them says so.
-	export function formatConfirmDeadline(iso: string | null | undefined): string {
-		if (!iso) return '';
-		const at = new Date(iso);
-		if (Number.isNaN(at.getTime())) return '';
-		const pad = (n: number) => String(n).padStart(2, '0');
-		return (
-			`${at.getUTCFullYear()}-${pad(at.getUTCMonth() + 1)}-${pad(at.getUTCDate())} ` +
-			`${pad(at.getUTCHours())}:${pad(at.getUTCMinutes())} UTC`
-		);
-	}
+	// An absent value renders no deadline at all, which is also what a list with a
+	// zero confirm window produces — "we cannot tell you when" is the honest output,
+	// and inventing a time nobody will enforce is not.
 </script>
 
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { SvelteMap } from 'svelte/reactivity';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { resolve } from '$app/paths';
 	import { chipInAllowed } from '$lib/cobuy';
@@ -150,7 +148,30 @@
 			? pendingConfirmation
 			: undefined
 	);
-	const pendingDeadline = $derived(formatConfirmDeadline(pendingRow?.deadline));
+
+	// #441. Everything above is about the render that FOLLOWS the reserve, and that is
+	// all it was ever able to be: the action result exists for one render. A giver who
+	// reloads, navigates back, or hits "Check for updates" got a plain `Reserved` chip
+	// and no instruction, while the hold was still pending and still counting down.
+	//
+	// So the server also hands back the items this browser is waiting to confirm, read
+	// from a marker it stored at reserve time. Merged here rather than replacing the
+	// action path: the result of the reserve just made is the fresher of the two, and
+	// it is the one that also carries the banner fallback when the row is missing.
+	//
+	// Deliberately NOT filtered on the item's availability. A pending hold counts
+	// toward reserved quantity, but deriveAvailability only reports `reserved` once the
+	// claimed units MEET the wanted quantity — so on a multi-quantity item a live
+	// pending hold sits behind an `available` chip, and an availability guard here
+	// would hide the instruction precisely there. The marker's own deadline is the
+	// thing that decides whether it still stands, and the server applies it on read.
+	const pendingByItem = $derived.by(() => {
+		const byItem = new SvelteMap<string, string | null>();
+		for (const p of data.pendingConfirmations ?? []) byItem.set(p.itemId, p.deadlineDisplay);
+		if (pendingConfirmation)
+			byItem.set(pendingConfirmation.itemId, pendingConfirmation.deadlineDisplay);
+		return byItem;
+	});
 
 	// email_required (#144): an email-confirm list rejects a reservation with no giver
 	// email server-side. Mirror that in the UI — mark the email field required and block
@@ -388,23 +409,37 @@
 						{emailRequired ? 'Your details' : 'Your details (optional)'}
 					</legend>
 					<div class="mt-3 grid gap-3 sm:grid-cols-2">
-						<label class="block">
+						<!-- #434: the ids are load-bearing, not decoration. type and autocomplete
+						     were already correct here and autofill still did not fire on mobile, and
+						     the two structural causes a reader would reach for first are ruled out by
+						     measurement: this form wraps the item loop rather than sitting inside it,
+						     so the document holds exactly ONE giver_email input however many items the
+						     list has, and both fields render on first paint rather than behind an
+						     interaction. What was left is that neither input had an id at all. Several
+						     engines' heuristics key on an id/name/label triple rather than on the
+						     autocomplete token alone, so the label now points at an explicit id
+						     instead of relying only on the implicit wrapping association. -->
+						<label class="block" for="giver-name">
 							<span class="mb-1 block font-ui text-ui font-medium text-ink">Name</span>
 							<input
 								class="h-12 w-full rounded-card border border-line-subtle bg-surface px-3 font-ui text-body text-ink placeholder:text-ink-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+								id="giver-name"
 								name="giver_name"
+								type="text"
 								autocomplete="name"
 								placeholder="Shown to no one"
 							/>
 						</label>
-						<label class="block">
+						<label class="block" for="giver-email">
 							<span class="mb-1 block font-ui text-ui font-medium text-ink"
 								>{emailRequired ? 'Email (required)' : 'Email'}</span
 							>
 							<input
 								class="h-12 w-full rounded-card border border-line-subtle bg-surface px-3 font-ui text-body text-ink placeholder:text-ink-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+								id="giver-email"
 								name="giver_email"
 								type="email"
+								inputmode="email"
 								autocomplete="email"
 								bind:value={giverEmail}
 								aria-required={emailRequired}
@@ -452,7 +487,8 @@
 						<!-- #430: this row is the one the giver just reserved and has not confirmed.
 						     Held by the action result, so it is true for the render that follows the
 						     reserve and not afterwards. -->
-						{@const awaitingConfirm = !!pendingRow && pendingRow.itemId === item.id}
+						{@const awaitingConfirm = !!item.id && pendingByItem.has(item.id)}
+						{@const rowDeadline = (item.id ? pendingByItem.get(item.id) : null) ?? ''}
 						<li
 							class={`rounded-card border bg-surface p-4 ${reservedByYou ? 'border-gold ring-1 ring-gold' : 'border-line'}`}
 						>
@@ -656,14 +692,15 @@
 									class="mt-3 rounded-card border border-primary bg-primary-tint p-4"
 									role="status"
 								>
-									<p class="font-ui text-body font-medium text-ink-heading">{reserveMessage}</p>
-									{#if pendingDeadline}
+									<p class="font-ui text-body font-medium text-ink-heading">
+										{PENDING_INSTRUCTION}
+									</p>
+									{#if rowDeadline}
 										<!-- Only when the backend gave one. A list whose effective confirm
 										     window is zero has no deadline at all — the reservation waits
 										     indefinitely — and naming a time there would be false. -->
 										<p class="mt-1 font-ui text-ui text-ink">
-											Confirm by {pendingDeadline}, or the item is released for someone else to
-											give.
+											Confirm by {rowDeadline}, or the item is released for someone else to give.
 										</p>
 									{/if}
 								</div>

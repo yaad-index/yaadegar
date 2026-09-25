@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/yaad-index/yaadegar/internal/settings"
+
 	"github.com/yaad-index/yaadegar/internal/api/gen"
 	"github.com/yaad-index/yaadegar/internal/decay"
 	"github.com/yaad-index/yaadegar/internal/storage"
@@ -200,9 +202,52 @@ func TestTheConfirmEmailCarriesTheSameDeadlineAsTheResponse(t *testing.T) {
 
 	body := h.lastEmail()
 	assert.Contains(t, body, "30 minutes", "the window as someone would say it")
-	assert.Contains(t, body, created.ConfirmDeadline.UTC().Format("2006-01-02 15:04 UTC"),
+	require.NotNil(t, created.ConfirmDeadlineDisplay)
+	assert.Contains(t, body, *created.ConfirmDeadlineDisplay,
 		"the email must name the instant the response returned, not its own")
 	assert.Contains(t, body, "/confirm?token=", "the link must survive the addition")
+}
+
+// The page and the email must state the deadline in the SAME WORDS, not merely
+// denote the same instant (#438).
+//
+// ⚠️ This was previously only an argument by composition — one test said the email
+// matched the response, another said the page matched the response — and #430
+// established a giver may well have both in front of them at once. Two renderings
+// of one instant invite the question of which is the real one, and two formatters
+// drift in ways neither author sees: a zone abbreviation from one library and a
+// numeric offset from another describe the same moment in words that do not match.
+// The response now carries the rendered string itself, so the agreement is a fact
+// about one value rather than a property inferred from two separate claims.
+func TestTheEmailAndTheResponseStateTheDeadlineInTheSameWords(t *testing.T) {
+	h := newHarnessConfirmWindow(t, 30*time.Minute)
+	list, item := h.confirmList("placeholder list", nil)
+	created := h.reservePending(*list.ShareSlug, *item.Id)
+
+	require.NotNil(t, created.ConfirmDeadline)
+	require.NotNil(t, created.ConfirmDeadlineDisplay)
+	display := *created.ConfirmDeadlineDisplay
+
+	// The rendered string denotes the machine-readable instant beside it...
+	assert.Equal(t, settings.FormatInstant(*created.ConfirmDeadline, time.UTC), display)
+	// ...names its zone AND its offset, so a reader elsewhere is neither left
+	// assuming their own clock nor left resolving an ambiguous abbreviation
+	// (CST and IST each name three zones — #450 review)...
+	assert.Regexp(t, `^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \S+ \(UTC[+-]\d{2}:\d{2}\)$`, display)
+	// ...and is the exact text the giver will read in the mail they act from.
+	assert.Contains(t, h.lastEmail(), display)
+}
+
+// The omission half of the same field: with nothing to expire there is no instant,
+// so there is nothing to render either. A display string present alongside an
+// absent deadline would be a time at which nothing happens.
+func TestNoRenderedDeadlineWhenThereIsNoDeadline(t *testing.T) {
+	h := newHarnessConfirmWindow(t, 0)
+	list, item := h.confirmList("placeholder list", nil)
+	created := h.reservePending(*list.ShareSlug, *item.Id)
+
+	assert.Nil(t, created.ConfirmDeadline)
+	assert.Nil(t, created.ConfirmDeadlineDisplay)
 }
 
 // TestTheConfirmEmailSaysNothingAboutADeadlineWhenNothingWillExpire is the omission
@@ -250,4 +295,35 @@ func TestTheConfirmWindowReadsNaturallyAtEveryScale(t *testing.T) {
 			assert.Contains(t, h.lastEmail(), "You have "+tc.want+" to confirm")
 		})
 	}
+}
+
+// The instance timezone actually reaches both surfaces (#438).
+//
+// ⚠️ The zone here is deliberately NOT UTC, and that is the whole point of the
+// test. Under a UTC instance a hardcoded-UTC implementation and a zone-aware one
+// produce identical output, so every assertion passes either way — the suite would
+// report health while asserting nothing about the zone. Mutating the instance
+// location to nil against a UTC harness failed no test at all, which is how this
+// gap was found.
+func TestTheInstanceTimezoneReachesBothTheEmailAndTheResponse(t *testing.T) {
+	berlin, err := settings.ParseLocation("Europe/Berlin")
+	require.NoError(t, err)
+
+	h := newHarnessDisplayLocation(t, 30*time.Minute, berlin)
+	list, item := h.confirmList("placeholder list", nil)
+	created := h.reservePending(*list.ShareSlug, *item.Id)
+
+	require.NotNil(t, created.ConfirmDeadline)
+	require.NotNil(t, created.ConfirmDeadlineDisplay)
+	display := *created.ConfirmDeadlineDisplay
+
+	// The rendered wall clock is the instance's, not UTC...
+	assert.Equal(t, settings.FormatInstant(*created.ConfirmDeadline, berlin), display)
+	assert.NotEqual(t, settings.FormatInstant(*created.ConfirmDeadline, time.UTC), display,
+		"a UTC rendering here would mean the configured zone never reached the response")
+	// ...the zone is named rather than left for the reader to assume, and its
+	// offset is spelled out so the name alone is not load-bearing...
+	assert.Regexp(t, `CES?T \(UTC\+0[12]:00\)$`, display)
+	// ...and the email the giver acts from says exactly the same thing.
+	assert.Contains(t, h.lastEmail(), display)
 }

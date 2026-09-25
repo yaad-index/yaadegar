@@ -85,7 +85,7 @@ type captchaConfig struct {
 // newHarnessCaptcha builds a harness with a captcha verifier configured, for the
 // low-trust reserve-gate tests.
 func newHarnessCaptcha(t *testing.T, cc captchaConfig) *harness {
-	return newHarnessFull(t, nil, false, "", cc, "", 0)
+	return newHarnessFull(t, nil, false, "", cc, "", 0, nil)
 }
 
 // newHarnessRegistrationCaptcha builds a harness with BOTH self-registration enabled
@@ -93,11 +93,11 @@ func newHarnessCaptcha(t *testing.T, cc captchaConfig) *harness {
 // neither newHarnessRegistration (no verifier) nor newHarnessCaptcha (registration
 // disabled, so every request 403s before the gate) can produce on its own.
 func newHarnessRegistrationCaptcha(t *testing.T, policy storage.RegistrationPolicy, cc captchaConfig) *harness {
-	return newHarnessFull(t, nil, false, policy, cc, "", 0)
+	return newHarnessFull(t, nil, false, policy, cc, "", 0, nil)
 }
 
 func newHarnessOpts(t *testing.T, limiter auth.Limiter, trustForwardedHost bool, registrationPolicy storage.RegistrationPolicy) *harness {
-	return newHarnessFull(t, limiter, trustForwardedHost, registrationPolicy, captchaConfig{}, "", 0)
+	return newHarnessFull(t, limiter, trustForwardedHost, registrationPolicy, captchaConfig{}, "", 0, nil)
 }
 
 // newHarnessConfirmWindow builds a harness with an instance-default confirm window
@@ -105,16 +105,29 @@ func newHarnessOpts(t *testing.T, limiter auth.Limiter, trustForwardedHost bool,
 // confirm-window expiry — so a deadline is absent under every other harness, and a
 // test that wants one has to ask for it here.
 func newHarnessConfirmWindow(t *testing.T, window time.Duration) *harness {
-	return newHarnessFull(t, nil, false, "", captchaConfig{}, "", window)
+	return newHarnessFull(t, nil, false, "", captchaConfig{}, "", window, nil)
+}
+
+// newHarnessDisplayLocation builds a confirm-window harness whose instance renders
+// absolute times in loc (#438).
+//
+// ⚠️ It exists because a harness with no location falls back to UTC, and a
+// UTC-hardcoded implementation is then indistinguishable from a zone-aware one —
+// every assertion passes either way and the suite reports health while asserting
+// nothing about the zone. Found by mutating the instance location to nil and
+// watching nothing fail. Any test about what a giver READS in a rendered time has
+// to use a non-UTC zone or it is not testing the zone at all.
+func newHarnessDisplayLocation(t *testing.T, window time.Duration, loc *time.Location) *harness {
+	return newHarnessFull(t, nil, false, "", captchaConfig{}, "", window, loc)
 }
 
 // newHarnessVersion builds a harness whose API reports a set build version, for the
 // GET /api/v1/version tests (ADR-0014 §3).
 func newHarnessVersion(t *testing.T, version string) *harness {
-	return newHarnessFull(t, nil, false, "", captchaConfig{}, version, 0)
+	return newHarnessFull(t, nil, false, "", captchaConfig{}, version, 0, nil)
 }
 
-func newHarnessFull(t *testing.T, limiter auth.Limiter, trustForwardedHost bool, registrationPolicy storage.RegistrationPolicy, cc captchaConfig, version string, reserverConfirmWindow time.Duration) *harness {
+func newHarnessFull(t *testing.T, limiter auth.Limiter, trustForwardedHost bool, registrationPolicy storage.RegistrationPolicy, cc captchaConfig, version string, reserverConfirmWindow time.Duration, displayLocation *time.Location) *harness {
 	t.Helper()
 	ctx := context.Background()
 	dsn := "file:" + filepath.Join(t.TempDir(), "api.db")
@@ -152,6 +165,7 @@ func newHarnessFull(t *testing.T, limiter auth.Limiter, trustForwardedHost bool,
 		CaptchaSiteKey:        cc.siteKey,
 		Version:               version,
 		ReserverConfirmWindow: reserverConfirmWindow,
+		DisplayLocation:       displayLocation,
 	})
 	return &harness{t: t, h: h, store: store, tenant: tenant, owner: owner, email: fake, clk: clk, preview: pf, resolver: fr, authSvc: authSvc}
 }

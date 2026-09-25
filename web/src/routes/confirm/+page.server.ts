@@ -1,6 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import { backendClient } from '$lib/server/api';
 import { addConfirmedCap, confirmedCap, removeConfirmedCap } from '$lib/server/caps';
+import { removePendingByReservation } from '$lib/server/pending';
 import type { Actions, PageServerLoad } from './$types';
 
 const isSecure = (url: URL) => url.protocol === 'https:';
@@ -33,6 +34,14 @@ export const actions: Actions = {
 			if (response?.status === 410) return fail(410, { state: 'expired' as const });
 			return fail(response?.status === 404 ? 404 : 502, { state: 'invalid' as const });
 		}
+
+		// The hold is no longer pending, so the list page must stop telling this browser
+		// to check its email (#441). Cleared on both arms below — including the
+		// idempotent re-confirm, where the reservation is already active and a marker
+		// left standing would be just as wrong. A confirm opened in a different browser
+		// than the one that reserved cannot reach that browser's marker; it lapses at
+		// the deadline instead (see removePendingByReservation).
+		removePendingByReservation(cookies, data.reservation_id, isSecure(url));
 
 		// First confirm returns the capability token; keep it server-side (never to
 		// client JS, ADR-0006 §4) so this page can offer a release. An idempotent
