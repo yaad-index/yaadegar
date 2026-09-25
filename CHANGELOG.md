@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.24.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.23.0...yaadegar-v0.24.0) (2026-09-25)
+
+
+### Features
+
+* render the confirm deadline in the instance's timezone ([#450](https://github.com/yaad-index/yaadegar/issues/450)) ([31420b4](https://github.com/yaad-index/yaadegar/commit/31420b49d36a8e3d468e0a7d7639a1c8ee25f317))
+
+
+### Bug Fixes
+
+* **web:** keep a pending reservation visible across a reload, and shape the giver fields for autofill ([#446](https://github.com/yaad-index/yaadegar/issues/446)) ([a621b47](https://github.com/yaad-index/yaadegar/commit/a621b47ec6f55d65a382613f03fb06f7d0cc9c1b))
+
 ## [0.23.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.22.0...yaadegar-v0.23.0) (2026-09-22)
 
 
