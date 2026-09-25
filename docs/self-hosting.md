@@ -56,8 +56,9 @@ own **custom domain**.
 
 ## Deploy with Docker Compose
 
-The repository ships a `compose.yaml` that brings up all three services. The
-backend applies its database migrations automatically on start.
+The repository ships a `docker-compose.yml` at the root that brings up all three
+services, building the images from the working tree. The backend applies its
+database migrations automatically on start.
 
 ```sh
 docker compose up --build
@@ -67,8 +68,9 @@ The web UI is served at `http://localhost:3000`. Tenant subdomains under
 `localhost` resolve to the loopback with no `/etc/hosts` edits, so a local owner
 logs in at `http://alice.localhost:3000`.
 
-> **The bundled compose secrets are DEV ONLY.** `compose.yaml` ships intentionally
-> weak, placeholder secrets (JWT signing secret, Postgres password) for local use.
+> **The bundled compose secrets are DEV ONLY.** The root `docker-compose.yml`
+> ships intentionally weak, placeholder secrets (JWT signing secret, Postgres
+> password) for local use.
 > **Never** reuse them for a real deployment — see [Configuration](#configuration)
 > for the values you must override.
 
