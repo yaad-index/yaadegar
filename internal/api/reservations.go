@@ -284,8 +284,12 @@ func (s *Server) reserveEmailConfirmed(ctx context.Context, ts storage.TenantSto
 	link := s.publicLinkBase + "/confirm?token=" + confirmRaw
 	body := "Confirm your reservation for " + item.Name + ": " + link
 	if deadline != nil {
+		// The relative half needs no timezone and is correct for every reader. Only
+		// the absolute instant does, and it is rendered in the instance's zone with
+		// that zone named, so a giver elsewhere can see what it is relative to
+		// instead of reading it as their own clock (#438).
 		body += "\n\nYou have " + humanDuration(deadline.Sub(res.StateAt)) +
-			" to confirm, until " + deadline.UTC().Format("2006-01-02 15:04 UTC") +
+			" to confirm, until " + settings.FormatInstant(*deadline, s.displayLocation) +
 			". After that the item is released for someone else to give."
 	}
 	if err := s.email.Send(ctx, email.Message{
@@ -312,6 +316,13 @@ func (s *Server) reserveEmailConfirmed(ctx context.Context, ts storage.TenantSto
 		Status:        gen.ReservationCreatedStatusPendingConfirmation,
 	}
 	out.ConfirmDeadline = deadline
+	if deadline != nil {
+		// The same string the email carries, rendered once here (#438). Every surface
+		// shows this rather than formatting the instant itself: the giver may have the
+		// mail and the page open together, and two formatters of one instant produce
+		// wordings that do not match even when both are right.
+		out.ConfirmDeadlineDisplay = ptr(settings.FormatInstant(*deadline, s.displayLocation))
+	}
 	return gen.CreateReservation202JSONResponse(out), nil
 }
 

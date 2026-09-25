@@ -15,7 +15,9 @@ import type { ActionData, PageData } from './$types';
 // browser that made the reservation. So every test here passes NO form at all: that is
 // the whole point — the reload path is the one with no action result in it.
 
-const listData = (pendingConfirmations: { itemId: string; deadline: string | null }[]): PageData =>
+const listData = (
+	pendingConfirmations: { itemId: string; deadlineDisplay: string | null }[]
+): PageData =>
 	({
 		closed: false as const,
 		list: {
@@ -49,7 +51,9 @@ const rowOf = (container: HTMLElement, name: string): HTMLElement => {
 describe('a pending reservation survives a reload (#441)', () => {
 	it('still tells the giver to confirm when no action ran', () => {
 		const { container } = render(Page, {
-			data: listData([{ itemId: 'item-one', deadline: '2026-09-22T15:04:09Z' }]),
+			data: listData([
+				{ itemId: 'item-one', deadlineDisplay: '2026-09-22 20:28 CEST (UTC+02:00)' }
+			]),
 			form: null
 		});
 
@@ -61,7 +65,9 @@ describe('a pending reservation survives a reload (#441)', () => {
 
 	it('relabels that row’s chip instead of leaving it reading Reserved', () => {
 		const { container } = render(Page, {
-			data: listData([{ itemId: 'item-one', deadline: '2026-09-22T15:04:09Z' }]),
+			data: listData([
+				{ itemId: 'item-one', deadlineDisplay: '2026-09-22 20:28 CEST (UTC+02:00)' }
+			]),
 			form: null
 		});
 		const row = rowOf(container, 'Cast iron pan');
@@ -71,16 +77,22 @@ describe('a pending reservation survives a reload (#441)', () => {
 		expect(row.textContent).not.toMatch(/\bReserved\b/);
 	});
 
-	it('names the deadline the backend computed', () => {
+	it('shows exactly the deadline string the server rendered, zone and all', () => {
+		// #438: the page formats nothing. The instance renders the instant once, in its
+		// own timezone and naming that zone, and the confirm email states the same
+		// words — a giver may be holding both.
+
 		render(Page, {
-			data: listData([{ itemId: 'item-one', deadline: '2026-09-22T15:04:09Z' }]),
+			data: listData([
+				{ itemId: 'item-one', deadlineDisplay: '2026-09-22 20:28 CEST (UTC+02:00)' }
+			]),
 			form: null
 		});
-		expect(screen.getByText(/Confirm by 2026-09-22 15:04 UTC/)).toBeInTheDocument();
+		expect(screen.getByText(/Confirm by 2026-09-22 20:28 CEST/)).toBeInTheDocument();
 	});
 
 	it('names no deadline when the list has no confirm window', () => {
-		render(Page, { data: listData([{ itemId: 'item-one', deadline: null }]), form: null });
+		render(Page, { data: listData([{ itemId: 'item-one', deadlineDisplay: null }]), form: null });
 		// The instruction still stands — the hold waits indefinitely — but naming a time
 		// would tell the giver to act by an instant at which nothing happens.
 		expect(instructionEls()).toHaveLength(1);
@@ -93,7 +105,9 @@ describe('a pending reservation survives a reload (#441)', () => {
 	// does not saturate the quantity.
 	it('shows the instruction even while the item still reads as available', () => {
 		const { container } = render(Page, {
-			data: listData([{ itemId: 'item-two', deadline: '2026-09-22T15:04:09Z' }]),
+			data: listData([
+				{ itemId: 'item-two', deadlineDisplay: '2026-09-22 20:28 CEST (UTC+02:00)' }
+			]),
 			form: null
 		});
 		expect(instructionEls()).toHaveLength(1);
@@ -103,8 +117,8 @@ describe('a pending reservation survives a reload (#441)', () => {
 	it('marks each pending row when more than one is waiting', () => {
 		const { container } = render(Page, {
 			data: listData([
-				{ itemId: 'item-one', deadline: '2026-09-22T15:04:09Z' },
-				{ itemId: 'item-two', deadline: null }
+				{ itemId: 'item-one', deadlineDisplay: '2026-09-22 20:28 CEST (UTC+02:00)' },
+				{ itemId: 'item-two', deadlineDisplay: null }
 			]),
 			form: null
 		});
@@ -121,7 +135,9 @@ describe('a pending reservation survives a reload (#441)', () => {
 
 	it('ignores a marker for an item no longer on the list', () => {
 		const { container } = render(Page, {
-			data: listData([{ itemId: 'item-gone', deadline: '2026-09-22T15:04:09Z' }]),
+			data: listData([
+				{ itemId: 'item-gone', deadlineDisplay: '2026-09-22 20:28 CEST (UTC+02:00)' }
+			]),
 			form: null
 		});
 		expect(instructionEls()).toHaveLength(0);
@@ -130,7 +146,9 @@ describe('a pending reservation survives a reload (#441)', () => {
 
 	it('does not offer a release for a hold that has no capability yet', () => {
 		const { container } = render(Page, {
-			data: listData([{ itemId: 'item-one', deadline: '2026-09-22T15:04:09Z' }]),
+			data: listData([
+				{ itemId: 'item-one', deadlineDisplay: '2026-09-22 20:28 CEST (UTC+02:00)' }
+			]),
 			form: null
 		});
 		// The marker carries no token by construction, so the page must not present an
@@ -151,7 +169,7 @@ describe('a pending reservation survives a reload (#441)', () => {
 });
 
 describe('the reload path and the just-reserved path say the same thing (#441)', () => {
-	const deadline = '2026-09-22T15:04:09Z';
+	const deadline = '2026-09-22 20:28 CEST (UTC+02:00)';
 	const actionResult = (itemId: string) =>
 		({
 			form: { message: PENDING_INSTRUCTION, data: { item_id: itemId }, errors: {}, valid: true },
@@ -160,7 +178,7 @@ describe('the reload path and the just-reserved path say the same thing (#441)',
 
 	it('renders one identical instruction whether or not an action just ran', () => {
 		const reload = render(Page, {
-			data: listData([{ itemId: 'item-one', deadline }]),
+			data: listData([{ itemId: 'item-one', deadlineDisplay: deadline }]),
 			form: null
 		});
 		const reloadText = instructionEls().map((el) => el.textContent?.trim());
@@ -178,7 +196,7 @@ describe('the reload path and the just-reserved path say the same thing (#441)',
 		// the POST both sources name the same item. Two sources must not become two
 		// instructions.
 		render(Page, {
-			data: listData([{ itemId: 'item-one', deadline }]),
+			data: listData([{ itemId: 'item-one', deadlineDisplay: deadline }]),
 			form: actionResult('item-one')
 		});
 		expect(instructionEls()).toHaveLength(1);

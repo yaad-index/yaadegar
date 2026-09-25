@@ -14,7 +14,7 @@
 
 	// What the reserve action hands back when the reservation is held pending the
 	// giver's email confirmation (#430): which item it was, and when the hold lapses.
-	export type PendingConfirmation = { itemId: string; deadline: string | null };
+	export type PendingConfirmation = { itemId: string; deadlineDisplay: string | null };
 
 	// Read out of the action result rather than narrowed from ActionData with `in`.
 	// That type is a union over every action on this page, and narrowing it that way
@@ -30,9 +30,12 @@
 		if (!form || typeof form !== 'object' || !('pendingConfirmation' in form)) return undefined;
 		const raw = (form as { pendingConfirmation?: unknown }).pendingConfirmation;
 		if (!raw || typeof raw !== 'object') return undefined;
-		const { itemId, deadline } = raw as { itemId?: unknown; deadline?: unknown };
+		const { itemId, deadlineDisplay } = raw as { itemId?: unknown; deadlineDisplay?: unknown };
 		if (typeof itemId !== 'string' || itemId === '') return undefined;
-		return { itemId, deadline: typeof deadline === 'string' ? deadline : null };
+		return {
+			itemId,
+			deadlineDisplay: typeof deadlineDisplay === 'string' ? deadlineDisplay : null
+		};
 	}
 
 	// The one sentence that tells a giver they are not finished. It is a constant
@@ -42,30 +45,17 @@
 	// things about one state depending on how it was reached.
 	export const PENDING_INSTRUCTION = 'Almost there — check your email to confirm your reservation.';
 
-	// The confirm deadline as the giver reads it (#430). Same shape as the confirm
-	// email's own line ("2026-01-02 15:04 UTC") because a giver may well have both in
-	// front of them, and two renderings of one instant invite the question of which is
-	// the real one.
+	// #438: the page does NO formatting of the deadline. The server renders the
+	// instant once, in the instance's timezone and naming that zone, and every
+	// surface shows that string — the confirm email states the same deadline and a
+	// giver may be holding both, so a second formatter here is how one instant comes
+	// to be described two ways. What is rendered is still an INSTANT and never a
+	// countdown: a page can sit open, and a duration written into it once is silently
+	// wrong from the second afterwards with nothing on screen saying so.
 	//
-	// The page states the INSTANT and never a countdown, which is the opposite of the
-	// email's "you have 30 minutes". The email is read once, so a duration is the more
-	// useful half there. A page can sit open, and a duration rendered once into it is
-	// silently wrong from the second afterwards, with nothing on screen to say so. An
-	// instant cannot go stale.
-	//
-	// An unparseable value yields '' so the caller omits the sentence rather than
-	// printing "Invalid Date" at the giver — an unreadable deadline and no deadline are
-	// both "we cannot tell you when", and only one of them says so.
-	export function formatConfirmDeadline(iso: string | null | undefined): string {
-		if (!iso) return '';
-		const at = new Date(iso);
-		if (Number.isNaN(at.getTime())) return '';
-		const pad = (n: number) => String(n).padStart(2, '0');
-		return (
-			`${at.getUTCFullYear()}-${pad(at.getUTCMonth() + 1)}-${pad(at.getUTCDate())} ` +
-			`${pad(at.getUTCHours())}:${pad(at.getUTCMinutes())} UTC`
-		);
-	}
+	// An absent value renders no deadline at all, which is also what a list with a
+	// zero confirm window produces — "we cannot tell you when" is the honest output,
+	// and inventing a time nobody will enforce is not.
 </script>
 
 <script lang="ts">
@@ -177,8 +167,9 @@
 	// thing that decides whether it still stands, and the server applies it on read.
 	const pendingByItem = $derived.by(() => {
 		const byItem = new SvelteMap<string, string | null>();
-		for (const p of data.pendingConfirmations ?? []) byItem.set(p.itemId, p.deadline);
-		if (pendingConfirmation) byItem.set(pendingConfirmation.itemId, pendingConfirmation.deadline);
+		for (const p of data.pendingConfirmations ?? []) byItem.set(p.itemId, p.deadlineDisplay);
+		if (pendingConfirmation)
+			byItem.set(pendingConfirmation.itemId, pendingConfirmation.deadlineDisplay);
 		return byItem;
 	});
 
@@ -497,9 +488,7 @@
 						     Held by the action result, so it is true for the render that follows the
 						     reserve and not afterwards. -->
 						{@const awaitingConfirm = !!item.id && pendingByItem.has(item.id)}
-						{@const rowDeadline = formatConfirmDeadline(
-							item.id ? pendingByItem.get(item.id) : null
-						)}
+						{@const rowDeadline = (item.id ? pendingByItem.get(item.id) : null) ?? ''}
 						<li
 							class={`rounded-card border bg-surface p-4 ${reservedByYou ? 'border-gold ring-1 ring-gold' : 'border-line'}`}
 						>

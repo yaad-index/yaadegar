@@ -82,6 +82,15 @@
 # (env YAADEGAR_RESERVER_DEFAULT_TIER, flag --reserver-default-tier)
 # reserver-default-tier: "full_guest"
 
+# IANA timezone for absolute times shown to people, such as the reservation
+# confirm deadline in the confirmation email and on the list page. An email
+# carries no locale, so the server cannot know a giver's own zone; this is the
+# instance's wall clock, and the zone is always named in the rendered time so a
+# reader elsewhere can see what it is relative to. Empty means UTC, so an
+# instance that sets nothing keeps the times it has always sent.
+# (env YAADEGAR_TIMEZONE, flag --timezone)
+# timezone: "Europe/Berlin"
+
 # How long a co-buying match's emailed confirm/decline link stays valid after the
 # match is proposed. 0 means it never expires.
 # (env YAADEGAR_COBUY_CONFIRM_WINDOW, flag --cobuy-confirm-window)

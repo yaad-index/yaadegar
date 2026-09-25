@@ -33,6 +33,7 @@ import (
 	"github.com/yaad-index/yaadegar/internal/email"
 	"github.com/yaad-index/yaadegar/internal/oauthlogin"
 	"github.com/yaad-index/yaadegar/internal/server"
+	"github.com/yaad-index/yaadegar/internal/settings"
 	"github.com/yaad-index/yaadegar/internal/storage"
 	"github.com/yaad-index/yaadegar/internal/storage/sqlstore"
 )
@@ -127,6 +128,14 @@ type ServeCmd struct {
 
 	ReserverConfirmWindow time.Duration `name:"reserver-confirm-window" default:"30m" env:"YAADEGAR_RESERVER_CONFIRM_WINDOW" help:"How long an email_confirmed reservation may sit unconfirmed before it auto-expires and frees the item (ADR-0007). 0 disables the confirm-window sweep."`
 	ReserverDefaultTier   string        `name:"reserver-default-tier" default:"full_guest" env:"YAADEGAR_RESERVER_DEFAULT_TIER" help:"Instance-default reserver tier for lists that set no override (ADR-0007): full_guest | email_confirmed | registered."`
+
+	// Timezone is the instance's wall clock for any absolute time shown to a person
+	// (#438). An email carries no locale, so the server cannot know a giver's own
+	// zone; rendering in the instance's is correct for the single-region instance
+	// that is the common case, and the zone is always named so a reader elsewhere
+	// can see what the time is relative to. Defaults to UTC so no existing
+	// deployment silently shifts the times it has been sending.
+	Timezone string `name:"timezone" env:"YAADEGAR_TIMEZONE" help:"IANA timezone name (e.g. Europe/Berlin) for absolute times shown to people, such as the reservation confirm deadline. Empty means UTC. The zone is always named in the rendered time."`
 
 	// RegistrationPolicy gates unauthenticated self-registration (ADR-0009 Decision 2,
 	// ADR-0012). Defaults to disabled — an existing instance keeps its unchanged
@@ -260,6 +269,14 @@ func (c *ServeCmd) Run(cli *CLI) error {
 		return err
 	}
 
+	// Resolved before the server starts: an unknown zone name is a startup failure,
+	// not a silent fall back to UTC. An instance that meant local time and kept
+	// mailing UTC would be indistinguishable from one that meant UTC.
+	displayLocation, err := settings.ParseLocation(c.Timezone)
+	if err != nil {
+		return fmt.Errorf("invalid --timezone %q: %w", c.Timezone, err)
+	}
+
 	handler := api.NewHandler(store, api.Options{
 		BaseDomain:          c.BaseDomain,
 		Logger:              logger,
@@ -276,6 +293,7 @@ func (c *ServeCmd) Run(cli *CLI) error {
 		// to both so the deadline shown to the giver and the deadline enforced by the
 		// sweep cannot come from different settings.
 		ReserverConfirmWindow: c.ReserverConfirmWindow,
+		DisplayLocation:       displayLocation,
 		OAuth:                 oauthAuth,
 		RegistrationPolicy:    registrationPolicy,
 		Captcha:               captchaVerifier,

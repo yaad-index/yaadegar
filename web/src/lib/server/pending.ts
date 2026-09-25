@@ -30,6 +30,18 @@ export interface PendingEntry {
 	// too. Anything that treats null as "expire it soon" would drop the instruction
 	// out from under a giver whose reservation is still perfectly alive.
 	deadline: string | null;
+	// The same instant as `deadline`, already rendered for a person by the server in
+	// the instance's timezone with that zone named (#438). Display only: `deadline`
+	// above stays the machine-readable ISO value and remains the one this module
+	// does arithmetic on — expiry and the cookie's max-age both Date.parse it, and a
+	// human string would silently make every marker look unparseable, i.e. expired.
+	//
+	// Absent on markers written before #438 shipped. Such a marker renders its
+	// instruction without the "until <time>" clause rather than falling back to a
+	// second client-side formatter, which is the divergence #438 exists to remove.
+	// The gap is bounded by the confirm window, since the marker dies at its own
+	// deadline.
+	deadline_display?: string | null;
 }
 
 type PendingMap = Record<string, Record<string, PendingEntry>>;
