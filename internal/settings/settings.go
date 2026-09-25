@@ -91,10 +91,22 @@ func FormatInstant(t time.Time, loc *time.Location) string {
 // zoneinfo would turn a --timezone that had always worked into a startup failure
 // with its cause invisible, so the dependency is named here rather than implied.
 func ParseLocation(name string) (*time.Location, error) {
-	if name == "" {
+	if locationUnset(name) {
 		return time.UTC, nil
 	}
 	return time.LoadLocation(name)
+}
+
+// locationUnset is the single test for "this instance configured no timezone".
+//
+// ParseLocation and LocationSource both branch on it, and they are the one pair
+// where disagreeing produces a CONFIDENT FALSE statement rather than a missing
+// one: a resolver treating a value as unset while the reporter calls it
+// configured logs "timezone=UTC source=config" for an instance that set nothing
+// usable. Adjacency does not prevent that, so the predicate is shared rather
+// than written twice (#453).
+func locationUnset(name string) bool {
+	return name == ""
 }
 
 // LocationSource names where a resolved display zone came from: "config" when the
@@ -106,7 +118,7 @@ func ParseLocation(name string) (*time.Location, error) {
 // those apart (#453). Callers log this alongside the zone so an operator reads the
 // state instead of deducing it from the process environment.
 func LocationSource(name string) string {
-	if name == "" {
+	if locationUnset(name) {
 		return "default"
 	}
 	return "config"
