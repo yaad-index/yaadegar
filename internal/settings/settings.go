@@ -96,3 +96,18 @@ func ParseLocation(name string) (*time.Location, error) {
 	}
 	return time.LoadLocation(name)
 }
+
+// LocationSource names where a resolved display zone came from: "config" when the
+// instance set a name, "default" when it set nothing.
+//
+// This exists because the two cases produce the SAME zone. ParseLocation's empty
+// branch is a deliberate compatibility default, so an instance showing UTC may
+// have chosen UTC or may have configured nothing, and nothing observable told
+// those apart (#453). Callers log this alongside the zone so an operator reads the
+// state instead of deducing it from the process environment.
+func LocationSource(name string) string {
+	if name == "" {
+		return "default"
+	}
+	return "config"
+}
