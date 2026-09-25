@@ -1,6 +1,7 @@
 package settings_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -147,4 +148,43 @@ func TestTheSourceOfAResolvedZoneIsDistinguishableFromTheZoneItself(t *testing.T
 	assert.Equal(t, "default", settings.LocationSource(""))
 	assert.Equal(t, "config", settings.LocationSource("UTC"))
 	assert.Equal(t, "config", settings.LocationSource("Europe/Berlin"))
+}
+
+func TestTheResolverAndTheReporterAgreeOnWhatCountsAsUnset(t *testing.T) {
+	// The gap this closes, found in review of #454: extracting locationUnset makes
+	// divergence require editing a call site, but nothing NOTICED an edit that did.
+	// Re-inlining a widened check in ParseLocation alone (TrimSpace(name) == "")
+	// left the whole suite green, because every other test here exercises only ""
+	// and real zone names — never an input where a trimmed and an untrimmed
+	// predicate disagree.
+	//
+	// So this asserts the relationship rather than each function's outputs. A
+	// reporter calling something "config" while the resolver quietly defaults it is
+	// exactly the confident-false-statement case: the startup line would read
+	// source=config for an instance whose value never reached tzdata.
+	for _, name := range []string{"", " ", "\t", "  ", "UTC", "Europe/Berlin", "Asia/Tehran", "Not/AZone"} {
+		t.Run(fmt.Sprintf("%q", name), func(t *testing.T) {
+			loc, err := settings.ParseLocation(name)
+
+			switch settings.LocationSource(name) {
+			case "default":
+				require.NoError(t, err, "an unset name must resolve, not fail")
+				assert.Equal(t, time.UTC, loc,
+					"the reporter says nothing was configured, so the resolver must have defaulted")
+			case "config":
+				// The resolver must actually have consulted tzdata for it. If it
+				// silently defaulted instead, the two disagree about this input.
+				wantLoc, wantErr := time.LoadLocation(name)
+				if wantErr != nil {
+					assert.Error(t, err,
+						"the reporter says this was configured, so an unusable value must fail rather than default")
+					return
+				}
+				require.NoError(t, err)
+				assert.Equal(t, wantLoc.String(), loc.String())
+			default:
+				t.Fatalf("unknown source label for %q", name)
+			}
+		})
+	}
 }
