@@ -51,7 +51,9 @@ const rowOf = (container: HTMLElement, name: string): HTMLElement => {
 describe('a pending reservation survives a reload (#441)', () => {
 	it('still tells the giver to confirm when no action ran', () => {
 		const { container } = render(Page, {
-			data: listData([{ itemId: 'item-one', deadlineDisplay: '2026-09-22 20:28 CEST (UTC+02:00)' }]),
+			data: listData([
+				{ itemId: 'item-one', deadlineDisplay: '2026-09-22 20:28 CEST (UTC+02:00)' }
+			]),
 			form: null
 		});
 
@@ -63,7 +65,9 @@ describe('a pending reservation survives a reload (#441)', () => {
 
 	it('relabels that row’s chip instead of leaving it reading Reserved', () => {
 		const { container } = render(Page, {
-			data: listData([{ itemId: 'item-one', deadlineDisplay: '2026-09-22 20:28 CEST (UTC+02:00)' }]),
+			data: listData([
+				{ itemId: 'item-one', deadlineDisplay: '2026-09-22 20:28 CEST (UTC+02:00)' }
+			]),
 			form: null
 		});
 		const row = rowOf(container, 'Cast iron pan');
@@ -79,7 +83,9 @@ describe('a pending reservation survives a reload (#441)', () => {
 		// words — a giver may be holding both.
 
 		render(Page, {
-			data: listData([{ itemId: 'item-one', deadlineDisplay: '2026-09-22 20:28 CEST (UTC+02:00)' }]),
+			data: listData([
+				{ itemId: 'item-one', deadlineDisplay: '2026-09-22 20:28 CEST (UTC+02:00)' }
+			]),
 			form: null
 		});
 		expect(screen.getByText(/Confirm by 2026-09-22 20:28 CEST/)).toBeInTheDocument();
@@ -99,7 +105,9 @@ describe('a pending reservation survives a reload (#441)', () => {
 	// does not saturate the quantity.
 	it('shows the instruction even while the item still reads as available', () => {
 		const { container } = render(Page, {
-			data: listData([{ itemId: 'item-two', deadlineDisplay: '2026-09-22 20:28 CEST (UTC+02:00)' }]),
+			data: listData([
+				{ itemId: 'item-two', deadlineDisplay: '2026-09-22 20:28 CEST (UTC+02:00)' }
+			]),
 			form: null
 		});
 		expect(instructionEls()).toHaveLength(1);
@@ -127,7 +135,9 @@ describe('a pending reservation survives a reload (#441)', () => {
 
 	it('ignores a marker for an item no longer on the list', () => {
 		const { container } = render(Page, {
-			data: listData([{ itemId: 'item-gone', deadlineDisplay: '2026-09-22 20:28 CEST (UTC+02:00)' }]),
+			data: listData([
+				{ itemId: 'item-gone', deadlineDisplay: '2026-09-22 20:28 CEST (UTC+02:00)' }
+			]),
 			form: null
 		});
 		expect(instructionEls()).toHaveLength(0);
@@ -136,7 +146,9 @@ describe('a pending reservation survives a reload (#441)', () => {
 
 	it('does not offer a release for a hold that has no capability yet', () => {
 		const { container } = render(Page, {
-			data: listData([{ itemId: 'item-one', deadlineDisplay: '2026-09-22 20:28 CEST (UTC+02:00)' }]),
+			data: listData([
+				{ itemId: 'item-one', deadlineDisplay: '2026-09-22 20:28 CEST (UTC+02:00)' }
+			]),
 			form: null
 		});
 		// The marker carries no token by construction, so the page must not present an

@@ -146,7 +146,10 @@ describe('the deadline is named only when one exists (#430)', () => {
 		// The page formats nothing itself (#438): the confirm email states this same
 		// deadline, a giver may hold both, and the zone is named so a reader
 		// elsewhere does not take it for their own clock.
-		render(Page, { data: listData(), form: pendingForm('item-one', '2026-09-22 20:28 CEST (UTC+02:00)') });
+		render(Page, {
+			data: listData(),
+			form: pendingForm('item-one', '2026-09-22 20:28 CEST (UTC+02:00)')
+		});
 		expect(
 			screen.getByText(/Confirm by 2026-09-22 20:28 CEST \(UTC\+02:00\), or the item is released/)
 		).toBeInTheDocument();
@@ -155,7 +158,10 @@ describe('the deadline is named only when one exists (#430)', () => {
 	it('passes an offset-named zone through unchanged too', () => {
 		// Not every zone has a letter abbreviation; some render as an offset. The
 		// page must not care — it prints what it was given.
-		render(Page, { data: listData(), form: pendingForm('item-one', '2026-09-22 21:58 +0330 (UTC+03:30)') });
+		render(Page, {
+			data: listData(),
+			form: pendingForm('item-one', '2026-09-22 21:58 +0330 (UTC+03:30)')
+		});
 		expect(
 			screen.getByText(/Confirm by 2026-09-22 21:58 \+0330 \(UTC\+03:30\), or the item is released/)
 		).toBeInTheDocument();
