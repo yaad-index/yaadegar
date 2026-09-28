@@ -16,7 +16,7 @@ func (r passwordResetRepo) Create(ctx context.Context, t storage.PasswordResetTo
 		t.ID = newID()
 	}
 	if t.CreatedAt.IsZero() {
-		t.CreatedAt = nowTime()
+		t.CreatedAt = r.now()
 	}
 	t.TenantID = r.tenantID
 	_, err := r.db.ExecContext(ctx, r.rb(

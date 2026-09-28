@@ -15,7 +15,7 @@ func (r oauthIdentityRepo) Create(ctx context.Context, oi storage.OAuthIdentity)
 		oi.ID = newID()
 	}
 	if oi.CreatedAt.IsZero() {
-		oi.CreatedAt = nowTime()
+		oi.CreatedAt = r.now()
 	}
 	oi.TenantID = r.tenantID
 	_, err := r.db.ExecContext(ctx, r.rb(

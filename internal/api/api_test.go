@@ -85,7 +85,7 @@ type captchaConfig struct {
 // newHarnessCaptcha builds a harness with a captcha verifier configured, for the
 // low-trust reserve-gate tests.
 func newHarnessCaptcha(t *testing.T, cc captchaConfig) *harness {
-	return newHarnessFull(t, nil, false, "", cc, "", 0, nil)
+	return newHarnessFull(t, nil, false, "", cc, "", 0, nil, 0)
 }
 
 // newHarnessRegistrationCaptcha builds a harness with BOTH self-registration enabled
@@ -93,19 +93,26 @@ func newHarnessCaptcha(t *testing.T, cc captchaConfig) *harness {
 // neither newHarnessRegistration (no verifier) nor newHarnessCaptcha (registration
 // disabled, so every request 403s before the gate) can produce on its own.
 func newHarnessRegistrationCaptcha(t *testing.T, policy storage.RegistrationPolicy, cc captchaConfig) *harness {
-	return newHarnessFull(t, nil, false, policy, cc, "", 0, nil)
+	return newHarnessFull(t, nil, false, policy, cc, "", 0, nil, 0)
 }
 
 func newHarnessOpts(t *testing.T, limiter auth.Limiter, trustForwardedHost bool, registrationPolicy storage.RegistrationPolicy) *harness {
-	return newHarnessFull(t, limiter, trustForwardedHost, registrationPolicy, captchaConfig{}, "", 0, nil)
+	return newHarnessFull(t, limiter, trustForwardedHost, registrationPolicy, captchaConfig{}, "", 0, nil, 0)
 }
 
 // newHarnessConfirmWindow builds a harness with an instance-default confirm window
 // for an email_confirmed reservation. The other builders pass 0, which DISABLES the
 // confirm-window expiry — so a deadline is absent under every other harness, and a
 // test that wants one has to ask for it here.
+//
+// ⚠️ The store stamps rows confirmStoreLag behind the handler's clock. The fake
+// clock does not move during a request, so without the lag a reservation's
+// state_at and the handler's now are the same instant, and a deadline anchored to
+// the wrong one of them passes every test here. Found by anchoring the deadline to
+// the handler clock and watching nothing fail once the store shared that clock
+// (#433).
 func newHarnessConfirmWindow(t *testing.T, window time.Duration) *harness {
-	return newHarnessFull(t, nil, false, "", captchaConfig{}, "", window, nil)
+	return newHarnessFull(t, nil, false, "", captchaConfig{}, "", window, nil, confirmStoreLag)
 }
 
 // newHarnessDisplayLocation builds a confirm-window harness whose instance renders
@@ -118,20 +125,38 @@ func newHarnessConfirmWindow(t *testing.T, window time.Duration) *harness {
 // watching nothing fail. Any test about what a giver READS in a rendered time has
 // to use a non-UTC zone or it is not testing the zone at all.
 func newHarnessDisplayLocation(t *testing.T, window time.Duration, loc *time.Location) *harness {
-	return newHarnessFull(t, nil, false, "", captchaConfig{}, "", window, loc)
+	return newHarnessFull(t, nil, false, "", captchaConfig{}, "", window, loc, confirmStoreLag)
 }
 
 // newHarnessVersion builds a harness whose API reports a set build version, for the
 // GET /api/v1/version tests (ADR-0014 §3).
 func newHarnessVersion(t *testing.T, version string) *harness {
-	return newHarnessFull(t, nil, false, "", captchaConfig{}, version, 0, nil)
+	return newHarnessFull(t, nil, false, "", captchaConfig{}, version, 0, nil, 0)
 }
 
-func newHarnessFull(t *testing.T, limiter auth.Limiter, trustForwardedHost bool, registrationPolicy storage.RegistrationPolicy, cc captchaConfig, version string, reserverConfirmWindow time.Duration, displayLocation *time.Location) *harness {
+// confirmStoreLag is how far the confirm-window harnesses' store clock trails the
+// handler's; see newHarnessConfirmWindow. Any non-zero value separates the two.
+const confirmStoreLag = 7 * time.Minute
+
+// laggingClock reads clk, lag behind it, so a harness can give its store a
+// different now from its handler while one Set or Advance still moves both.
+type laggingClock struct {
+	clk clock.Clock
+	lag time.Duration
+}
+
+func (l laggingClock) Now() time.Time { return l.clk.Now().Add(-l.lag) }
+
+func newHarnessFull(t *testing.T, limiter auth.Limiter, trustForwardedHost bool, registrationPolicy storage.RegistrationPolicy, cc captchaConfig, version string, reserverConfirmWindow time.Duration, displayLocation *time.Location, storeLag time.Duration) *harness {
 	t.Helper()
 	ctx := context.Background()
 	dsn := "file:" + filepath.Join(t.TempDir(), "api.db")
-	store, err := sqlstore.Open(ctx, storage.Config{Driver: storage.DriverSQLite, DSN: dsn})
+	clk := clock.NewFake(testClockStart)
+	var storeClk clock.Clock = clk
+	if storeLag != 0 {
+		storeClk = laggingClock{clk: clk, lag: storeLag}
+	}
+	store, err := sqlstore.Open(ctx, storage.Config{Driver: storage.DriverSQLite, DSN: dsn, Clock: clock.NewDistinct(storeClk)})
 	require.NoError(t, err)
 	require.NoError(t, store.Migrate(ctx))
 	t.Cleanup(func() { _ = store.Close() })
@@ -142,7 +167,6 @@ func newHarnessFull(t *testing.T, limiter auth.Limiter, trustForwardedHost bool,
 	require.NoError(t, err)
 
 	fake := &email.FakeSender{}
-	clk := clock.NewFake(testClockStart)
 	pf := &preview.FakeFetcher{} // hermetic: no real network in API tests
 	fr := &fakeResolver{txt: map[string][]string{}}
 	authSvc, err := auth.NewService(auth.Config{JWTSecret: testJWTSecret, PasswordEnabled: true}, clk)

@@ -15,7 +15,7 @@ func (r userRepo) Create(ctx context.Context, u storage.User) (storage.User, err
 		u.ID = newID()
 	}
 	if u.CreatedAt.IsZero() {
-		u.CreatedAt = nowTime()
+		u.CreatedAt = r.now()
 	}
 	if u.Role == "" {
 		u.Role = storage.RoleOwner

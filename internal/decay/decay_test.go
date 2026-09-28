@@ -36,7 +36,8 @@ func setup(t *testing.T, t0 time.Time, listDecayDays *int, instanceDefaultDays i
 	t.Helper()
 	ctx := context.Background()
 	dsn := "file:" + filepath.Join(t.TempDir(), "decay.db")
-	store, err := sqlstore.Open(ctx, storage.Config{Driver: storage.DriverSQLite, DSN: dsn})
+	clk := clock.NewFake(t0)
+	store, err := sqlstore.Open(ctx, storage.Config{Driver: storage.DriverSQLite, DSN: dsn, Clock: clock.NewDistinct(clk)})
 	require.NoError(t, err)
 	require.NoError(t, store.Migrate(ctx))
 	t.Cleanup(func() { _ = store.Close() })
@@ -56,7 +57,6 @@ func setup(t *testing.T, t0 time.Time, listDecayDays *int, instanceDefaultDays i
 	require.NoError(t, err)
 
 	fakeMail := &email.FakeSender{}
-	clk := clock.NewFake(t0)
 	sweeper := decay.NewSweeper(store, fakeMail, clk, decay.Config{
 		DefaultDecayDays: instanceDefaultDays,
 		ResponseWindow:   24 * time.Hour,

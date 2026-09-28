@@ -21,7 +21,7 @@ func (r matchRepo) Create(ctx context.Context, m storage.Match) (storage.Match, 
 		m.State = storage.MatchProposed
 	}
 	if m.CreatedAt.IsZero() {
-		m.CreatedAt = nowTime()
+		m.CreatedAt = r.now()
 	}
 	m.TenantID = r.tenantID
 

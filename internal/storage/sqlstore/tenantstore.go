@@ -2,7 +2,9 @@ package sqlstore
 
 import (
 	"database/sql"
+	"time"
 
+	"github.com/yaad-index/yaadegar/internal/clock"
 	"github.com/yaad-index/yaadegar/internal/storage"
 )
 
@@ -12,6 +14,7 @@ import (
 type tenantStore struct {
 	db       *sql.DB
 	d        dialect
+	clk      clock.Clock
 	tenantID string
 }
 
@@ -30,7 +33,7 @@ var (
 )
 
 func (t *tenantStore) base() baseRepo {
-	return baseRepo{db: t.db, d: t.d, tenantID: t.tenantID}
+	return baseRepo{db: t.db, d: t.d, clk: t.clk, tenantID: t.tenantID}
 }
 
 func (t *tenantStore) Users() storage.UserRepo                 { return userRepo{t.base()} }
@@ -50,13 +53,17 @@ func (t *tenantStore) EmailVerificationTokens() storage.EmailVerificationTokenRe
 	return emailVerificationRepo{t.base()}
 }
 
-// baseRepo carries the shared connection, dialect, and — crucially — the bound
-// tenantID that every repository query uses.
+// baseRepo carries the shared connection, dialect, clock, and — crucially — the
+// bound tenantID that every repository query uses.
 type baseRepo struct {
 	db       *sql.DB
 	d        dialect
+	clk      clock.Clock
 	tenantID string
 }
+
+// now is the time every server-set timestamp is stamped with.
+func (b baseRepo) now() time.Time { return b.clk.Now().UTC() }
 
 // rb rebinds '?' placeholders for the active dialect.
 func (b baseRepo) rb(q string) string { return b.d.rebind(q) }

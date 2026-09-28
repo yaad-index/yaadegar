@@ -33,7 +33,8 @@ func newFixture(t *testing.T, t0 time.Time) *fixture {
 	t.Helper()
 	ctx := context.Background()
 	dsn := "file:" + filepath.Join(t.TempDir(), "cobuy.db")
-	store, err := sqlstore.Open(ctx, storage.Config{Driver: storage.DriverSQLite, DSN: dsn})
+	clk := clock.NewFake(t0)
+	store, err := sqlstore.Open(ctx, storage.Config{Driver: storage.DriverSQLite, DSN: dsn, Clock: clock.NewDistinct(clk)})
 	require.NoError(t, err)
 	require.NoError(t, store.Migrate(ctx))
 	t.Cleanup(func() { _ = store.Close() })
@@ -51,7 +52,7 @@ func newFixture(t *testing.T, t0 time.Time) *fixture {
 	})
 	require.NoError(t, err)
 
-	return &fixture{store: store, ts: ts, item: item, clk: clock.NewFake(t0)}
+	return &fixture{store: store, ts: ts, item: item, clk: clk}
 }
 
 // proposeMatch creates two pledges covering the price and a proposed match linking

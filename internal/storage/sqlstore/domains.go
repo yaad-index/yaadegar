@@ -41,7 +41,7 @@ func (r domainRepo) Create(ctx context.Context, d storage.Domain) (storage.Domai
 		d.TLSStatus = storage.TLSNone
 	}
 	if d.CreatedAt.IsZero() {
-		d.CreatedAt = nowTime()
+		d.CreatedAt = r.now()
 	}
 	d.TenantID = r.tenantID
 
@@ -74,7 +74,7 @@ func (r domainRepo) CreateReclaimingExpired(ctx context.Context, dom storage.Dom
 		dom.TLSStatus = storage.TLSNone
 	}
 	if dom.CreatedAt.IsZero() {
-		dom.CreatedAt = nowTime()
+		dom.CreatedAt = r.now()
 	}
 	dom.TenantID = r.tenantID
 
