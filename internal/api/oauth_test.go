@@ -181,7 +181,8 @@ func newOAuthHarnessWithPolicy(t *testing.T, ownerEmail string, googleEnabled bo
 	mock := newMockOIDC(t, oauthClientID)
 
 	dsn := "file:" + filepath.Join(t.TempDir(), "oauth.db")
-	store, err := sqlstore.Open(ctx, storage.Config{Driver: storage.DriverSQLite, DSN: dsn})
+	clk := clock.NewFake(testClockStart)
+	store, err := sqlstore.Open(ctx, storage.Config{Driver: storage.DriverSQLite, DSN: dsn, Clock: clock.NewDistinct(clk)})
 	require.NoError(t, err)
 	require.NoError(t, store.Migrate(ctx))
 	t.Cleanup(func() { _ = store.Close() })
@@ -194,7 +195,6 @@ func newOAuthHarnessWithPolicy(t *testing.T, ownerEmail string, googleEnabled bo
 		require.NoError(t, store.SetTenantOAuthGoogle(ctx, tenant.ID, true))
 	}
 
-	clk := clock.NewFake(testClockStart)
 	authSvc, err := auth.NewService(auth.Config{JWTSecret: testJWTSecret, PasswordEnabled: true}, clk)
 	require.NoError(t, err)
 

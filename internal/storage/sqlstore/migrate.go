@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"sort"
 	"strings"
+	"time"
 )
 
 //go:embed migrations/sqlite/*.sql migrations/postgres/*.sql
@@ -47,7 +48,7 @@ func loadMigrations(d dialect) ([]migration, error) {
 // migrate applies every pending migration in order. Each file runs in its own
 // transaction and its version is recorded in schema_migrations; already-applied
 // versions are skipped, so migrate is idempotent (ADR-0003 §4).
-func migrate(ctx context.Context, db *sql.DB, d dialect) error {
+func migrate(ctx context.Context, db *sql.DB, d dialect, now time.Time) error {
 	if _, err := db.ExecContext(ctx,
 		`CREATE TABLE IF NOT EXISTS schema_migrations (
 			version    TEXT PRIMARY KEY,
@@ -70,7 +71,7 @@ func migrate(ctx context.Context, db *sql.DB, d dialect) error {
 		if applied[m.version] {
 			continue
 		}
-		if err := applyMigration(ctx, db, d, m); err != nil {
+		if err := applyMigration(ctx, db, d, m, now); err != nil {
 			return fmt.Errorf("apply migration %s: %w", m.name, err)
 		}
 	}
@@ -95,7 +96,7 @@ func appliedVersions(ctx context.Context, db *sql.DB) (map[string]bool, error) {
 	return applied, rows.Err()
 }
 
-func applyMigration(ctx context.Context, db *sql.DB, d dialect, m migration) error {
+func applyMigration(ctx context.Context, db *sql.DB, d dialect, m migration, now time.Time) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -107,7 +108,7 @@ func applyMigration(ctx context.Context, db *sql.DB, d dialect, m migration) err
 	}
 	if _, err := tx.ExecContext(ctx,
 		d.rebind(`INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)`),
-		m.version, nowUTC(),
+		m.version, fmtTime(now),
 	); err != nil {
 		return err
 	}

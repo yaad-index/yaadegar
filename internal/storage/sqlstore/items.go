@@ -62,7 +62,7 @@ func (r itemRepo) prep(it storage.Item) storage.Item {
 		it.QuantityWanted = 1
 	}
 	if it.CreatedAt.IsZero() {
-		it.CreatedAt = nowTime()
+		it.CreatedAt = r.now()
 	}
 	it.TenantID = r.tenantID
 	return it

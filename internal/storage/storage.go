@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/yaad-index/yaadegar/internal/clock"
 )
 
 // Sentinel errors drivers must return so callers can branch without depending on
@@ -52,6 +54,10 @@ const (
 type Config struct {
 	Driver Driver
 	DSN    string
+	// Clock stamps every server-set timestamp the store writes. Nil means the
+	// wall clock. A test that fakes time passes its fake here too, so a stored
+	// timestamp and the faked present come from the same clock (#433).
+	Clock clock.Clock
 }
 
 // Page is an offset/limit window (ADR-0002 §8). Repositories that return

@@ -181,7 +181,7 @@ func (r listRepo) Create(ctx context.Context, l storage.List, ownerID string) (s
 		l.Visibility = storage.VisibilityPrivate
 	}
 	if l.CreatedAt.IsZero() {
-		l.CreatedAt = nowTime()
+		l.CreatedAt = r.now()
 	}
 	l.TenantID = r.tenantID
 	l.OwnerID = ownerID
@@ -421,7 +421,7 @@ func (r listRepo) AddOwner(ctx context.Context, listID, userID string) error {
 	_, err = r.db.ExecContext(ctx, r.rb(
 		`INSERT INTO list_owners (list_id, user_id, added_at)
 		 SELECT id, ?, ? FROM lists WHERE tenant_id = ? AND id = ?`),
-		userID, fmtTime(nowTime()), r.tenantID, listID)
+		userID, fmtTime(r.now()), r.tenantID, listID)
 	return err
 }
 

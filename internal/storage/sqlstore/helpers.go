@@ -13,12 +13,6 @@ import (
 
 const dateLayout = "2006-01-02" // date-only columns (list event_date)
 
-// nowTime is the canonical wall-clock used for server-set timestamps.
-func nowTime() time.Time { return time.Now().UTC() }
-
-// nowUTC is the canonical timestamp string written to TEXT columns.
-func nowUTC() string { return nowTime().Format(time.RFC3339Nano) }
-
 func fmtTime(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
 
 func parseTime(s string) (time.Time, error) { return time.Parse(time.RFC3339Nano, s) }

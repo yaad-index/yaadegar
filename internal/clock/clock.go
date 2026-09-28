@@ -47,3 +47,33 @@ func (f *Fake) Advance(d time.Duration) {
 	defer f.mu.Unlock()
 	f.t = f.t.Add(d)
 }
+
+// Distinct reads c but never returns the same instant twice in a row. While c
+// stands still, each further read is one nanosecond after the one before; once c
+// moves (Set, Advance, or real time passing) it reads c exactly again.
+//
+// A test hands this to the store, not to the code under test. A Fake stamps
+// every row it creates with one instant, and ordering by that timestamp then
+// falls through to the id tie-break, which is random: rows come back in a
+// different order from the one they were created in.
+type Distinct struct {
+	c    Clock
+	mu   sync.Mutex
+	last time.Time
+	n    time.Duration
+}
+
+// NewDistinct wraps c.
+func NewDistinct(c Clock) *Distinct { return &Distinct{c: c} }
+
+func (d *Distinct) Now() time.Time {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	t := d.c.Now()
+	if t.Equal(d.last) {
+		d.n++
+	} else {
+		d.last, d.n = t, 0
+	}
+	return t.Add(d.n)
+}

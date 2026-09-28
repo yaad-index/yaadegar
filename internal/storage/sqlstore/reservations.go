@@ -71,7 +71,7 @@ func (r reservationRepo) prep(res storage.Reservation) storage.Reservation {
 		res.Quantity = 1
 	}
 	if res.CreatedAt.IsZero() {
-		res.CreatedAt = nowTime()
+		res.CreatedAt = r.now()
 	}
 	if res.LastActivityAt.IsZero() {
 		res.LastActivityAt = res.CreatedAt

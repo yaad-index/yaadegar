@@ -9,19 +9,22 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	// Registers the pure-Go "sqlite" database/sql driver.
 	_ "modernc.org/sqlite"
 	// Registers the "pgx" database/sql driver.
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"github.com/yaad-index/yaadegar/internal/clock"
 	"github.com/yaad-index/yaadegar/internal/storage"
 )
 
 // sqlStore is the top-level handle. It is safe for concurrent use.
 type sqlStore struct {
-	db *sql.DB
-	d  dialect
+	db  *sql.DB
+	d   dialect
+	clk clock.Clock
 }
 
 var _ storage.Store = (*sqlStore)(nil)
@@ -58,10 +61,17 @@ func Open(ctx context.Context, cfg storage.Config) (storage.Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("sqlstore: connect %s: %w", cfg.Driver, err)
 	}
-	return &sqlStore{db: db, d: d}, nil
+	clk := cfg.Clock
+	if clk == nil {
+		clk = clock.Real{}
+	}
+	return &sqlStore{db: db, d: d, clk: clk}, nil
 }
 
-func (s *sqlStore) Migrate(ctx context.Context) error { return migrate(ctx, s.db, s.d) }
+// now is the time every server-set timestamp is stamped with.
+func (s *sqlStore) now() time.Time { return s.clk.Now().UTC() }
+
+func (s *sqlStore) Migrate(ctx context.Context) error { return migrate(ctx, s.db, s.d, s.now()) }
 
 func (s *sqlStore) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
 
@@ -70,7 +80,7 @@ func (s *sqlStore) Close() error { return s.db.Close() }
 // ForTenant returns a data-access handle bound to t. Every repository it hands
 // out filters and stamps tenant_id from t.ID (ADR-0003 §2).
 func (s *sqlStore) ForTenant(t storage.Tenant) storage.TenantStore {
-	return &tenantStore{db: s.db, d: s.d, tenantID: t.ID}
+	return &tenantStore{db: s.db, d: s.d, clk: s.clk, tenantID: t.ID}
 }
 
 func (s *sqlStore) CreateTenant(ctx context.Context, t storage.Tenant) (storage.Tenant, error) {
@@ -81,7 +91,7 @@ func (s *sqlStore) CreateTenant(ctx context.Context, t storage.Tenant) (storage.
 		t.ID = newID()
 	}
 	if t.CreatedAt.IsZero() {
-		t.CreatedAt = nowTime()
+		t.CreatedAt = s.now()
 	}
 	_, err := s.db.ExecContext(ctx,
 		s.d.rebind(`INSERT INTO tenants (id, subdomain, created_at) VALUES (?, ?, ?)`),

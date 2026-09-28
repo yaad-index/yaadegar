@@ -54,7 +54,7 @@ func (r contributionRepo) prep(c storage.Contribution) storage.Contribution {
 		c.Status = storage.ContributionPending
 	}
 	if c.CreatedAt.IsZero() {
-		c.CreatedAt = nowTime()
+		c.CreatedAt = r.now()
 	}
 	c.TenantID = r.tenantID
 	return c

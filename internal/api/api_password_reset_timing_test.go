@@ -71,7 +71,8 @@ func (r blockingResetRepo) Create(ctx context.Context, tok storage.PasswordReset
 func TestPasswordResetRequestPersistsOffResponsePath(t *testing.T) {
 	ctx := context.Background()
 	dsn := "file:" + filepath.Join(t.TempDir(), "api.db")
-	real, err := sqlstore.Open(ctx, storage.Config{Driver: storage.DriverSQLite, DSN: dsn})
+	clk := clock.NewFake(testClockStart)
+	real, err := sqlstore.Open(ctx, storage.Config{Driver: storage.DriverSQLite, DSN: dsn, Clock: clock.NewDistinct(clk)})
 	require.NoError(t, err)
 	require.NoError(t, real.Migrate(ctx))
 	t.Cleanup(func() { _ = real.Close() })
@@ -84,7 +85,6 @@ func TestPasswordResetRequestPersistsOffResponsePath(t *testing.T) {
 	wrapped := blockingResetStore{Store: real, entered: entered, release: release, once: &sync.Once{}}
 
 	fake := &email.FakeSender{}
-	clk := clock.NewFake(testClockStart)
 	authSvc, err := auth.NewService(auth.Config{JWTSecret: testJWTSecret, PasswordEnabled: true}, clk)
 	require.NoError(t, err)
 	handler := api.NewHandler(wrapped, api.Options{
