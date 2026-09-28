@@ -62,6 +62,14 @@ function section(container: HTMLElement, headingText: string): HTMLElement {
 	return (el ?? list) as HTMLElement;
 }
 
+// The page keeps several role="status" regions rendered at all times (#428), so the
+// one under test is the region carrying the text rather than the only one there.
+function statusWith(text: string): HTMLElement {
+	const found = screen.getAllByRole('status').find((el) => el.textContent?.includes(text));
+	if (!found) throw new Error(`no status region containing ${text}`);
+	return found;
+}
+
 describe('archived items on the owner list page', () => {
 	beforeEach(() => {
 		// The page chooses its tab from the URL, so a test that does not set one gets
@@ -119,7 +127,7 @@ describe('archived items on the owner list page', () => {
 				form: { archived: true, archivedName: 'Finished with', archiveWarnings: [] } as any
 			}
 		});
-		expect(screen.getByRole('status').textContent).toContain('Finished with');
+		expect(statusWith('Archived').textContent).toContain('Finished with');
 	});
 
 	// Warn, not block (#419 Q2): the archive succeeded, so the warning renders under
@@ -137,7 +145,7 @@ describe('archived items on the owner list page', () => {
 				} as any
 			}
 		});
-		const status = screen.getByRole('status');
+		const status = statusWith('Archived');
 		expect(status.textContent).toContain('Archived');
 		expect(status.textContent).toContain('co-buy');
 	});
@@ -154,7 +162,7 @@ describe('archived items on the owner list page', () => {
 				} as any
 			}
 		});
-		const status = screen.getByRole('status');
+		const status = statusWith('Archived');
 		expect(status.textContent).toContain('Archived');
 		expect(status.textContent).not.toContain('some_future_code');
 	});

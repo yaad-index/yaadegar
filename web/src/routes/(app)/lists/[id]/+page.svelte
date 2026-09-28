@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { superForm } from 'sveltekit-superforms';
+	import type { SubmitFunction } from '@sveltejs/kit';
 	import { enhance as formEnhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import { replaceState } from '$app/navigation';
@@ -7,6 +9,7 @@
 	import Tabs from '$lib/components/Tabs.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Field from '$lib/components/Field.svelte';
+	import { neighbourIds, restoreRowFocus } from '$lib/row-focus';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form: actionForm }: { data: PageData; form: ActionData } = $props();
@@ -182,6 +185,32 @@
 			'Two givers were part-way through arranging a co-buy for it. Their pledges are untouched, but they can no longer finish here.'
 	};
 
+	// Delete, Archive and Put back remove the row whose button started them, so
+	// after the reload focus is put on the neighbouring row of the same group, or on
+	// a heading once that group is empty (#428). The neighbours are read at submit,
+	// before the reload changes the groups.
+	let itemsHeading = $state<HTMLElement>();
+	let archivedHeading = $state<HTMLElement>();
+	function rowAction(id: string, group: 'live' | 'archived'): SubmitFunction {
+		return ({ submitter }) => {
+			const rows = group === 'live' ? liveItems : archivedItems;
+			const candidates = neighbourIds(
+				rows.map((i) => i.id ?? ''),
+				id
+			);
+			return async ({ update }) => {
+				await update();
+				await tick();
+				restoreRowFocus(
+					document,
+					submitter,
+					candidates,
+					group === 'live' ? [itemsHeading] : [archivedHeading, itemsHeading]
+				);
+			};
+		};
+	}
+
 	// Which item's editor is open (only one at a time).
 	let editingId = $state<string | null>(null);
 
@@ -341,14 +370,16 @@
 					</select>
 				</label>
 			</div>
-			{#if reserverTier === 'registered' && !data.registrationEnabled}
-				<!-- Amber is not in the design token set yet (flagged separately); kept as a
-				     semantic warning, aligned to the card / font-ui rhythm. -->
-				<p class="rounded-card bg-amber-50 p-3 font-ui text-ui text-amber-800" role="status">
-					Self-registration is disabled on this instance, so only operator-created accounts can
-					reserve on this list.
-				</p>
-			{/if}
+			<div role="status">
+				{#if reserverTier === 'registered' && !data.registrationEnabled}
+					<!-- Amber is not in the design token set yet (flagged separately); kept as a
+					     semantic warning, aligned to the card / font-ui rhythm. -->
+					<p class="rounded-card bg-amber-50 p-3 font-ui text-ui text-amber-800">
+						Self-registration is disabled on this instance, so only operator-created accounts can
+						reserve on this list.
+					</p>
+				{/if}
+			</div>
 			<label class="block">
 				<span class="mb-1 block font-ui text-ui font-medium text-ink">Thank-you note (default)</span
 				>
@@ -368,12 +399,19 @@
 		</form>
 		<!-- Directly below the Save button, matching the import block's placement and
 		     roles: the outcome has to be visible where the action was taken, because
-		     the control keeps showing the value the server just refused. -->
+		     the control keeps showing the value the server just refused.
+		     Each role="status" region on this page is always rendered and only its
+		     content is conditional: assistive technology announces a change to a
+		     region it already knows about, and one inserted with its text already in
+		     it is announced unreliably or not at all (#428). -->
 		{#if settingsError}
 			<p class="mt-2 font-ui text-ui text-red-600" role="alert">{settingsError}</p>
-		{:else if settingsSaved}
-			<p class="mt-2 font-ui text-ui text-green" role="status">Settings saved.</p>
 		{/if}
+		<div role="status">
+			{#if settingsSaved && !settingsError}
+				<p class="mt-2 font-ui text-ui text-green">Settings saved.</p>
+			{/if}
+		</div>
 	</section>
 
 	<!-- Import / export: back up or move the item catalog (#26). It never includes
@@ -415,9 +453,11 @@
 			/>
 			<Button type="submit">Import</Button>
 		</form>
-		{#if imported !== undefined}
-			<p class="mt-2 font-ui text-ui text-green" role="status">Imported {imported} item(s).</p>
-		{/if}
+		<div role="status">
+			{#if imported !== undefined}
+				<p class="mt-2 font-ui text-ui text-green">Imported {imported} item(s).</p>
+			{/if}
+		</div>
 		{#if importError}
 			<p class="mt-2 font-ui text-ui text-red-600" role="alert">{importError}</p>
 			{#if importRowErrors.length > 0}
@@ -474,13 +514,15 @@
 			/>
 			<Button type="button" onclick={copyShare}>Copy</Button>
 		</div>
-		{#if copied === 'ok'}
-			<p class="mt-1 font-ui text-ui text-green" role="status">Link copied.</p>
-		{:else if copied === 'fail'}
-			<p class="mt-1 font-ui text-ui text-ink-muted" role="status">
-				Couldn't copy automatically — select the link above and copy it.
-			</p>
-		{/if}
+		<div role="status">
+			{#if copied === 'ok'}
+				<p class="mt-1 font-ui text-ui text-green">Link copied.</p>
+			{:else if copied === 'fail'}
+				<p class="mt-1 font-ui text-ui text-ink-muted">
+					Couldn't copy automatically — select the link above and copy it.
+				</p>
+			{/if}
+		</div>
 	</section>
 
 	<!-- Add an item. Every field carries a visible label (the design puts one above
@@ -611,36 +653,41 @@
 	</form>
 
 	<!-- Your items -->
-	<h2 class="mt-8 font-display text-title text-ink-heading">Your items</h2>
+	<h2 bind:this={itemsHeading} tabindex="-1" class="mt-8 font-display text-title text-ink-heading">
+		Your items
+	</h2>
 
 	<!-- Archive feedback (#419). The archive succeeds even when it warns, so the
 	     warning renders under a success line rather than in place of one — the owner
 	     needs to know it happened AND what it affected, and showing only the warning
 	     would read as a refusal. -->
 	{#if archiveError}
-		<p class="mt-2 font-ui text-ui text-red-600" role="status">{archiveError}</p>
-	{:else if archiveResult && 'archived' in archiveResult}
-		<div class="mt-2" role="status">
-			<p class="font-ui text-ui text-green">
-				Archived{archiveResult.archivedName ? ` “${archiveResult.archivedName}”` : ''}. It is off
-				your public list and nobody can reserve it.
-			</p>
-			{#each archiveResult.archiveWarnings ?? [] as code (code)}
-				{#if archiveWarningCopy[code]}
-					<p class="mt-1 font-ui text-ui text-amber-700">{archiveWarningCopy[code]}</p>
-				{/if}
-			{/each}
-		</div>
-	{:else if archiveResult && 'unarchived' in archiveResult}
-		<p class="mt-2 font-ui text-ui text-green" role="status">
-			{archiveResult.archivedName ? `“${archiveResult.archivedName}” is` : 'It is'} back on your list.
-		</p>
+		<p class="mt-2 font-ui text-ui text-red-600" role="alert">{archiveError}</p>
 	{/if}
+	<div role="status">
+		{#if archiveResult && 'archived' in archiveResult}
+			<div class="mt-2">
+				<p class="font-ui text-ui text-green">
+					Archived{archiveResult.archivedName ? ` “${archiveResult.archivedName}”` : ''}. It is off
+					your public list and nobody can reserve it.
+				</p>
+				{#each archiveResult.archiveWarnings ?? [] as code (code)}
+					{#if archiveWarningCopy[code]}
+						<p class="mt-1 font-ui text-ui text-amber-700">{archiveWarningCopy[code]}</p>
+					{/if}
+				{/each}
+			</div>
+		{:else if archiveResult && 'unarchived' in archiveResult}
+			<p class="mt-2 font-ui text-ui text-green">
+				{archiveResult.archivedName ? `“${archiveResult.archivedName}” is` : 'It is'} back on your list.
+			</p>
+		{/if}
+	</div>
 	<ul class="mt-3 space-y-3">
 		{#each liveItems as item (item.id)}
 			{@const id = item.id ?? ''}
 			{@const availability = item.availability ?? 'available'}
-			<li class="rounded-card border border-line bg-surface p-4">
+			<li data-row-id={id} class="rounded-card border border-line bg-surface p-4">
 				<div class="flex items-start justify-between gap-3">
 					<div class="flex min-w-0 gap-3">
 						<!-- Every row carries a thumbnail; an item with no image gets a
@@ -722,12 +769,12 @@
 						     take an item off the list, and putting them together is what makes
 						     the difference visible at the moment of choosing. Delete stays
 						     destructive-red; archive is ordinary, because it is reversible. -->
-						<form method="post" action="?/archive" use:formEnhance>
+						<form method="post" action="?/archive" use:formEnhance={rowAction(id, 'live')}>
 							<input type="hidden" name="item_id" value={id} />
 							<input type="hidden" name="item_name" value={item.name} />
 							<button class="text-ink-muted transition-colors hover:text-ink">Archive</button>
 						</form>
-						<form method="post" action="?/delete" use:formEnhance>
+						<form method="post" action="?/delete" use:formEnhance={rowAction(id, 'live')}>
 							<input type="hidden" name="item_id" value={id} />
 							<button class="text-red-600 transition-colors hover:text-red-700">Delete</button>
 						</form>
@@ -873,7 +920,11 @@
 	     that list longer every time something is bought. They stay visible because
 	     archiving is reversible and an archive nobody can see is a one-way door. -->
 	{#if archivedItems.length > 0}
-		<h2 class="mt-8 font-display text-title text-ink-heading">
+		<h2
+			bind:this={archivedHeading}
+			tabindex="-1"
+			class="mt-8 font-display text-title text-ink-heading"
+		>
 			Archived ({archivedItems.length})
 		</h2>
 		<p class="mt-1 font-ui text-ui text-ink-muted">
@@ -883,7 +934,7 @@
 		<ul class="mt-3 space-y-3">
 			{#each archivedItems as item (item.id)}
 				{@const id = item.id ?? ''}
-				<li class="rounded-card border border-line bg-surface-alt p-4">
+				<li data-row-id={id} class="rounded-card border border-line bg-surface-alt p-4">
 					<div class="flex flex-wrap items-start justify-between gap-3">
 						<div class="min-w-0">
 							<span class="font-ui text-body font-medium text-ink-heading">{item.name}</span>
@@ -899,12 +950,12 @@
 							{/if}
 						</div>
 						<div class="flex shrink-0 gap-3 font-ui text-ui">
-							<form method="post" action="?/unarchive" use:formEnhance>
+							<form method="post" action="?/unarchive" use:formEnhance={rowAction(id, 'archived')}>
 								<input type="hidden" name="item_id" value={id} />
 								<input type="hidden" name="item_name" value={item.name} />
 								<button class="text-ink-muted transition-colors hover:text-ink">Put back</button>
 							</form>
-							<form method="post" action="?/delete" use:formEnhance>
+							<form method="post" action="?/delete" use:formEnhance={rowAction(id, 'archived')}>
 								<input type="hidden" name="item_id" value={id} />
 								<button class="text-red-600 transition-colors hover:text-red-700">Delete</button>
 							</form>

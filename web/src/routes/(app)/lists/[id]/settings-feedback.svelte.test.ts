@@ -56,7 +56,9 @@ describe('list settings save feedback (#313)', () => {
 
 	it('confirms a save that succeeded', () => {
 		renderSettingsTab({ settingsSaved: true } as ActionData);
-		expect(screen.getByRole('status')).toHaveTextContent('Settings saved.');
+		const saved = screen.getAllByRole('status').filter((el) => el.textContent?.trim());
+		expect(saved).toHaveLength(1);
+		expect(saved[0]).toHaveTextContent('Settings saved.');
 	});
 
 	// Without this, both assertions above would still pass if the page rendered both
@@ -65,7 +67,9 @@ describe('list settings save feedback (#313)', () => {
 	it('says nothing before a save has been attempted', () => {
 		renderSettingsTab(null);
 		expect(screen.queryByRole('alert')).toBeNull();
-		expect(screen.queryByRole('status')).toBeNull();
+		// The status regions themselves are always there (#428); what must be absent
+		// is anything IN them.
+		for (const region of screen.getAllByRole('status')) expect(region).toBeEmptyDOMElement();
 	});
 
 	// The settings form is on the same tab as the import form, which has its own
