@@ -123,4 +123,4 @@ editing it.
 - [ADR-0016: Personal access tokens](0016-personal-access-tokens.md) — opaque,
   hashed, individually revocable tokens for non-browser clients on the owner surface;
   never accepted on `/admin`; no credential operations; survive a password change but not
-  an account recovery; creation needs a recent login by any method. **Status: Proposed.**
+  an account recovery; creation needs a recent login by any method. **Status: Accepted.**

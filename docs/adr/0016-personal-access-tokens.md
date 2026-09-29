@@ -1,6 +1,6 @@
 # ADR-0016: Personal access tokens
 
-**Status:** Proposed
+**Status:** Accepted
 
 **Extends** [ADR-0005](0005-owner-authentication.md) (the owner surface and its bearer authentication) and [ADR-0011](0011-password-lifecycle.md) (credential versioning), and is bounded by [ADR-0010](0010-admin-as-a-user-capability.md) (admin as a per-user capability). Supersedes nothing. Addresses #397.
 
