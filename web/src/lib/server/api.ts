@@ -13,12 +13,26 @@ const BACKEND_ORIGIN = env.BACKEND_ORIGIN ?? 'http://localhost:8080';
 // attaching the owner's bearer token. Every owner-surface call goes through the
 // server so the JWT stays in the httpOnly cookie and never reaches the browser
 // (ADR-0006 §4).
-export function backendClient(opts: { host: string; token?: string }): Client<paths> {
+//
+// It takes the request's locals rather than loose fields, so the client address
+// travels with every call without a caller having to remember it: the backend's
+// rate limits key on it (via X-Forwarded-For, trusted only from configured
+// proxies). `anonymous` omits the owner token for the public calls that must not
+// act as the signed-in owner (login, registration, reset, public list pages).
+export type ClientLocals = Pick<App.Locals, 'host' | 'token' | 'clientIP'>;
+
+export function backendClient(
+	locals: ClientLocals,
+	opts: { anonymous?: boolean } = {}
+): Client<paths> {
 	const client = createClient<paths>({ baseUrl: BACKEND_ORIGIN });
 	client.use({
 		onRequest({ request }) {
-			request.headers.set('x-forwarded-host', opts.host);
-			if (opts.token) request.headers.set('authorization', `Bearer ${opts.token}`);
+			request.headers.set('x-forwarded-host', locals.host);
+			if (locals.clientIP) request.headers.set('x-forwarded-for', locals.clientIP);
+			if (!opts.anonymous && locals.token) {
+				request.headers.set('authorization', `Bearer ${locals.token}`);
+			}
 			return request;
 		}
 	});
@@ -32,9 +46,11 @@ export function backendClient(opts: { host: string; token?: string }): Client<pa
 export function backendGetRaw(opts: {
 	host: string;
 	token?: string;
+	clientIP?: string;
 	path: string;
 }): Promise<Response> {
 	const headers: Record<string, string> = { 'x-forwarded-host': opts.host };
+	if (opts.clientIP) headers['x-forwarded-for'] = opts.clientIP;
 	if (opts.token) headers.authorization = `Bearer ${opts.token}`;
 	return fetch(BACKEND_ORIGIN + opts.path, { headers });
 }
@@ -44,6 +60,7 @@ export function backendGetRaw(opts: {
 export function backendPostRaw(opts: {
 	host: string;
 	token?: string;
+	clientIP?: string;
 	path: string;
 	contentType: string;
 	body: string;
@@ -52,6 +69,7 @@ export function backendPostRaw(opts: {
 		'x-forwarded-host': opts.host,
 		'content-type': opts.contentType
 	};
+	if (opts.clientIP) headers['x-forwarded-for'] = opts.clientIP;
 	if (opts.token) headers.authorization = `Bearer ${opts.token}`;
 	return fetch(BACKEND_ORIGIN + opts.path, { method: 'POST', headers, body: opts.body });
 }
@@ -97,8 +115,9 @@ export async function backendProxy(opts: {
 	request: Request;
 	url: URL;
 	host: string;
+	clientIP?: string;
 }): Promise<Response> {
-	const { request, url, host } = opts;
+	const { request, url, host, clientIP } = opts;
 	if (!url.pathname.startsWith('/api/v1/')) {
 		return new Response('Not found', { status: 404 });
 	}
@@ -110,6 +129,9 @@ export async function backendProxy(opts: {
 		headers.set(key, value);
 	}
 	headers.set('x-forwarded-host', host);
+	// The client's own X-Forwarded-For was dropped above (STRIP_INBOUND); this is the
+	// address this server saw, which the backend trusts only from configured proxies.
+	if (clientIP) headers.set('x-forwarded-for', clientIP);
 
 	const method = request.method;
 	const body = method === 'GET' || method === 'HEAD' ? undefined : await request.arrayBuffer();

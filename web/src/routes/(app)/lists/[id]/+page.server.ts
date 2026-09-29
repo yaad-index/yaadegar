@@ -313,6 +313,7 @@ export const actions: Actions = {
 		const res = await backendPostRaw({
 			host: locals.host,
 			token: locals.token,
+			clientIP: locals.clientIP,
 			path: `/api/v1/lists/${params.id}/import`,
 			contentType,
 			body: await file.text()
