@@ -30,6 +30,7 @@ var (
 	_ storage.OAuthIdentityRepo          = oauthIdentityRepo{}
 	_ storage.PasswordResetTokenRepo     = passwordResetRepo{}
 	_ storage.EmailVerificationTokenRepo = emailVerificationRepo{}
+	_ storage.AccessTokenRepo            = accessTokenRepo{}
 )
 
 func (t *tenantStore) base() baseRepo {
@@ -46,9 +47,11 @@ func (t *tenantStore) Domains() storage.DomainRepo             { return domainRe
 func (t *tenantStore) OAuthIdentities() storage.OAuthIdentityRepo {
 	return oauthIdentityRepo{t.base()}
 }
+func (t *tenantStore) AccessTokens() storage.AccessTokenRepo { return accessTokenRepo{t.base()} }
 func (t *tenantStore) PasswordResetTokens() storage.PasswordResetTokenRepo {
 	return passwordResetRepo{t.base()}
 }
+
 func (t *tenantStore) EmailVerificationTokens() storage.EmailVerificationTokenRepo {
 	return emailVerificationRepo{t.base()}
 }
