@@ -76,4 +76,3 @@ func TestLoginLimitCannotBeEvadedWithSpoofedForwardedFor(t *testing.T) {
 	h.loginVia("198.51.100.7", "203.0.113.2")
 	assert.Equal(t, http.StatusTooManyRequests, h.loginVia("198.51.100.7", "203.0.113.3"))
 }
-
