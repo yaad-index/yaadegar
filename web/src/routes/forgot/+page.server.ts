@@ -11,7 +11,7 @@ export const actions: Actions = {
 		const identifier = String(fd.get('identifier') ?? '').trim();
 		if (!identifier) return fail(400, { error: 'Enter your username or email.' });
 
-		const client = backendClient({ host: locals.host });
+		const client = backendClient(locals, { anonymous: true });
 		await client.POST('/api/v1/auth/password-reset/request', { body: { identifier } });
 		return { sent: true };
 	}

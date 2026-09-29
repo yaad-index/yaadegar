@@ -69,7 +69,7 @@ function backendReason(
 }
 
 export const load: PageServerLoad = async ({ params, locals, cookies, url }) => {
-	const client = backendClient({ host: locals.host });
+	const client = backendClient(locals, { anonymous: true });
 	const {
 		data,
 		error: err,
@@ -214,7 +214,7 @@ export const actions: Actions = {
 		const form = await superValidate(request, zod4(reserveSchema));
 		if (!form.valid) return fail(400, { form });
 
-		const client = backendClient({ host: locals.host });
+		const client = backendClient(locals, { anonymous: true });
 		const {
 			data,
 			error: err,
@@ -311,7 +311,7 @@ export const actions: Actions = {
 		const entry = capsForList(cookies, params.shareSlug)[itemId];
 		if (!entry) return fail(400, { releaseError: 'No reservation to release.' });
 
-		const client = backendClient({ host: locals.host });
+		const client = backendClient(locals, { anonymous: true });
 		const { error: err, response } = await client.DELETE('/public/reservations/{reservationId}', {
 			params: { path: { reservationId: entry.reservation_id } },
 			headers: { 'X-Capability-Token': entry.token }
@@ -330,7 +330,7 @@ export const actions: Actions = {
 		const form = await superValidate(request, zod4(pledgeSchema), { id: 'pledge' });
 		if (!form.valid) return fail(400, { pledgeForm: form });
 
-		const client = backendClient({ host: locals.host });
+		const client = backendClient(locals, { anonymous: true });
 		// Amount is entered in major units; the backend money model is minor units.
 		const amountMinor = Math.round(form.data.amount * 100);
 		const {
@@ -384,7 +384,7 @@ export const actions: Actions = {
 		const entry = contribCapsForList(cookies, params.shareSlug)[itemId];
 		if (!entry) return fail(400, { withdrawError: 'No pledge to withdraw.' });
 
-		const client = backendClient({ host: locals.host });
+		const client = backendClient(locals, { anonymous: true });
 		const { error: err, response } = await client.DELETE('/public/contributions/{contributionId}', {
 			params: { path: { contributionId: entry.contribution_id } },
 			headers: { 'X-Capability-Token': entry.token }

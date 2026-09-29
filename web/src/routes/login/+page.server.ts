@@ -36,7 +36,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 	// Which login affordances to render for this host (ADR-0008 Cut 2). Defaults to
 	// password-only if the backend can't be reached, so login still works.
-	const client = backendClient({ host: locals.host });
+	const client = backendClient(locals, { anonymous: true });
 	const { data: methods } = await client.GET('/api/v1/auth/methods');
 
 	// Owner login is main-domain-only: on a custom domain both methods are false and
@@ -71,7 +71,7 @@ export const actions: Actions = {
 		const form = await superValidate(request, zod4(loginSchema));
 		if (!form.valid) return fail(400, { form });
 
-		const client = backendClient({ host: locals.host });
+		const client = backendClient(locals, { anonymous: true });
 		const { data, error, response } = await client.POST('/api/v1/auth/login', {
 			body: { username: form.data.username, password: form.data.password }
 		});

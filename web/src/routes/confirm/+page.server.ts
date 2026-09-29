@@ -20,7 +20,7 @@ export const actions: Actions = {
 		const token = String(fd.get('token') ?? '');
 		if (!token) return fail(400, { state: 'invalid' as const });
 
-		const client = backendClient({ host: locals.host });
+		const client = backendClient(locals, { anonymous: true });
 		const {
 			data,
 			error: err,
@@ -64,7 +64,7 @@ export const actions: Actions = {
 		const entry = reservationId ? confirmedCap(cookies, reservationId) : undefined;
 		if (!entry) return fail(400, { releaseError: 'No reservation to release.' });
 
-		const client = backendClient({ host: locals.host });
+		const client = backendClient(locals, { anonymous: true });
 		const { error: err, response } = await client.DELETE('/public/reservations/{reservationId}', {
 			params: { path: { reservationId: entry.reservation_id } },
 			headers: { 'X-Capability-Token': entry.token }

@@ -25,7 +25,7 @@ export const load: PageServerLoad = async ({ params, url, locals, cookies }) => 
 	const { token, scoped } = resolveToken(url, cookies, params.matchId);
 	if (!token) return { state: 'invalid' as const, t };
 
-	const client = backendClient({ host: locals.host });
+	const client = backendClient(locals, { anonymous: true });
 	const { data, response } = await client.GET('/public/matches/{matchId}', {
 		params: { path: { matchId: params.matchId } },
 		headers: { 'X-Capability-Token': token }
@@ -48,7 +48,7 @@ export const actions: Actions = {
 		const token = scoped || capEntry?.token;
 		if (!token) return fail(400, { decideError: 'This confirmation link is no longer valid.' });
 
-		const client = backendClient({ host: locals.host });
+		const client = backendClient(locals, { anonymous: true });
 		const { data: match, response } = await client.POST('/public/matches/{matchId}/confirm', {
 			params: { path: { matchId: params.matchId } },
 			headers: { 'X-Capability-Token': token },

@@ -6,7 +6,7 @@ import type { Actions, PageServerLoad } from './$types';
 // #20). Any authenticated account (owner or giver) can see its own reservations; the
 // backend keys the read on the session account and never discloses it to a list owner.
 export const load: PageServerLoad = async ({ locals }) => {
-	const client = backendClient({ host: locals.host, token: locals.token });
+	const client = backendClient(locals);
 	const { data } = await client.GET('/api/v1/me/reservations', {
 		params: { query: { limit: 200 } }
 	});
@@ -20,7 +20,7 @@ export const actions: Actions = {
 		const fd = await request.formData();
 		const id = String(fd.get('reservation_id') ?? '');
 		if (!id) return fail(400, { releaseError: 'Missing reservation.' });
-		const client = backendClient({ host: locals.host, token: locals.token });
+		const client = backendClient(locals);
 		const { error: err } = await client.DELETE('/api/v1/me/reservations/{reservationId}', {
 			params: { path: { reservationId: id } }
 		});

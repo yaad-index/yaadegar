@@ -23,7 +23,7 @@ export const actions: Actions = {
 			return fail(400, { error: 'The passwords do not match.' });
 		}
 
-		const client = backendClient({ host: locals.host });
+		const client = backendClient(locals, { anonymous: true });
 		const { data, error: err } = await client.POST('/api/v1/auth/password-reset/confirm', {
 			body: { token, new_password: newPassword }
 		});
