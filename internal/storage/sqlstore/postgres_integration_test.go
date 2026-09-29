@@ -513,3 +513,59 @@ func TestPostgres_ListTitleFloor(t *testing.T) {
 	_, err = ts.Lists().Update(ctx, list)
 	require.ErrorIs(t, err, storage.ErrInvalidListTitle)
 }
+
+// TestPostgres_AccessTokenLimitSingleWinner is the ADR-0016 §6 guard on real
+// Postgres: creations racing for a user's last free token slot are serialized by
+// the users row lock, so exactly one wins and the limit is never exceeded.
+func TestPostgres_AccessTokenLimitSingleWinner(t *testing.T) {
+	ctx := context.Background()
+	st := newPostgresStore(t)
+	suffix := uniqueSuffix(t)
+
+	ten, err := st.CreateTenant(ctx, storage.Tenant{Subdomain: "pat-" + suffix})
+	require.NoError(t, err)
+	s := st.ForTenant(ten)
+	now := time.Date(2027, 1, 10, 9, 0, 0, 0, time.UTC)
+
+	for round := 0; round < 20; round++ {
+		user, err := s.Users().Create(ctx, storage.User{Name: fmt.Sprintf("u%d", round)})
+		require.NoError(t, err)
+		for i := 0; i < 19; i++ {
+			_, err := s.AccessTokens().Create(ctx, storage.AccessToken{
+				UserID: user.ID, Name: "t", TokenHash: fmt.Sprintf("%s-%d-%d", suffix, round, i), Last4: "0000",
+			}, 20, now)
+			require.NoError(t, err)
+		}
+
+		var (
+			wg    sync.WaitGroup
+			mu    sync.Mutex
+			won   int
+			start = make(chan struct{})
+		)
+		for g := 0; g < 6; g++ {
+			wg.Add(1)
+			go func(g int) {
+				defer wg.Done()
+				<-start
+				_, err := s.AccessTokens().Create(ctx, storage.AccessToken{
+					UserID: user.ID, Name: "race", TokenHash: fmt.Sprintf("%s-%d-race-%d", suffix, round, g), Last4: "0000",
+				}, 20, now)
+				if err == nil {
+					mu.Lock()
+					won++
+					mu.Unlock()
+					return
+				}
+				assert.ErrorIs(t, err, storage.ErrTooManyTokens)
+			}(g)
+		}
+		close(start)
+		wg.Wait()
+		require.Equal(t, 1, won, "exactly one creation takes the last slot (round %d)", round)
+
+		list, err := s.AccessTokens().ListByUser(ctx, user.ID)
+		require.NoError(t, err)
+		require.Len(t, list, 20, "the limit is never exceeded (round %d)", round)
+	}
+}
