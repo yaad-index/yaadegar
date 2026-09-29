@@ -10,8 +10,8 @@
 --   revoked_at   — NULL until revoked, individually or by an account recovery.
 CREATE TABLE access_tokens (
     id           TEXT PRIMARY KEY,
-    tenant_id    TEXT NOT NULL,
-    user_id      TEXT NOT NULL,
+    tenant_id    TEXT NOT NULL REFERENCES tenants(id),
+    user_id      TEXT NOT NULL REFERENCES users(id),
     name         TEXT NOT NULL,
     token_hash   TEXT NOT NULL,
     last4        TEXT NOT NULL,
