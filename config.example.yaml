@@ -33,6 +33,14 @@
 # (env YAADEGAR_TRUST_FORWARDED_HOST, flag --trust-forwarded-host)
 # trust-forwarded-host: false
 
+# Proxies whose X-Forwarded-For is believed when resolving the client address for
+# rate limits (login, password reset): addresses or CIDR ranges, comma-separated.
+# Empty trusts none, so every limit keys on the direct peer; behind a proxy that
+# means all clients share one limit. List the frontend's address or range only
+# when the backend is reachable exclusively through it.
+# (env YAADEGAR_TRUSTED_PROXIES, flag --trusted-proxies)
+# trusted-proxies: []
+
 # --- Storage --------------------------------------------------------------------
 
 # Storage driver: sqlite or postgres.  (env YAADEGAR_STORAGE_DRIVER, flag --storage-driver)

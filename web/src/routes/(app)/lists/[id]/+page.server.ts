@@ -34,7 +34,7 @@ const addItemSchema = z.object({
 });
 
 export const load: PageServerLoad = async ({ locals, params }) => {
-	const client = backendClient({ host: locals.host, token: locals.token });
+	const client = backendClient(locals);
 	const [listRes, itemsRes, methodsRes] = await Promise.all([
 		client.GET('/api/v1/lists/{listId}', { params: { path: { listId: params.id } } }),
 		client.GET('/api/v1/lists/{listId}/items', {
@@ -72,7 +72,7 @@ export const actions: Actions = {
 		if (form.data.price_minor != null && !priceCurrency) {
 			return message(form, 'Add a 3-letter currency for the price.', { status: 400 });
 		}
-		const client = backendClient({ host: locals.host, token: locals.token });
+		const client = backendClient(locals);
 		const { error: err } = await client.POST('/api/v1/lists/{listId}/items', {
 			params: { path: { listId: params.id } },
 			body: {
@@ -110,7 +110,7 @@ export const actions: Actions = {
 		form.errors = {};
 		const link = (form.data.url || '').trim();
 		if (!link) return message(form, 'Paste a product link first.');
-		const client = backendClient({ host: locals.host, token: locals.token });
+		const client = backendClient(locals);
 		const { data, error: err } = await client.POST('/api/v1/item-previews', {
 			body: { url: link }
 		});
@@ -215,7 +215,7 @@ export const actions: Actions = {
 			// currencies (JPY); price is a hint and multi-currency (#24) is lowest priority.
 			price = { amount_minor: Math.round(amount * 100), currency: priceCurrency };
 		}
-		const client = backendClient({ host: locals.host, token: locals.token });
+		const client = backendClient(locals);
 		// The item PATCH is set-if-present; send only the fields with values (clearing a
 		// field back to empty is not supported by the current backend semantics).
 		const { error: err } = await client.PATCH('/api/v1/items/{itemId}', {
@@ -282,7 +282,7 @@ export const actions: Actions = {
 		const current = String(fd.get('current_visibility') ?? 'private');
 		const listed = String(fd.get('listed') ?? '') === 'on';
 		const visibility = listed ? 'public' : current === 'public' ? 'private' : current;
-		const client = backendClient({ host: locals.host, token: locals.token });
+		const client = backendClient(locals);
 		const { error: err } = await client.PATCH('/api/v1/lists/{listId}', {
 			params: { path: { listId: params.id } },
 			body: {
@@ -313,6 +313,7 @@ export const actions: Actions = {
 		const res = await backendPostRaw({
 			host: locals.host,
 			token: locals.token,
+			clientIP: locals.clientIP,
 			path: `/api/v1/lists/${params.id}/import`,
 			contentType,
 			body: await file.text()
@@ -336,7 +337,7 @@ export const actions: Actions = {
 		const fd = await request.formData();
 		const itemId = String(fd.get('item_id') ?? '');
 		if (!itemId) return fail(400, {});
-		const client = backendClient({ host: locals.host, token: locals.token });
+		const client = backendClient(locals);
 		const { error: err } = await client.DELETE('/api/v1/items/{itemId}', {
 			params: { path: { itemId } }
 		});
@@ -353,7 +354,7 @@ export const actions: Actions = {
 		const itemId = String(fd.get('item_id') ?? '');
 		const itemName = String(fd.get('item_name') ?? '');
 		if (!itemId) return fail(400, {});
-		const client = backendClient({ host: locals.host, token: locals.token });
+		const client = backendClient(locals);
 		const { data, error: err } = await client.POST('/api/v1/items/{itemId}/archive', {
 			params: { path: { itemId } }
 		});
@@ -375,7 +376,7 @@ export const actions: Actions = {
 		const itemId = String(fd.get('item_id') ?? '');
 		const itemName = String(fd.get('item_name') ?? '');
 		if (!itemId) return fail(400, {});
-		const client = backendClient({ host: locals.host, token: locals.token });
+		const client = backendClient(locals);
 		const { error: err } = await client.DELETE('/api/v1/items/{itemId}/archive', {
 			params: { path: { itemId } }
 		});

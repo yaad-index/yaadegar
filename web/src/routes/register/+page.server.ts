@@ -15,7 +15,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	// 403 handling stays as the authoritative server-side guard; this only stops
 	// presenting an action the instance will refuse. Defaults to disabled if the backend
 	// can't be reached, matching the login loader's own default.
-	const client = backendClient({ host: locals.host });
+	const client = backendClient(locals, { anonymous: true });
 	const { data: methods } = await client.GET('/api/v1/auth/methods');
 	return {
 		returnTo: safeReturnTo(url.searchParams.get('return_to')) ?? '',
@@ -49,7 +49,7 @@ export const actions: Actions = {
 			return fail(400, { error: 'The passwords do not match.' });
 		}
 
-		const client = backendClient({ host: locals.host });
+		const client = backendClient(locals, { anonymous: true });
 		const { error: err, response } = await client.POST('/api/v1/auth/register', {
 			body: { email, password, captcha_token: captchaToken }
 		});

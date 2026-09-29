@@ -10,4 +10,4 @@ import type { RequestHandler } from './$types';
 // every method (GET/POST/PUT/PATCH/DELETE/OPTIONS/HEAD) with one handler. The
 // more specific /api/v1/auth/oauth/[...rest] route still wins for OAuth redirects.
 export const fallback: RequestHandler = ({ request, url, locals }) =>
-	backendProxy({ request, url, host: locals.host });
+	backendProxy({ request, url, host: locals.host, clientIP: locals.clientIP });

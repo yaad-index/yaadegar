@@ -15,5 +15,12 @@ void reportVersionSkew();
 export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.host = event.request.headers.get('host') ?? event.url.host;
 	event.locals.token = readSession(event.cookies);
+	try {
+		event.locals.clientIP = event.getClientAddress();
+	} catch {
+		// Some adapters and prerendering cannot report an address; the backend then
+		// keys on this server's address, as it did before.
+		event.locals.clientIP = undefined;
+	}
 	return resolve(event);
 };

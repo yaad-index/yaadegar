@@ -141,6 +141,7 @@ client secret.
 | Storage DSN | `YAADEGAR_STORAGE_DSN` | A SQLite file path/URI, or a Postgres URL like `postgres://user:pass@host:5432/yaadegar?sslmode=require`. |
 | Listen address | `YAADEGAR_HTTP_ADDR` | Defaults to `:8080`. |
 | Trust forwarded host | `YAADEGAR_TRUST_FORWARDED_HOST` | Resolve the tenant from `X-Forwarded-Host`. Turn **on** in the compose/proxy deployment (the backend is unpublished behind the trusted `web` proxy); leave **off** for any directly-exposed backend — it is a tenant-spoofing hole otherwise (ADR-0004 §7). |
+| Trusted proxies | `YAADEGAR_TRUSTED_PROXIES` | Addresses or CIDR ranges (comma-separated) whose `X-Forwarded-For` is believed when resolving the client address for rate limits. In the compose/proxy deployment set it to the range `web` connects from, so each browser or API client gets its own login limit instead of all sharing `web`'s address; leave it **empty** for a directly-exposed backend, or clients could choose their own address. |
 
 ### The JWT signing secret (required)
 
@@ -186,6 +187,7 @@ YAADEGAR_STORAGE_DRIVER=postgres
 YAADEGAR_STORAGE_DSN=postgres://yaadegar:<db-password>@db:5432/yaadegar?sslmode=require
 YAADEGAR_BASE_DOMAIN=example.com
 YAADEGAR_TRUST_FORWARDED_HOST=true
+YAADEGAR_TRUSTED_PROXIES=<range web connects from, e.g. the compose network>
 YAADEGAR_AUTH_JWT_SECRET=<32+-byte-random-secret>
 YAADEGAR_PUBLIC_LINK_BASE=https://example.com
 YAADEGAR_SMTP_HOST=smtp.example.com
@@ -197,6 +199,8 @@ BACKEND_ORIGIN=http://app:8080          # internal address of the app service
 ORIGIN=https://example.com              # the public origin browsers use (CSRF check)
 PROTOCOL_HEADER=x-forwarded-proto       # behind a TLS-terminating proxy (ADR-0006 §5)
 HOST_HEADER=x-forwarded-host
+ADDRESS_HEADER=x-forwarded-for          # behind a reverse proxy: the real client address
+XFF_DEPTH=1                             # number of proxies in front of web
 ```
 
 ## Bootstrap the first tenant, owner, and admin
@@ -256,6 +260,13 @@ passing the original scheme and host. The `web` service reads them via
 `PROTOCOL_HEADER=x-forwarded-proto` and `HOST_HEADER=x-forwarded-host`, which is
 what yields per-tenant `https` origins and lets it set the `Secure` cookie flag
 (ADR-0006 §5). Set `ORIGIN` to the public origin the browser uses.
+
+With a reverse proxy in front of the web app, `web` sees the proxy as every
+request's peer. Set `ADDRESS_HEADER=x-forwarded-for` and `XFF_DEPTH` to the number
+of proxies in front of `web` (1 for a single proxy), so it reads the real client
+address. `web` forwards that address to the backend, which uses it for rate limits
+once `YAADEGAR_TRUSTED_PROXIES` covers `web`. Without it, every client shares the
+proxy's address and one client's failed logins lock everyone out.
 
 A sketch (nginx-style, placeholders):
 

@@ -9,7 +9,7 @@ import type { PageServerLoad } from './$types';
 // reads them, so an unlisted list's share_slug never arrives — this load cannot leak
 // one by rendering carelessly, because it never holds one.
 export const load: PageServerLoad = async ({ params, locals }) => {
-	const client = backendClient({ host: locals.host });
+	const client = backendClient(locals, { anonymous: true });
 	const {
 		data,
 		error: err,

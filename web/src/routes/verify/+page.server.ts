@@ -18,7 +18,7 @@ export const actions: Actions = {
 		const token = String(fd.get('token') ?? '');
 		if (!token) return fail(400, { error: 'This verification link is missing its token.' });
 
-		const client = backendClient({ host: locals.host });
+		const client = backendClient(locals, { anonymous: true });
 		const { data, error: err } = await client.POST('/api/v1/auth/register/verify', {
 			body: { token }
 		});

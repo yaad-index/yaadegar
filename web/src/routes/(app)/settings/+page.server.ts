@@ -4,7 +4,7 @@ import { setSession } from '$lib/server/session';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals }) => {
-	const client = backendClient({ host: locals.host, token: locals.token });
+	const client = backendClient(locals);
 	const [settingsRes, domainsRes, ownerKeyRes] = await Promise.all([
 		client.GET('/api/v1/settings'),
 		client.GET('/api/v1/domains'),
@@ -28,7 +28,7 @@ export const actions: Actions = {
 	ownerKey: async ({ request, locals }) => {
 		const fd = await request.formData();
 		const rotating = String(fd.get('rotating') ?? '') === 'true';
-		const client = backendClient({ host: locals.host, token: locals.token });
+		const client = backendClient(locals);
 		const { data, error: err } = await client.POST('/api/v1/me/owner-key', {});
 		if (err || !data?.owner_key) {
 			return fail(400, {
@@ -45,7 +45,7 @@ export const actions: Actions = {
 	toggle: async ({ request, locals }) => {
 		const fd = await request.formData();
 		const enabled = fd.get('oauth_google_enabled') === 'on';
-		const client = backendClient({ host: locals.host, token: locals.token });
+		const client = backendClient(locals);
 		const { data, error: err } = await client.PATCH('/api/v1/settings', {
 			body: { oauth_google_enabled: enabled }
 		});
@@ -60,7 +60,7 @@ export const actions: Actions = {
 	updateName: async ({ request, locals }) => {
 		const fd = await request.formData();
 		const name = String(fd.get('name') ?? '');
-		const client = backendClient({ host: locals.host, token: locals.token });
+		const client = backendClient(locals);
 		const { error: err, response } = await client.PUT('/api/v1/me/profile', {
 			body: { name }
 		});
@@ -88,7 +88,7 @@ export const actions: Actions = {
 		if (newPassword !== confirmPassword) {
 			return fail(400, { passwordError: 'The new passwords do not match.' });
 		}
-		const client = backendClient({ host: locals.host, token: locals.token });
+		const client = backendClient(locals);
 		const {
 			data,
 			error: err,
@@ -113,7 +113,7 @@ export const actions: Actions = {
 		const fd = await request.formData();
 		const hostname = String(fd.get('hostname') ?? '').trim();
 		if (!hostname) return fail(400, { domainError: 'Enter a hostname.' });
-		const client = backendClient({ host: locals.host, token: locals.token });
+		const client = backendClient(locals);
 		const {
 			data,
 			error: err,
@@ -137,7 +137,7 @@ export const actions: Actions = {
 		const fd = await request.formData();
 		const id = String(fd.get('id') ?? '');
 		if (!id) return fail(400, { domainError: 'Missing domain.' });
-		const client = backendClient({ host: locals.host, token: locals.token });
+		const client = backendClient(locals);
 		const { data, error: err } = await client.POST('/api/v1/domains/{domainId}/verify', {
 			params: { path: { domainId: id } }
 		});
@@ -150,7 +150,7 @@ export const actions: Actions = {
 		const fd = await request.formData();
 		const id = String(fd.get('id') ?? '');
 		if (!id) return fail(400, { domainError: 'Missing domain.' });
-		const client = backendClient({ host: locals.host, token: locals.token });
+		const client = backendClient(locals);
 		const { error: err } = await client.DELETE('/api/v1/domains/{domainId}', {
 			params: { path: { domainId: id } }
 		});

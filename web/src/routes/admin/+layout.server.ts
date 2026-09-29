@@ -12,7 +12,7 @@ import type { LayoutServerLoad } from './$types';
 export const load: LayoutServerLoad = async ({ locals, cookies, url }) => {
 	if (!locals.token) redirect(303, '/login');
 
-	const client = backendClient({ host: locals.host, token: locals.token });
+	const client = backendClient(locals);
 	const { data, error: err, response } = await client.GET('/api/v1/me');
 	if (err || !data) {
 		if (response.status === 401) {

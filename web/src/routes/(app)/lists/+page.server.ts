@@ -22,7 +22,7 @@ export const load: PageServerLoad = async ({ locals, parent }) => {
 	const { user } = await parent();
 	if (user?.role === 'giver') redirect(303, '/reservations');
 
-	const client = backendClient({ host: locals.host, token: locals.token });
+	const client = backendClient(locals);
 	const { data } = await client.GET('/api/v1/lists', { params: { query: { limit: 200 } } });
 	return {
 		lists: data?.items ?? [],
@@ -35,7 +35,7 @@ export const actions: Actions = {
 		const form = await superValidate(request, zod4(createListSchema));
 		if (!form.valid) return fail(400, { form });
 
-		const client = backendClient({ host: locals.host, token: locals.token });
+		const client = backendClient(locals);
 		const { error: err } = await client.POST('/api/v1/lists', {
 			body: { title: form.data.title }
 		});

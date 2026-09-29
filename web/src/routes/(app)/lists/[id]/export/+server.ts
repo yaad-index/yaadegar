@@ -10,6 +10,7 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 	const res = await backendGetRaw({
 		host: locals.host,
 		token: locals.token,
+		clientIP: locals.clientIP,
 		path: `/api/v1/lists/${params.id}/export?format=${format}`
 	});
 	if (!res.ok) error(res.status === 404 ? 404 : 502, 'Could not export this list.');

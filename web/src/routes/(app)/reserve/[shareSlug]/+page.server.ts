@@ -12,7 +12,7 @@ import type { Actions, PageServerLoad } from './$types';
 export const load: PageServerLoad = async ({ params, locals }) => {
 	// The public read renders the list + items; it needs no token and is already
 	// owner-anonymous, so it is reused here rather than a second authenticated read.
-	const pub = backendClient({ host: locals.host });
+	const pub = backendClient(locals, { anonymous: true });
 	const {
 		data: list,
 		error: err,
@@ -36,7 +36,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 
 	// Which items this account already reserved, from its dashboard filtered to this
 	// list — the reservation id drives the release action.
-	const authed = backendClient({ host: locals.host, token: locals.token });
+	const authed = backendClient(locals);
 	const { data: mine } = await authed.GET('/api/v1/me/reservations', {
 		params: { query: { limit: 200 } }
 	});
@@ -76,7 +76,7 @@ export const actions: Actions = {
 		const itemId = String(fd.get('item_id') ?? '');
 		if (!itemId) return fail(400, { reserveError: 'Nothing to reserve.' });
 
-		const client = backendClient({ host: locals.host, token: locals.token });
+		const client = backendClient(locals);
 		const {
 			data,
 			error: err,
@@ -103,7 +103,7 @@ export const actions: Actions = {
 		const reservationId = String(fd.get('reservation_id') ?? '');
 		if (!reservationId) return fail(400, { releaseError: 'Nothing to release.' });
 
-		const client = backendClient({ host: locals.host, token: locals.token });
+		const client = backendClient(locals);
 		const { error: err, response } = await client.DELETE(
 			'/api/v1/me/reservations/{reservationId}',
 			{ params: { path: { reservationId } } }
