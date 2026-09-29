@@ -190,6 +190,34 @@ type PasswordResetToken struct {
 	CreatedAt time.Time
 }
 
+// AccessToken is a personal access token (ADR-0016): a long-lived credential an
+// account holder creates for a non-browser client. TokenHash is the sha256 of the
+// raw token; the raw value is shown once at creation and never stored. Last4 is
+// the raw value's last four characters, kept for display only. ExpiresAt nil means
+// the token does not expire (an explicit choice at creation). RevokedAt nil means
+// the token has not been revoked.
+type AccessToken struct {
+	ID         string
+	TenantID   string
+	UserID     string
+	Name       string
+	TokenHash  string
+	Last4      string
+	CreatedAt  time.Time
+	ExpiresAt  *time.Time
+	LastUsedAt *time.Time
+	RevokedAt  *time.Time
+}
+
+// ActiveAt reports whether the token is usable at the given instant: not revoked
+// and not past its expiry.
+func (t AccessToken) ActiveAt(now time.Time) bool {
+	if t.RevokedAt != nil {
+		return false
+	}
+	return t.ExpiresAt == nil || now.Before(*t.ExpiresAt)
+}
+
 // EmailVerificationToken is a single-use, short-TTL credential for the email
 // self-registration flow (ADR-0012). TokenHash is the sha256 of the raw token; the
 // raw value is emailed once and never stored (like the password-reset token,

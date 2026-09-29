@@ -22,6 +22,9 @@ var (
 	// insert would push a total past its cap — a reservation beyond quantity_wanted
 	// or a contribution beyond the item price. The check and insert are atomic.
 	ErrCapacityExceeded = errors.New("storage: capacity exceeded")
+	// ErrTooManyTokens is returned when creating a personal access token would
+	// exceed the account's limit of active tokens (ADR-0016 §6).
+	ErrTooManyTokens = errors.New("storage: too many active tokens")
 	// ErrCrossTrackConflict is returned by the capacity-guarded creates when the
 	// other giving track already holds the item: a reserve on an item with a live
 	// co-buy, or a contribution on an item with an active reservation. Reserve and
@@ -156,6 +159,7 @@ type TenantStore interface {
 	OAuthIdentities() OAuthIdentityRepo
 	PasswordResetTokens() PasswordResetTokenRepo
 	EmailVerificationTokens() EmailVerificationTokenRepo
+	AccessTokens() AccessTokenRepo
 }
 
 // UserRepo persists owners within the bound tenant.
@@ -473,6 +477,35 @@ type PasswordResetTokenRepo interface {
 	// can never land in a partial state (password set + token consumed but still
 	// pending). The caller reads the post-commit user state to issue the session.
 	ConfirmReset(ctx context.Context, tokenID, userID, passwordHash string, usedAt time.Time) (claimed bool, err error)
+}
+
+// AccessTokenRepo persists personal access tokens (ADR-0016), tenant-scoped like
+// every other repo. Expiry and revocation are checked in Go (AccessToken.ActiveAt),
+// never by comparing the RFC3339Nano string columns in SQL.
+type AccessTokenRepo interface {
+	// Create persists a minted token (hash, last four characters, name, optional
+	// expiry). The raw token is never stored. It counts the user's tokens that are
+	// active at now while holding the user's row lock, and returns ErrTooManyTokens
+	// if the user already has maxActive of them, so concurrent creations cannot
+	// overshoot the limit. ErrNotFound if the user is not in the tenant.
+	Create(ctx context.Context, t AccessToken, maxActive int, now time.Time) (AccessToken, error)
+	// ByHash resolves a token by its stored hash within the tenant, whatever its
+	// state. ErrNotFound if no token has that hash.
+	ByHash(ctx context.Context, tokenHash string) (AccessToken, error)
+	// ListByUser returns every token the user holds, newest first, including
+	// revoked and expired ones so the settings screen can show them.
+	ListByUser(ctx context.Context, userID string) ([]AccessToken, error)
+	// Revoke revokes one of the user's tokens. It reports whether this call revoked
+	// it (false = already revoked). ErrNotFound if the user holds no token with that
+	// id, so one account can never revoke another's token.
+	Revoke(ctx context.Context, userID, id string, at time.Time) (revoked bool, err error)
+	// RevokeAllForUser revokes every token the user holds that is not yet revoked,
+	// and reports how many it revoked.
+	RevokeAllForUser(ctx context.Context, userID string, at time.Time) (int64, error)
+	// TouchLastUsed records a use at the given instant, but only when the stored
+	// last-used time is unset or at least minInterval older, so a busy client does
+	// not turn every request into a write. It reports whether it wrote.
+	TouchLastUsed(ctx context.Context, id string, at time.Time, minInterval time.Duration) (bool, error)
 }
 
 // EmailVerificationTokenRepo persists email self-registration verification tokens
