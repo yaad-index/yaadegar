@@ -80,4 +80,6 @@ This deliberately avoids a password-confirmation step, the conventional safeguar
   - an ordinary password change leaves tokens valid, and a forgot-password reset revokes them all;
   - token creation is refused on a session older than 10 minutes and accepted after a fresh OAuth login;
   - a token cannot create or revoke tokens or change the password;
+  - creating a 21st active token is refused, and succeeds again once one is revoked;
+  - failed token authentications trip their own limiter and leave the login limiter untouched, and failed logins do not count against the token limiter;
   - the stored record never contains the raw value.
