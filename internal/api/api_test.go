@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -85,7 +86,7 @@ type captchaConfig struct {
 // newHarnessCaptcha builds a harness with a captcha verifier configured, for the
 // low-trust reserve-gate tests.
 func newHarnessCaptcha(t *testing.T, cc captchaConfig) *harness {
-	return newHarnessFull(t, nil, false, "", cc, "", 0, nil, 0)
+	return newHarnessFull(t, nil, false, "", cc, "", 0, nil, 0, nil)
 }
 
 // newHarnessRegistrationCaptcha builds a harness with BOTH self-registration enabled
@@ -93,11 +94,11 @@ func newHarnessCaptcha(t *testing.T, cc captchaConfig) *harness {
 // neither newHarnessRegistration (no verifier) nor newHarnessCaptcha (registration
 // disabled, so every request 403s before the gate) can produce on its own.
 func newHarnessRegistrationCaptcha(t *testing.T, policy storage.RegistrationPolicy, cc captchaConfig) *harness {
-	return newHarnessFull(t, nil, false, policy, cc, "", 0, nil, 0)
+	return newHarnessFull(t, nil, false, policy, cc, "", 0, nil, 0, nil)
 }
 
 func newHarnessOpts(t *testing.T, limiter auth.Limiter, trustForwardedHost bool, registrationPolicy storage.RegistrationPolicy) *harness {
-	return newHarnessFull(t, limiter, trustForwardedHost, registrationPolicy, captchaConfig{}, "", 0, nil, 0)
+	return newHarnessFull(t, limiter, trustForwardedHost, registrationPolicy, captchaConfig{}, "", 0, nil, 0, nil)
 }
 
 // newHarnessConfirmWindow builds a harness with an instance-default confirm window
@@ -112,7 +113,7 @@ func newHarnessOpts(t *testing.T, limiter auth.Limiter, trustForwardedHost bool,
 // the handler clock and watching nothing fail once the store shared that clock
 // (#433).
 func newHarnessConfirmWindow(t *testing.T, window time.Duration) *harness {
-	return newHarnessFull(t, nil, false, "", captchaConfig{}, "", window, nil, confirmStoreLag)
+	return newHarnessFull(t, nil, false, "", captchaConfig{}, "", window, nil, confirmStoreLag, nil)
 }
 
 // newHarnessDisplayLocation builds a confirm-window harness whose instance renders
@@ -125,13 +126,13 @@ func newHarnessConfirmWindow(t *testing.T, window time.Duration) *harness {
 // watching nothing fail. Any test about what a giver READS in a rendered time has
 // to use a non-UTC zone or it is not testing the zone at all.
 func newHarnessDisplayLocation(t *testing.T, window time.Duration, loc *time.Location) *harness {
-	return newHarnessFull(t, nil, false, "", captchaConfig{}, "", window, loc, confirmStoreLag)
+	return newHarnessFull(t, nil, false, "", captchaConfig{}, "", window, loc, confirmStoreLag, nil)
 }
 
 // newHarnessVersion builds a harness whose API reports a set build version, for the
 // GET /api/v1/version tests (ADR-0014 §3).
 func newHarnessVersion(t *testing.T, version string) *harness {
-	return newHarnessFull(t, nil, false, "", captchaConfig{}, version, 0, nil, 0)
+	return newHarnessFull(t, nil, false, "", captchaConfig{}, version, 0, nil, 0, nil)
 }
 
 // confirmStoreLag is how far the confirm-window harnesses' store clock trails the
@@ -147,7 +148,7 @@ type laggingClock struct {
 
 func (l laggingClock) Now() time.Time { return l.clk.Now().Add(-l.lag) }
 
-func newHarnessFull(t *testing.T, limiter auth.Limiter, trustForwardedHost bool, registrationPolicy storage.RegistrationPolicy, cc captchaConfig, version string, reserverConfirmWindow time.Duration, displayLocation *time.Location, storeLag time.Duration) *harness {
+func newHarnessFull(t *testing.T, limiter auth.Limiter, trustForwardedHost bool, registrationPolicy storage.RegistrationPolicy, cc captchaConfig, version string, reserverConfirmWindow time.Duration, displayLocation *time.Location, storeLag time.Duration, trustedProxies []netip.Prefix) *harness {
 	t.Helper()
 	ctx := context.Background()
 	dsn := "file:" + filepath.Join(t.TempDir(), "api.db")
@@ -190,6 +191,7 @@ func newHarnessFull(t *testing.T, limiter auth.Limiter, trustForwardedHost bool,
 		Version:               version,
 		ReserverConfirmWindow: reserverConfirmWindow,
 		DisplayLocation:       displayLocation,
+		TrustedProxies:        trustedProxies,
 	})
 	return &harness{t: t, h: h, store: store, tenant: tenant, owner: owner, email: fake, clk: clk, preview: pf, resolver: fr, authSvc: authSvc}
 }
@@ -232,6 +234,7 @@ func (h *harness) req(method, path, host, token string, body any) (*http.Respons
 // mints a real session JWT for the seeded owner via the test auth service (the
 // same fake clock backs issue + validate, so expiry stays consistent).
 func (h *harness) ownerHost() string { return "alice." + baseDomain }
+
 func (h *harness) ownerToken() string {
 	return h.tokenFor(h.owner.ID, h.tenant.ID)
 }

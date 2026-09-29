@@ -116,6 +116,11 @@ type ServeCmd struct {
 	// hole (ADR-0004 §7).
 	TrustForwardedHost bool `name:"trust-forwarded-host" env:"YAADEGAR_TRUST_FORWARDED_HOST" help:"Resolve the tenant from X-Forwarded-Host (proxy deployments). Enable ONLY when the backend is reachable exclusively behind the trusted frontend; a directly-exposed backend must leave this off."`
 
+	// TrustedProxies is empty by default: every rate limit keys on the direct peer.
+	// List the frontend's address (or range) when the backend is reached through
+	// it, so limits key on the real client instead of the proxy.
+	TrustedProxies []string `name:"trusted-proxies" sep:"," env:"YAADEGAR_TRUSTED_PROXIES" help:"Addresses or CIDR ranges of proxies whose X-Forwarded-For is trusted when resolving the client address for rate limits (comma-separated). Empty (default) trusts none."`
+
 	DecaySweepInterval  time.Duration `name:"decay-sweep-interval" default:"15m" env:"YAADEGAR_DECAY_SWEEP_INTERVAL" help:"How often the reservation-decay sweeper runs (0 disables it)."`
 	DecayDefaultDays    int           `name:"decay-default-days" default:"0" env:"YAADEGAR_DECAY_DEFAULT_DAYS" help:"Instance-default decay period in days (0 = off) for lists that do not override it."`
 	DecayResponseWindow time.Duration `name:"decay-response-window" default:"48h" env:"YAADEGAR_DECAY_RESPONSE_WINDOW" help:"How long the reserver has to keep/release a stale reservation before it auto-expires."`
@@ -284,12 +289,18 @@ func (c *ServeCmd) Run(cli *CLI) error {
 		"timezone", displayLocation.String(),
 		"source", settings.LocationSource(c.Timezone))
 
+	trustedProxies, err := api.ParseTrustedProxies(c.TrustedProxies)
+	if err != nil {
+		return fmt.Errorf("invalid --trusted-proxies: %w", err)
+	}
+
 	handler := api.NewHandler(store, api.Options{
 		BaseDomain:          c.BaseDomain,
 		Logger:              logger,
 		Email:               sender,
 		Auth:                authService,
 		TrustForwardedHost:  c.TrustForwardedHost,
+		TrustedProxies:      trustedProxies,
 		LoginLimiter:        auth.NewInMemoryLimiter(c.LoginRateMaxFailures, c.LoginRateWindow, clock.Real{}),
 		DomainCNAMETarget:   c.DomainCNAMETarget,
 		DomainClaimTTL:      c.DomainClaimTTL,

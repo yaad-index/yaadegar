@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"time"
 
 	"github.com/yaad-index/yaadegar/internal/api/gen"
@@ -29,6 +30,7 @@ type Server struct {
 	resolver           Resolver
 	auth               *auth.Service
 	trustForwardedHost bool
+	trustedProxies     []netip.Prefix
 	loginLimiter       auth.Limiter
 	domainCNAMETarget  string
 	domainClaimTTL     time.Duration
@@ -118,6 +120,10 @@ type Options struct {
 	// off, since the header is client-settable and would otherwise let any caller
 	// spoof any tenant.
 	TrustForwardedHost bool
+	// TrustedProxies are the peers whose X-Forwarded-For is believed when
+	// resolving the client address for rate limiting (see resolveClientIP). Empty
+	// trusts no proxy: every limit keys on the direct peer.
+	TrustedProxies []netip.Prefix
 	// DomainCNAMETarget is the hostname owners point their custom domain's CNAME
 	// at; returned by addDomain.
 	DomainCNAMETarget string
@@ -188,6 +194,7 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 		resolver:              opts.Resolver,
 		auth:                  opts.Auth,
 		trustForwardedHost:    opts.TrustForwardedHost,
+		trustedProxies:        opts.TrustedProxies,
 		loginLimiter:          opts.LoginLimiter,
 		domainCNAMETarget:     opts.DomainCNAMETarget,
 		domainClaimTTL:        opts.DomainClaimTTL,
@@ -270,7 +277,7 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 	h = s.requireAdmin(h)
 	h = s.requireOwner(h)
 	h = s.resolveTenant(h)
-	h = captureClientIP(h)
+	h = s.captureClientIP(h)
 	return h
 }
 

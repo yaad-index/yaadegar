@@ -66,6 +66,10 @@ services:
       # publishing 8080 makes X-Forwarded-Host client-spoofable and silently breaks
       # the tenant-isolation trust model while everything still appears to work.
       YAADEGAR_TRUST_FORWARDED_HOST: "true"
+      # Believe web's X-Forwarded-For for rate limits, on the same grounds as above:
+      # web is the only peer that can reach this port. The compose network's
+      # address is not fixed, so trust the private ranges it is drawn from.
+      YAADEGAR_TRUSTED_PROXIES: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
     # Intentionally no published ports: the backend is reachable only on the
     # internal compose network. Seed with `docker compose ... exec app yaadegar ...`.
     healthcheck:
