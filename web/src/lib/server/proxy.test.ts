@@ -158,3 +158,26 @@ describe('backendProxy (#145 transparent API passthrough)', () => {
 		expect(headers.get('x-real-thing')).toBe('kept');
 	});
 });
+
+describe('client address forwarding (the backend rate-limits on it)', () => {
+	it('sends the address this server saw and drops a client-supplied one', async () => {
+		const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}'));
+
+		await backendProxy({
+			...inbound('/api/v1/lists', { headers: { 'x-forwarded-for': '6.6.6.6' } }),
+			clientIP: '203.0.113.5'
+		});
+
+		const headers = fetchMock.mock.calls[0][1]?.headers as Headers;
+		expect(headers.get('x-forwarded-for')).toBe('203.0.113.5');
+	});
+
+	it('forwards no address when none is known, rather than the client-supplied one', async () => {
+		const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}'));
+
+		await backendProxy(inbound('/api/v1/lists', { headers: { 'x-forwarded-for': '6.6.6.6' } }));
+
+		const headers = fetchMock.mock.calls[0][1]?.headers as Headers;
+		expect(headers.get('x-forwarded-for')).toBeNull();
+	});
+});
