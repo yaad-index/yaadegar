@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.24.1](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.24.0...yaadegar-v0.24.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* **config:** log the resolved timezone and whether it came from config ([#454](https://github.com/yaad-index/yaadegar/issues/454)) ([d440250](https://github.com/yaad-index/yaadegar/commit/d44025050913e5c08e2a26abb1f655a7c56b5f4b))
+* **storage:** stamp rows from an injected clock, not the wall clock ([#462](https://github.com/yaad-index/yaadegar/issues/462)) ([ff4c2de](https://github.com/yaad-index/yaadegar/commit/ff4c2de8e18434544cd928d1fbd1486cd73efce8))
+* **web:** announce the owner list page's status messages and keep focus after a row action ([#460](https://github.com/yaad-index/yaadegar/issues/460)) ([62ac750](https://github.com/yaad-index/yaadegar/commit/62ac7501b55b3d654b2497eced81876cb13a090f))
+
 ## [0.24.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.23.0...yaadegar-v0.24.0) (2026-09-25)
 
 
