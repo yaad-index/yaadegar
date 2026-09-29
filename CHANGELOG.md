@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.25.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.24.1...yaadegar-v0.25.0) (2026-09-29)
+
+
+### Features
+
+* **storage:** add the personal access token store ([#465](https://github.com/yaad-index/yaadegar/issues/465)) ([c9b9414](https://github.com/yaad-index/yaadegar/commit/c9b941440f2dc8bad102f3306db58fc8c0d510bf))
+
+
+### Bug Fixes
+
+* key rate limits on the real client address behind the web app ([#467](https://github.com/yaad-index/yaadegar/issues/467)) ([289b3c3](https://github.com/yaad-index/yaadegar/commit/289b3c3cd3539daed95a7499d1a263c0c72ac5fd))
+
 ## [0.24.1](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.24.0...yaadegar-v0.24.1) (2026-09-29)
 
 
