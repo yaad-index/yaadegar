@@ -51,8 +51,10 @@ func trusted(addr netip.Addr, proxies []netip.Prefix) bool {
 // peer is the answer unless that peer is a trusted proxy. Only then is
 // X-Forwarded-For consulted, walked from the right (the hop nearest this server)
 // past every trusted proxy; the first address that is not a trusted proxy is the
-// client. A header from an untrusted peer is ignored entirely, because anyone can
-// send one.
+// client. When every hop is trusted (a client on the same private network as a
+// proxy whose whole range is trusted), the leftmost hop is the client: it is the
+// address the outermost trusted proxy saw. A header from an untrusted peer is
+// ignored entirely, because anyone can send one.
 func resolveClientIP(remoteAddr string, forwardedFor []string, proxies []netip.Prefix) string {
 	peer := clientIP(remoteAddr)
 	if len(proxies) == 0 {
@@ -70,6 +72,7 @@ func resolveClientIP(remoteAddr string, forwardedFor []string, proxies []netip.P
 			}
 		}
 	}
+	leftmost := ""
 	for i := len(hops) - 1; i >= 0; i-- {
 		a, err := netip.ParseAddr(hops[i])
 		if err != nil {
@@ -80,6 +83,10 @@ func resolveClientIP(remoteAddr string, forwardedFor []string, proxies []netip.P
 		if !trusted(a, proxies) {
 			return a.Unmap().String()
 		}
+		leftmost = a.Unmap().String()
+	}
+	if leftmost != "" {
+		return leftmost
 	}
 	return peer
 }

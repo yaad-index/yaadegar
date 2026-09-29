@@ -46,7 +46,8 @@ func TestResolveClientIP(t *testing.T) {
 		{"a client-supplied left entry is not believed", "10.0.0.1:5000", []string{"1.2.3.4, 203.0.113.5"}, proxies, "203.0.113.5"},
 		{"several headers are one list", "10.0.0.1:5000", []string{"203.0.113.5", "172.16.4.2"}, proxies, "203.0.113.5"},
 		{"garbage hop stops at the peer", "10.0.0.1:5000", []string{"not-an-ip"}, proxies, "10.0.0.1"},
-		{"all hops trusted: peer", "10.0.0.1:5000", []string{"172.16.4.2"}, proxies, "10.0.0.1"},
+		{"all hops trusted: the leftmost hop is the client", "10.0.0.1:5000", []string{"172.16.4.2"}, proxies, "172.16.4.2"},
+		{"all hops trusted, several: the leftmost", "10.0.0.1:5000", []string{"172.16.9.9, 172.16.4.2"}, proxies, "172.16.9.9"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

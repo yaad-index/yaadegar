@@ -76,3 +76,17 @@ func TestLoginLimitCannotBeEvadedWithSpoofedForwardedFor(t *testing.T) {
 	h.loginVia("198.51.100.7", "203.0.113.2")
 	assert.Equal(t, http.StatusTooManyRequests, h.loginVia("198.51.100.7", "203.0.113.3"))
 }
+
+// With the compose default, every private range is trusted. A client on the same
+// private network is then a trusted address too, and must still get its own
+// limit rather than falling back to the web container's address.
+func TestLoginLimitSeparatesPrivateNetworkClients(t *testing.T) {
+	lim := auth.NewInMemoryLimiter(2, time.Hour, clock.NewFake(time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)))
+	h := newHarnessProxied(t, lim, []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"})
+
+	const web = "172.18.0.3" // the web container on the compose network
+	assert.Equal(t, http.StatusUnauthorized, h.loginVia(web, "192.168.1.20"))
+	assert.Equal(t, http.StatusUnauthorized, h.loginVia(web, "192.168.1.20"))
+	assert.Equal(t, http.StatusTooManyRequests, h.loginVia(web, "192.168.1.20"), "the LAN client that failed is limited")
+	assert.Equal(t, http.StatusUnauthorized, h.loginVia(web, "192.168.1.21"), "another LAN client is not")
+}
