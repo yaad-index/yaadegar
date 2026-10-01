@@ -6,9 +6,11 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/yaad-index/yaadegar/internal/auth"
 	"github.com/yaad-index/yaadegar/internal/storage"
+	tok "github.com/yaad-index/yaadegar/internal/token"
 )
 
 // resolveTenant resolves the tenant from the request Host and puts it in the
@@ -126,6 +128,10 @@ func (s *Server) requireOwner(next http.Handler) http.Handler {
 			writeProblem(w, http.StatusUnauthorized, "missing bearer token")
 			return
 		}
+		if tok.IsPAT(token) {
+			s.serveWithPAT(w, r, next, tenant, token)
+			return
+		}
 		principal, err := s.auth.Issuer().Validate(token)
 		if err != nil {
 			writeProblem(w, http.StatusUnauthorized, "invalid or expired token")
@@ -170,6 +176,55 @@ func (s *Server) requireOwner(next http.Handler) http.Handler {
 	})
 }
 
+// patLastUsedInterval is how often a token's last-used time is written at most
+// (ADR-0016 §3), so a busy script does not turn every request into a write.
+const patLastUsedInterval = 5 * time.Minute
+
+// serveWithPAT authenticates a personal access token on the owner surface
+// (ADR-0016 §3). Failed attempts count against a per-client-IP limiter of their
+// own, checked before the lookup so it bounds the lookup load (§6); a token that
+// is unknown, revoked or expired is a failure. The lookup goes through the
+// Host-resolved tenant, so a token is found only on its own tenant's host. After
+// it, the same per-request user load and ban check as a session apply; a token
+// does not ride the credential version (§4), and carries no role claim, so the
+// owner-only endpoints check the stored role as they do for a session. The request
+// is marked as authenticated by the token.
+func (s *Server) serveWithPAT(w http.ResponseWriter, r *http.Request, next http.Handler, tenant storage.Tenant, raw string) {
+	ctx := r.Context()
+	key := "pat-ip:" + clientIPFromContext(ctx)
+	if !s.patLimiter.Allow(key) {
+		writeProblem(w, http.StatusTooManyRequests, "too many failed token attempts; try again later")
+		return
+	}
+	ts := s.store.ForTenant(tenant)
+	now := s.clock.Now()
+	t, err := ts.AccessTokens().ByHash(ctx, tok.Hash(raw))
+	switch {
+	case errors.Is(err, storage.ErrNotFound), err == nil && !t.ActiveAt(now):
+		s.patLimiter.RecordFailure(key)
+		writeProblem(w, http.StatusUnauthorized, "invalid or expired token")
+		return
+	case err != nil:
+		s.logger.Error("access token lookup failed", "err", err)
+		writeProblem(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	user, err := ts.Users().Get(ctx, t.UserID)
+	if err != nil {
+		writeProblem(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
+	if user.Banned {
+		writeProblem(w, http.StatusUnauthorized, "this account is suspended")
+		return
+	}
+	if _, err := ts.AccessTokens().TouchLastUsed(ctx, t.ID, now, patLastUsedInterval); err != nil {
+		// Last-used is for display; failing to record it must not fail the request.
+		s.logger.Warn("access token last-used write failed", "err", err, "token_id", t.ID)
+	}
+	next.ServeHTTP(w, r.WithContext(withViaToken(withOwner(ctx, user), t.ID)))
+}
+
 // requireAdmin enforces the instance-admin capability on the /admin/* surface
 // (ADR-0010). Admin is a per-user flag, not a separate identity: the caller holds an
 // ordinary owner session (the /admin surface is not tenant-scoped, so the token
@@ -188,6 +243,12 @@ func (s *Server) requireAdmin(next http.Handler) http.Handler {
 		token := bearerToken(r)
 		if token == "" {
 			writeProblem(w, http.StatusUnauthorized, "missing bearer token")
+			return
+		}
+		// /admin accepts sessions only (ADR-0016 §2): a long-lived, copyable token
+		// must never become an instance-admin credential.
+		if tok.IsPAT(token) {
+			writeProblem(w, http.StatusUnauthorized, "personal access tokens are not accepted here")
 			return
 		}
 		principal, err := s.auth.Issuer().Validate(token)

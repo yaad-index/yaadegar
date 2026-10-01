@@ -185,6 +185,11 @@ type ServeCmd struct {
 	LoginRateMaxFailures int           `name:"login-rate-max-failures" default:"10" env:"YAADEGAR_LOGIN_RATE_MAX_FAILURES" help:"Failed login attempts per IP and per username before rate-limiting kicks in (0 disables)."`
 	LoginRateWindow      time.Duration `name:"login-rate-window" default:"15m" env:"YAADEGAR_LOGIN_RATE_WINDOW" help:"Window over which failed login attempts accumulate and the lockout lasts."`
 
+	// Personal access token failure limit (ADR-0016 §6), per client IP, separate
+	// from the login limiter.
+	PATRateMaxFailures int           `name:"pat-rate-max-failures" default:"10" env:"YAADEGAR_PAT_RATE_MAX_FAILURES" help:"Failed personal access token authentications per client IP before that IP is refused token authentication (0 disables)."`
+	PATRateWindow      time.Duration `name:"pat-rate-window" default:"15m" env:"YAADEGAR_PAT_RATE_WINDOW" help:"Window over which failed token authentications accumulate and the lockout lasts."`
+
 	// SMTP config. If SMTPHost is empty the server logs emails instead of sending
 	// them (dev default). Secrets (SMTPPassword) come from the environment.
 	SMTPHost     string `name:"smtp-host" env:"YAADEGAR_SMTP_HOST" help:"SMTP server host. Empty logs emails instead of sending (dev default)."`
@@ -302,6 +307,7 @@ func (c *ServeCmd) Run(cli *CLI) error {
 		TrustForwardedHost:  c.TrustForwardedHost,
 		TrustedProxies:      trustedProxies,
 		LoginLimiter:        auth.NewInMemoryLimiter(c.LoginRateMaxFailures, c.LoginRateWindow, clock.Real{}),
+		PATLimiter:          auth.NewInMemoryLimiter(c.PATRateMaxFailures, c.PATRateWindow, clock.Real{}),
 		DomainCNAMETarget:   c.DomainCNAMETarget,
 		DomainClaimTTL:      c.DomainClaimTTL,
 		DefaultReserverTier: defaultTier,

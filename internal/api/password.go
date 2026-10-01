@@ -22,6 +22,13 @@ func (s *Server) ChangePassword(ctx context.Context, req gen.ChangePasswordReque
 	if !ok || !ok2 {
 		return nil, errMissingContext
 	}
+	// A personal access token never operates on the account's credentials
+	// (ADR-0016 §2): a stolen token must not be able to lock the owner out.
+	if _, ok := viaToken(ctx); ok {
+		return gen.ChangePassword403ApplicationProblemPlusJSONResponse{
+			ForbiddenApplicationProblemPlusJSONResponse: forbidden("a personal access token cannot change the password; sign in to do that"),
+		}, nil
+	}
 	if req.Body == nil || req.Body.CurrentPassword == "" || req.Body.NewPassword == "" {
 		return gen.ChangePassword400ApplicationProblemPlusJSONResponse{
 			BadRequestApplicationProblemPlusJSONResponse: badRequest("current_password and new_password are required"),

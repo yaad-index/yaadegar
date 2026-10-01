@@ -32,6 +32,7 @@ type Server struct {
 	trustForwardedHost bool
 	trustedProxies     []netip.Prefix
 	loginLimiter       auth.Limiter
+	patLimiter         auth.Limiter
 	domainCNAMETarget  string
 	domainClaimTTL     time.Duration
 	// defaultReserverTier is the instance-wide reserver tier a list inherits when
@@ -114,6 +115,10 @@ type Options struct {
 	// LoginLimiter throttles brute-force login attempts (owner + admin). Defaults
 	// to a no-op limiter (no limiting) when nil.
 	LoginLimiter auth.Limiter
+	// PATLimiter throttles failed personal access token authentications per client
+	// IP (ADR-0016 §6). It must be its own instance, not LoginLimiter: the two
+	// count different things. Defaults to a no-op limiter when nil.
+	PATLimiter auth.Limiter
 	// TrustForwardedHost enables X-Forwarded-Host for tenant resolution (ADR-0004
 	// §7). DEFAULT FALSE — enable ONLY when the backend is reachable exclusively
 	// behind the trusted frontend proxy; a directly-exposed backend must keep it
@@ -196,6 +201,7 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 		trustForwardedHost:    opts.TrustForwardedHost,
 		trustedProxies:        opts.TrustedProxies,
 		loginLimiter:          opts.LoginLimiter,
+		patLimiter:            opts.PATLimiter,
 		domainCNAMETarget:     opts.DomainCNAMETarget,
 		domainClaimTTL:        opts.DomainClaimTTL,
 		defaultReserverTier:   opts.DefaultReserverTier,
@@ -220,6 +226,9 @@ func NewHandler(store storage.Store, opts Options) http.Handler {
 	}
 	if s.loginLimiter == nil {
 		s.loginLimiter = auth.NoopLimiter{}
+	}
+	if s.patLimiter == nil {
+		s.patLimiter = auth.NoopLimiter{}
 	}
 	if s.email == nil {
 		s.email = email.NewLogSender(s.logger)

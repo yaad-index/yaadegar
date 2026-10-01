@@ -148,7 +148,7 @@ type laggingClock struct {
 
 func (l laggingClock) Now() time.Time { return l.clk.Now().Add(-l.lag) }
 
-func newHarnessFull(t *testing.T, limiter auth.Limiter, trustForwardedHost bool, registrationPolicy storage.RegistrationPolicy, cc captchaConfig, version string, reserverConfirmWindow time.Duration, displayLocation *time.Location, storeLag time.Duration, trustedProxies []netip.Prefix) *harness {
+func newHarnessFull(t *testing.T, limiter auth.Limiter, trustForwardedHost bool, registrationPolicy storage.RegistrationPolicy, cc captchaConfig, version string, reserverConfirmWindow time.Duration, displayLocation *time.Location, storeLag time.Duration, trustedProxies []netip.Prefix, extra ...func(*api.Options)) *harness {
 	t.Helper()
 	ctx := context.Background()
 	dsn := "file:" + filepath.Join(t.TempDir(), "api.db")
@@ -172,7 +172,7 @@ func newHarnessFull(t *testing.T, limiter auth.Limiter, trustForwardedHost bool,
 	fr := &fakeResolver{txt: map[string][]string{}}
 	authSvc, err := auth.NewService(auth.Config{JWTSecret: testJWTSecret, PasswordEnabled: true}, clk)
 	require.NoError(t, err)
-	h := api.NewHandler(store, api.Options{
+	opts := api.Options{
 		BaseDomain:            baseDomain,
 		Logger:                slog.New(slog.DiscardHandler),
 		Email:                 fake,
@@ -192,7 +192,11 @@ func newHarnessFull(t *testing.T, limiter auth.Limiter, trustForwardedHost bool,
 		ReserverConfirmWindow: reserverConfirmWindow,
 		DisplayLocation:       displayLocation,
 		TrustedProxies:        trustedProxies,
-	})
+	}
+	for _, f := range extra {
+		f(&opts)
+	}
+	h := api.NewHandler(store, opts)
 	return &harness{t: t, h: h, store: store, tenant: tenant, owner: owner, email: fake, clk: clk, preview: pf, resolver: fr, authSvc: authSvc}
 }
 

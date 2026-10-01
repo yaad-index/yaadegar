@@ -20,6 +20,7 @@ const (
 	capTokenCtxKey
 	clientIPCtxKey
 	routingHostCtxKey
+	viaTokenCtxKey
 )
 
 // withTenant returns ctx carrying the resolved tenant for the request.
@@ -80,4 +81,18 @@ func withRoutingHost(ctx context.Context, host string) context.Context {
 func routingHostFromContext(ctx context.Context) string {
 	h, _ := ctx.Value(routingHostCtxKey).(string)
 	return h
+}
+
+// withViaToken marks the request as authenticated by the personal access token
+// with the given id (ADR-0016 §3), so credential operations can refuse it and
+// handlers can attribute it.
+func withViaToken(ctx context.Context, tokenID string) context.Context {
+	return context.WithValue(ctx, viaTokenCtxKey, tokenID)
+}
+
+// viaToken returns the id of the personal access token that authenticated the
+// request, and whether one did. A session-authenticated request reports false.
+func viaToken(ctx context.Context) (string, bool) {
+	id, ok := ctx.Value(viaTokenCtxKey).(string)
+	return id, ok
 }

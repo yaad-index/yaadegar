@@ -32,6 +32,21 @@ func TestIssueValidateRoundtrip(t *testing.T) {
 	assert.Equal(t, auth.RoleOwner, p.Role)
 }
 
+// TestValidateReadsTheIssueTime: the session's issue time reaches the principal,
+// so a later check can tell how recently the session authenticated (ADR-0016 §5).
+// It is the issuer's now, not anything the caller passed in.
+func TestValidateReadsTheIssueTime(t *testing.T) {
+	clk := clock.NewFake(epoch)
+	i := testIssuer(clk)
+	tok, err := i.Issue(auth.Principal{UserID: "u1", TenantID: "t1", Role: auth.RoleOwner, IssuedAt: epoch.Add(-time.Hour)})
+	require.NoError(t, err)
+	clk.Advance(20 * time.Minute)
+
+	p, err := i.Validate(tok)
+	require.NoError(t, err)
+	assert.True(t, p.IssuedAt.Equal(epoch), "got %s", p.IssuedAt)
+}
+
 // TestIssueValidateCredentialVersion checks the cver claim round-trips (ADR-0011):
 // the issuer stamps the principal's credential_version and validation reads it back.
 func TestIssueValidateCredentialVersion(t *testing.T) {
