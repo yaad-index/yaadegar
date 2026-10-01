@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/yaad-index/yaadegar/internal/api"
 	"github.com/yaad-index/yaadegar/internal/api/gen"
 	"github.com/yaad-index/yaadegar/internal/auth"
 	"github.com/yaad-index/yaadegar/internal/storage"
@@ -253,7 +256,7 @@ func TestPasswordChangeKeepsTokensAndResetRevokesThem(t *testing.T) {
 	resp, body := h.req(http.MethodPut, "/api/v1/me/password", h.ownerHost(), session,
 		map[string]any{"current_password": "first-password", "new_password": "second-password"})
 	require.Equal(t, http.StatusOK, resp.StatusCode, "body: %s", body)
-	assert.Equal(t, 2, decode[gen.ChangePasswordResponse](t, body).ActiveTokens, "a revoked token is not counted")
+	assert.Equal(t, 2, *decode[gen.ChangePasswordResponse](t, body).ActiveTokens, "a revoked token is not counted")
 
 	resp, _ = h.req(http.MethodPost, "/api/v1/auth/password-reset/request", h.ownerHost(), "", map[string]any{"identifier": "frank"})
 	require.Equal(t, http.StatusAccepted, resp.StatusCode)
@@ -269,4 +272,52 @@ func TestPasswordChangeKeepsTokensAndResetRevokesThem(t *testing.T) {
 	for _, tk := range list {
 		assert.NotNil(t, tk.RevokedAt)
 	}
+}
+
+// failingTokenList is a store whose access-token list always fails, for the
+// password-change path that reads it after the change has committed.
+type failingTokenList struct{ storage.Store }
+
+func (s failingTokenList) ForTenant(t storage.Tenant) storage.TenantStore {
+	return failingTokenListTenant{s.Store.ForTenant(t)}
+}
+
+type failingTokenListTenant struct{ storage.TenantStore }
+
+func (t failingTokenListTenant) AccessTokens() storage.AccessTokenRepo {
+	return failingTokenListRepo{t.TenantStore.AccessTokens()}
+}
+
+type failingTokenListRepo struct{ storage.AccessTokenRepo }
+
+func (failingTokenListRepo) ListByUser(context.Context, string) ([]storage.AccessToken, error) {
+	return nil, errors.New("the database went away")
+}
+
+// The token count after a password change is informational: when it cannot be
+// read, the change still succeeds and the caller still gets its new session.
+func TestAPasswordChangeSucceedsWhenTheTokenCountFails(t *testing.T) {
+	h := newHarness(t)
+	h.seedCredentialedUser("frank", "first-password")
+	session := h.login("frank", "first-password")
+	handler := api.NewHandler(failingTokenList{h.store}, api.Options{
+		BaseDomain: baseDomain, Logger: slog.New(slog.DiscardHandler), Clock: h.clk, Auth: h.authSvc,
+	})
+
+	b, err := json.Marshal(map[string]any{"current_password": "first-password", "new_password": "second-password"})
+	require.NoError(t, err)
+	req := httptest.NewRequest(http.MethodPut, "http://"+h.ownerHost()+"/api/v1/me/password", bytes.NewReader(b))
+	req.Host = h.ownerHost()
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+session)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	got := decode[gen.ChangePasswordResponse](t, rec.Body.Bytes())
+	assert.NotEmpty(t, got.AccessToken, "the new session is returned")
+	assert.Nil(t, got.ActiveTokens, "the count is left out")
+	assert.NotContains(t, rec.Body.String(), "active_tokens")
+	resp, _ := h.req(http.MethodGet, "/api/v1/me", h.ownerHost(), got.AccessToken, nil)
+	assert.Equal(t, http.StatusOK, resp.StatusCode, "and it works")
 }

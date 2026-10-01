@@ -1023,8 +1023,8 @@ export interface components {
             token_type: "Bearer";
             /** @description Access-token lifetime in seconds. */
             expires_in: number;
-            /** @description How many personal access tokens remain active. A password change leaves them valid (ADR-0016 §4). */
-            active_tokens: number;
+            /** @description How many personal access tokens remain active. A password change leaves them valid (ADR-0016 §4). Absent when the count could not be read; the password change itself succeeded. */
+            active_tokens?: number;
         };
         PasswordResetConfirmResponse: {
             /** @description Signed JWT to present as `Authorization: Bearer <token>`. */

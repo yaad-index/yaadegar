@@ -451,8 +451,8 @@ type ChangePasswordResponse struct {
 	// AccessToken Signed JWT to present as `Authorization: Bearer <token>`.
 	AccessToken string `json:"access_token"`
 
-	// ActiveTokens How many personal access tokens remain active. A password change leaves them valid (ADR-0016 §4).
-	ActiveTokens int `json:"active_tokens"`
+	// ActiveTokens How many personal access tokens remain active. A password change leaves them valid (ADR-0016 §4). Absent when the count could not be read; the password change itself succeeded.
+	ActiveTokens *int `json:"active_tokens,omitempty"`
 
 	// ExpiresIn Access-token lifetime in seconds.
 	ExpiresIn int                             `json:"expires_in"`
