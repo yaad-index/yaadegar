@@ -20,6 +20,12 @@
 		{#if form?.error}
 			<p class="mt-3 rounded bg-red-50 p-2 text-sm text-red-700" role="alert">{form.error}</p>
 		{/if}
+		<!-- Recovery revokes every personal access token (ADR-0016 §4): say so before
+		     the owner commits to it, not only afterwards. -->
+		<p class="mt-3 text-sm text-gray-700">
+			Setting a new password signs you out everywhere and revokes every access token on your
+			account.
+		</p>
 		<form method="post" use:enhance class="mt-4 space-y-3">
 			<input type="hidden" name="token" value={data.token} />
 			<label class="block">

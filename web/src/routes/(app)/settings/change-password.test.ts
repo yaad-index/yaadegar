@@ -61,7 +61,7 @@ describe('settings changePassword action (ADR-0011 cut 2)', () => {
 		});
 		// setSession(cookies, token, maxAge, secure) — https url → secure true.
 		expect(setSession).toHaveBeenCalledWith({}, 'new-jwt', 3600, true);
-		expect(res).toEqual({ passwordChanged: true });
+		expect(res).toEqual({ passwordChanged: true, activeTokens: null });
 	});
 
 	it('surfaces the backend real reason on a wrong current password', async () => {
@@ -101,5 +101,32 @@ describe('settings changePassword action (ADR-0011 cut 2)', () => {
 		)) as { data: { passwordError: string } };
 		expect(put).not.toHaveBeenCalled();
 		expect(res.data.passwordError).toContain('current and new password');
+	});
+});
+
+describe('settings changePassword reports access tokens (ADR-0016 §4)', () => {
+	beforeEach(() => {
+		put.mockReset();
+		setSession.mockReset();
+	});
+
+	it('passes on how many access tokens still work, or null when unknown', async () => {
+		const fields = {
+			current_password: 'a',
+			new_password: 'new-password',
+			confirm_password: 'new-password'
+		};
+		put.mockResolvedValue({
+			data: { access_token: 'jwt', expires_in: 3600, active_tokens: 3 },
+			error: undefined,
+			response: { status: 200 }
+		});
+		expect(await changePassword(ev(fields))).toEqual({ passwordChanged: true, activeTokens: 3 });
+		put.mockResolvedValue({
+			data: { access_token: 'jwt', expires_in: 3600 },
+			error: undefined,
+			response: { status: 200 }
+		});
+		expect(await changePassword(ev(fields))).toEqual({ passwordChanged: true, activeTokens: null });
 	});
 });
