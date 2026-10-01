@@ -40,6 +40,10 @@ type Principal struct {
 	// and rejects the token on a mismatch, so a password mutation revokes prior
 	// sessions. Issuers stamp the user's current version; validation reads it back.
 	CredentialVersion int
+	// IssuedAt is when the session was minted. Sessions are not refreshed, so it is
+	// the time of the session's last authentication (ADR-0016 §5). Zero on a token
+	// that carries no iat.
+	IssuedAt time.Time
 }
 
 // Claims is the JWT payload: the standard registered claims plus the tenant id,
@@ -128,10 +132,14 @@ func (i *Issuer) Validate(tokenString string) (Principal, error) {
 	if claims.Subject == "" || claims.TenantID == "" || claims.Role == "" {
 		return Principal{}, fmt.Errorf("%w: missing required claims", ErrInvalidToken)
 	}
-	return Principal{
+	p := Principal{
 		UserID:            claims.Subject,
 		TenantID:          claims.TenantID,
 		Role:              claims.Role,
 		CredentialVersion: claims.CredentialVersion,
-	}, nil
+	}
+	if claims.IssuedAt != nil {
+		p.IssuedAt = claims.IssuedAt.Time
+	}
+	return p, nil
 }

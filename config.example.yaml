@@ -203,6 +203,17 @@
 # (env YAADEGAR_LOGIN_RATE_WINDOW, flag --login-rate-window)
 # login-rate-window: "15m"
 
+# --- Personal access token rate limit ------------------------------------------
+
+# Failed personal access token authentications per client IP before that IP is
+# refused token authentication for the window (0 disables). Counted separately
+# from failed logins.  (env YAADEGAR_PAT_RATE_MAX_FAILURES, flag --pat-rate-max-failures)
+# pat-rate-max-failures: 10
+
+# Window over which failed token authentications accumulate and the lockout lasts.
+# (env YAADEGAR_PAT_RATE_WINDOW, flag --pat-rate-window)
+# pat-rate-window: "15m"
+
 # --- Outgoing email (SMTP) ------------------------------------------------------
 
 # SMTP server host. Empty logs emails instead of sending them (dev default).
