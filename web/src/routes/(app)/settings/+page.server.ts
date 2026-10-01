@@ -3,22 +3,39 @@ import { backendClient } from '$lib/server/api';
 import { setSession } from '$lib/server/session';
 import type { Actions, PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async ({ locals }) => {
+export const load: PageServerLoad = async ({ locals, url }) => {
 	const client = backendClient(locals);
-	const [settingsRes, domainsRes, ownerKeyRes] = await Promise.all([
+	const [settingsRes, domainsRes, ownerKeyRes, tokensRes] = await Promise.all([
 		client.GET('/api/v1/settings'),
 		client.GET('/api/v1/domains'),
 		// The owner's shared-page key (#308). This read never mints one — null here
 		// means the owner has not created a shared page, which is the ordinary state
 		// and not an error.
-		client.GET('/api/v1/me/owner-key')
+		client.GET('/api/v1/me/owner-key'),
+		// Personal access tokens (ADR-0016 §7), revoked and expired ones included.
+		client.GET('/api/v1/me/tokens')
 	]);
 	return {
 		settings: settingsRes.data ?? { oauth_google_enabled: false, google_client_configured: false },
 		domains: domainsRes.data ?? [],
-		ownerKey: ownerKeyRes.data?.owner_key ?? null
+		ownerKey: ownerKeyRes.data?.owner_key ?? null,
+		tokens: tokensRes.data ?? [],
+		tokenExpiryDays: TOKEN_EXPIRY_DAYS,
+		// Set when a password reset revoked tokens and sent the owner here to say so
+		// (ADR-0016 §4). Only a whole positive number is shown.
+		tokensRevoked: revokedCount(url.searchParams.get('tokens_revoked'))
 	};
 };
+
+// The expiry choices offered when creating a token, in days. No expiry is offered
+// too, but only as an explicit choice (ADR-0016 §1): nothing is preselected. The
+// page renders its options from this list, via load, so the two cannot drift.
+const TOKEN_EXPIRY_DAYS = [30, 90, 365];
+
+function revokedCount(raw: string | null): number {
+	const n = Number(raw);
+	return Number.isInteger(n) && n > 0 ? n : 0;
+}
 
 export const actions: Actions = {
 	// Create or rotate the owner's shared-page key (#308). Both are the same backend
@@ -104,7 +121,56 @@ export const actions: Actions = {
 		// The change invalidated every session, including this cookie's old token —
 		// install the re-issued one so the owner stays signed in on this device.
 		setSession(cookies, data.access_token, data.expires_in, url.protocol === 'https:');
-		return { passwordChanged: true };
+		// Personal access tokens survive a password change (ADR-0016 §4); the count
+		// lets the page point at them. It is absent when the backend could not read it.
+		return { passwordChanged: true, activeTokens: data.active_tokens ?? null };
+	},
+
+	// Create a personal access token (ADR-0016). Its value comes back once, in this
+	// action's result, and is never stored by the app. The expiry is an explicit
+	// choice: a number of days, or "never".
+	createToken: async ({ request, locals }) => {
+		const fd = await request.formData();
+		const name = String(fd.get('name') ?? '').trim();
+		const expiry = String(fd.get('expiry') ?? '');
+		if (!name) return fail(400, { tokenError: 'Give the token a name.' });
+		let expiryBody: { expires_at: string } | { never_expires: true };
+		if (expiry === 'never') {
+			expiryBody = { never_expires: true };
+		} else {
+			const days = Number(expiry);
+			if (!TOKEN_EXPIRY_DAYS.includes(days)) {
+				return fail(400, { tokenError: 'Choose when the token expires.' });
+			}
+			expiryBody = { expires_at: new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString() };
+		}
+		const client = backendClient(locals);
+		const {
+			data,
+			error: err,
+			response
+		} = await client.POST('/api/v1/me/tokens', { body: { name, ...expiryBody } });
+		if (err || !data) {
+			// 403 here is the recent-sign-in rule (§5): the page offers to sign in again.
+			return fail(response.status || 400, {
+				tokenError: err?.detail ?? 'Could not create the token.',
+				tokenNeedsSignIn: response.status === 403
+			});
+		}
+		return { createdToken: data.token, createdTokenName: data.access_token.name };
+	},
+
+	// Revoke a personal access token. It stops working on its next request.
+	revokeToken: async ({ request, locals }) => {
+		const fd = await request.formData();
+		const id = String(fd.get('id') ?? '');
+		if (!id) return fail(400, { tokenError: 'Missing token.' });
+		const client = backendClient(locals);
+		const { error: err } = await client.DELETE('/api/v1/me/tokens/{tokenId}', {
+			params: { path: { tokenId: id } }
+		});
+		if (err) return fail(400, { tokenError: 'Could not revoke the token.' });
+		return { tokenRevoked: true };
 	},
 
 	// Register a custom domain. The response carries the CNAME target and the TXT

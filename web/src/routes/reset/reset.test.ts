@@ -65,3 +65,30 @@ describe('reset confirm action (ADR-0011 cut 3)', () => {
 		expect(res.data.error).toContain('do not match');
 	});
 });
+
+describe('reset confirm says when access tokens were revoked (ADR-0016 §4)', () => {
+	beforeEach(() => {
+		post.mockReset();
+		setSession.mockReset();
+	});
+
+	it('lands on Settings with the count when the reset revoked tokens', async () => {
+		post.mockResolvedValue({
+			data: { access_token: 'jwt', expires_in: 3600, tokens_revoked: 2 },
+			error: undefined
+		});
+		await expect(
+			reset(ev({ token: 'tok', new_password: 'new-password', confirm_password: 'new-password' }))
+		).rejects.toMatchObject({ status: 303, location: '/settings?tokens_revoked=2#access-tokens' });
+	});
+
+	it('lands in the app as before when there were none', async () => {
+		post.mockResolvedValue({
+			data: { access_token: 'jwt', expires_in: 3600, tokens_revoked: 0 },
+			error: undefined
+		});
+		await expect(
+			reset(ev({ token: 'tok', new_password: 'new-password', confirm_password: 'new-password' }))
+		).rejects.toMatchObject({ status: 303, location: '/' });
+	});
+});

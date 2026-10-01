@@ -9,6 +9,8 @@ const clearSession = vi.fn();
 vi.mock('$lib/server/session', () => ({
 	clearSession: (...args: unknown[]) => clearSession(...args)
 }));
+// The unit project has no $lib alias; the real return-path guard is what is tested.
+vi.mock('$lib/server/returnTo', () => import('../../lib/server/returnTo'));
 
 import { POST } from './+server';
 
@@ -35,4 +37,30 @@ describe('logout POST clears with protocol-derived secure (#238)', () => {
 		await run('https://gifts.example/logout');
 		expect(clearSession).toHaveBeenCalledWith({}, true);
 	});
+});
+
+describe('logout passes a local return path on to login', () => {
+	async function location(url: string) {
+		try {
+			await (POST as unknown as Handler)({ cookies: {}, url: new URL(url) });
+		} catch (e) {
+			return (e as { location: string }).location;
+		}
+		return '';
+	}
+
+	it('keeps a local path, encoded', async () => {
+		expect(await location('https://t.example/logout?return_to=/settings')).toBe(
+			'/login?return_to=%2Fsettings'
+		);
+	});
+
+	it.each(['https://evil.example', '//evil.example', '/\\evil.example', ''])(
+		'drops %j',
+		async (raw) => {
+			expect(await location(`https://t.example/logout?return_to=${encodeURIComponent(raw)}`)).toBe(
+				'/login'
+			);
+		}
+	);
 });

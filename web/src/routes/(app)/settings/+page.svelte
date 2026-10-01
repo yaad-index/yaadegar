@@ -5,6 +5,7 @@
 	import DomainDnsRecords from '$lib/components/DomainDnsRecords.svelte';
 	import Field from '$lib/components/Field.svelte';
 	import Button from '$lib/components/Button.svelte';
+	import { formatDay, tokenState } from '$lib/accessTokens';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -28,6 +29,23 @@
 		}
 		ownerCopyTimer = setTimeout(() => (ownerCopied = 'idle'), 2500);
 	}
+
+	// A newly created personal access token's value (ADR-0016). It exists only in
+	// this action result: it is shown once and the app keeps no copy.
+	const createdToken = $derived(form?.createdToken ?? '');
+	let tokenCopied = $state<'idle' | 'ok' | 'fail'>('idle');
+	let tokenCopyTimer: ReturnType<typeof setTimeout> | undefined;
+	async function copyToken() {
+		clearTimeout(tokenCopyTimer);
+		try {
+			await navigator.clipboard.writeText(createdToken);
+			tokenCopied = 'ok';
+		} catch {
+			tokenCopied = 'fail';
+		}
+		tokenCopyTimer = setTimeout(() => (tokenCopied = 'idle'), 2500);
+	}
+	const activeTokenCount = $derived(data.tokens.filter((t) => t.active).length);
 </script>
 
 <svelte:head><title>Settings · Yaadegar</title></svelte:head>
@@ -210,6 +228,12 @@
 		{#if form?.passwordChanged}
 			<p class="mt-4 rounded-card bg-green-tint p-3 font-ui text-ui text-green" role="status">
 				Password changed.
+				{#if form.activeTokens}
+					{form.activeTokens === 1
+						? 'Your 1 access token still works.'
+						: `Your ${form.activeTokens} access tokens still work.`}
+					<a href="#access-tokens" class="underline">Review them</a>
+				{/if}
 			</p>
 		{/if}
 		{#if form?.passwordError}
@@ -248,6 +272,133 @@
 			/>
 			<Button type="submit">Change password</Button>
 		</form>
+	</section>
+
+	<!-- Personal access tokens (ADR-0016 §7). Undesigned: built from the same card,
+	     field, button and status pieces as the sections around it. -->
+	<section id="access-tokens" class="rounded-card border border-line bg-surface p-6">
+		<h2 class="font-display text-title text-ink-heading">Access tokens</h2>
+		<p class="mt-1 font-ui text-ui text-ink-muted">
+			A token lets a script or another program use your account without your password. It can do
+			anything you can do with your lists and items, so keep it as safe as a password. A token
+			cannot create or revoke tokens, or change your password.
+		</p>
+
+		{#if data.tokensRevoked}
+			<p class="mt-4 rounded-card bg-amber-50 p-3 font-ui text-ui text-amber-700" role="status">
+				Your password was reset, so {data.tokensRevoked === 1
+					? 'your access token was'
+					: `all ${data.tokensRevoked} of your access tokens were`} revoked. Create new ones for anything
+				that still needs access.
+			</p>
+		{/if}
+		{#if form?.tokenRevoked}
+			<p class="mt-4 rounded-card bg-green-tint p-3 font-ui text-ui text-green" role="status">
+				Token revoked. It stops working immediately.
+			</p>
+		{/if}
+		{#if form?.tokenError}
+			<div class="mt-4 rounded-card bg-red-50 p-3 font-ui text-ui text-red-600" role="alert">
+				<p>{form.tokenError}</p>
+				{#if 'tokenNeedsSignIn' in form && form.tokenNeedsSignIn}
+					<form method="post" action="/logout?return_to=/settings" class="mt-2">
+						<Button type="submit" variant="secondary">Sign in again</Button>
+					</form>
+				{/if}
+			</div>
+		{/if}
+
+		{#if createdToken}
+			<div class="mt-4 rounded-card border border-line bg-green-tint p-4" role="status">
+				<p class="font-ui text-ui font-medium text-green">
+					Token “{form?.createdTokenName}” created. Copy it now: you won't be able to see it again.
+				</p>
+				<div class="mt-3 flex flex-wrap items-center gap-3">
+					<input
+						class="min-w-0 flex-1 rounded-card border border-line bg-surface px-3 py-2 font-mono text-ui text-ink"
+						value={createdToken}
+						readonly
+						aria-label="Your new access token"
+					/>
+					<Button type="button" variant="secondary" onclick={copyToken}>
+						{tokenCopied === 'ok' ? 'Copied' : tokenCopied === 'fail' ? 'Copy failed' : 'Copy'}
+					</Button>
+				</div>
+			</div>
+		{/if}
+
+		<form method="post" action="?/createToken" use:enhance class="mt-4 space-y-4">
+			<Field label="Name" name="name" maxlength={100} placeholder="Backup script" required />
+			<label class="block font-ui text-ui text-ink">
+				<span class="font-medium">Expires</span>
+				<select
+					name="expiry"
+					required
+					class="mt-1 block w-full rounded-card border border-line bg-surface px-3 py-2 font-ui text-body text-ink"
+				>
+					<option value="" selected disabled>Choose…</option>
+					{#each data.tokenExpiryDays as days (days)}
+						<option value={String(days)}>In {days} days</option>
+					{/each}
+					<option value="never">Never</option>
+				</select>
+			</label>
+			<p class="font-ui text-ui text-ink-muted">
+				For your security, creating a token needs a sign-in within the last 10 minutes.
+			</p>
+			<Button type="submit">Create token</Button>
+		</form>
+
+		{#if data.tokens.length > 0}
+			<p class="mt-6 font-ui text-ui text-ink-muted">
+				{activeTokenCount} of 20 active tokens.
+			</p>
+			<ul class="mt-2 space-y-3">
+				{#each data.tokens as t (t.id)}
+					{@const state = tokenState(t)}
+					<li class="rounded-card border border-line bg-surface-alt p-4">
+						<div class="flex items-center justify-between gap-2">
+							<span class="font-ui text-body font-medium text-ink">
+								{t.name} <span class="font-mono text-ink-muted">…{t.last4}</span>
+							</span>
+							{#if state === 'active'}
+								<span class="rounded-card bg-green-tint px-2 py-0.5 font-ui text-chip text-green"
+									>Active</span
+								>
+							{:else if state === 'revoked'}
+								<span class="rounded-card bg-red-50 px-2 py-0.5 font-ui text-chip text-red-600"
+									>Revoked</span
+								>
+							{:else}
+								<span class="rounded-card bg-amber-50 px-2 py-0.5 font-ui text-chip text-amber-700"
+									>Expired</span
+								>
+							{/if}
+						</div>
+						<p class="mt-2 font-ui text-ui text-ink-muted">
+							Created {formatDay(t.created_at)} ·
+							{t.expires_at ? `Expires ${formatDay(t.expires_at)}` : 'Never expires'} ·
+							{t.last_used_at ? `Last used ${formatDay(t.last_used_at)}` : 'Never used'}
+						</p>
+						{#if state === 'active'}
+							<form method="post" action="?/revokeToken" use:enhance class="mt-3">
+								<input type="hidden" name="id" value={t.id} />
+								<button
+									type="submit"
+									class="inline-flex h-12 items-center rounded-card border border-line bg-surface px-6 font-ui text-ui font-medium text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+								>
+									Revoke
+								</button>
+							</form>
+						{/if}
+					</li>
+				{/each}
+			</ul>
+		{:else}
+			<p class="mt-4 rounded-card bg-primary-tint p-3 font-ui text-ui text-primary">
+				No access tokens yet.
+			</p>
+		{/if}
 	</section>
 
 	<section class="rounded-card border border-line bg-surface p-6">

@@ -34,8 +34,13 @@ export const actions: Actions = {
 		}
 
 		// Auto-login (ADR-0011): the confirm response carries a fresh session, so set
-		// the cookie and land the owner in the app.
+		// the cookie and land the owner in the app. A reset revokes every personal
+		// access token (ADR-0016 §4); when it revoked any, land on Settings, which says
+		// how many.
 		setSession(cookies, data.access_token, data.expires_in, url.protocol === 'https:');
+		if (data.tokens_revoked > 0) {
+			redirect(303, `/settings?tokens_revoked=${data.tokens_revoked}#access-tokens`);
+		}
 		redirect(303, '/');
 	}
 };
