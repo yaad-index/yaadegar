@@ -89,9 +89,16 @@ func (s *Server) ChangePassword(ctx context.Context, req gen.ChangePasswordReque
 	if err != nil {
 		return nil, err
 	}
+	// Personal access tokens survive an ordinary password change (ADR-0016 §4);
+	// report how many, so the owner can review them.
+	active, err := activeTokenCount(ctx, ts, owner.ID, s.clock.Now())
+	if err != nil {
+		return nil, err
+	}
 	return gen.ChangePassword200JSONResponse{
-		AccessToken: token,
-		TokenType:   gen.Bearer,
-		ExpiresIn:   int(s.auth.Issuer().AccessTTL().Seconds()),
+		AccessToken:  token,
+		TokenType:    gen.ChangePasswordResponseTokenTypeBearer,
+		ExpiresIn:    int(s.auth.Issuer().AccessTTL().Seconds()),
+		ActiveTokens: active,
 	}, nil
 }

@@ -203,10 +203,13 @@ paths:
             schema: { $ref: "#/components/schemas/PasswordResetConfirm" }
       responses:
         "200":
-          description: The reset succeeded; a session access token is returned (auto-login).
+          description: >
+            The reset succeeded; a session access token is returned (auto-login).
+            Every personal access token the account held was revoked with it
+            (ADR-0016 §4), and how many is reported.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/LoginResponse" }
+              schema: { $ref: "#/components/schemas/PasswordResetConfirmResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
 
   /api/v1/auth/register:
@@ -508,13 +511,84 @@ paths:
         "200":
           description: >
             Password changed. A fresh session access token for the acting session is
-            returned; the caller replaces its stored token with it.
+            returned; the caller replaces its stored token with it. Personal access
+            tokens are not affected (ADR-0016 §4), and how many remain active is
+            reported so the caller can offer to review them.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/LoginResponse" }
+              schema: { $ref: "#/components/schemas/ChangePasswordResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/me/tokens:
+    get:
+      operationId: listAccessTokens
+      tags: [auth]
+      summary: List the authenticated account's personal access tokens
+      description: >
+        Every personal access token the account holds (ADR-0016 §7), newest first,
+        including revoked and expired ones. Never the token value or its hash. A
+        request authenticated by a personal access token is refused: a token never
+        operates on the account's credentials (§2).
+      responses:
+        "200":
+          description: The account's tokens.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AccessToken" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: createAccessToken
+      tags: [auth]
+      summary: Create a personal access token
+      description: >
+        Creates a personal access token (ADR-0016) and returns its value, once. The
+        token carries the account's full access to its lists and items on this API.
+        Either an expiry in the future or never_expires: true is required, so no
+        expiry is always an explicit choice. Creation needs a session issued within
+        the last 10 minutes (§5); an older session is refused, and the user signs in
+        again by any method. A request authenticated by a personal access token is
+        refused (§2). An account holds at most 20 active tokens.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateAccessTokenRequest" }
+      responses:
+        "201":
+          description: The token, with its value shown this once.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreatedAccessToken" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/me/tokens/{tokenId}:
+    parameters:
+      - name: tokenId
+        in: path
+        required: true
+        schema: { type: string }
+    delete:
+      operationId: revokeAccessToken
+      tags: [auth]
+      summary: Revoke one of the authenticated account's personal access tokens
+      description: >
+        Revokes the token; it stops working on the next request (ADR-0016 §7).
+        Revoking an already revoked token succeeds. A token the account does not
+        hold is reported as not found. A request authenticated by a personal access
+        token is refused (§2).
+      responses:
+        "204": { description: Revoked. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /api/v1/me/reservations:
     get:
@@ -1568,6 +1642,88 @@ components:
         expires_in:
           type: integer
           description: Access-token lifetime in seconds.
+
+    ChangePasswordResponse:
+      type: object
+      required: [access_token, token_type, expires_in, active_tokens]
+      properties:
+        access_token:
+          type: string
+          description: "Signed JWT to present as `Authorization: Bearer <token>`."
+        token_type: { type: string, enum: [Bearer], example: Bearer }
+        expires_in:
+          type: integer
+          description: Access-token lifetime in seconds.
+        active_tokens:
+          type: integer
+          description: >
+            How many personal access tokens remain active. A password change leaves
+            them valid (ADR-0016 §4).
+
+    PasswordResetConfirmResponse:
+      type: object
+      required: [access_token, token_type, expires_in, tokens_revoked]
+      properties:
+        access_token:
+          type: string
+          description: "Signed JWT to present as `Authorization: Bearer <token>`."
+        token_type: { type: string, enum: [Bearer], example: Bearer }
+        expires_in:
+          type: integer
+          description: Access-token lifetime in seconds.
+        tokens_revoked:
+          type: integer
+          description: >
+            How many personal access tokens the reset revoked. A reset revokes every
+            one the account held (ADR-0016 §4).
+
+    AccessToken:
+      type: object
+      required: [id, name, last4, created_at, expires_at, last_used_at, revoked_at, active]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        last4:
+          type: string
+          description: The last four characters of the token value, for recognising it.
+        created_at: { type: string, format: date-time }
+        expires_at:
+          type: [string, "null"]
+          format: date-time
+          description: When the token stops working, or null if it never expires.
+        last_used_at:
+          type: [string, "null"]
+          format: date-time
+          description: When it was last used, to within five minutes; null if never.
+        revoked_at: { type: [string, "null"], format: date-time }
+        active:
+          type: boolean
+          description: Whether the token works now (not revoked, not expired).
+
+    CreateAccessTokenRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          description: What the token is for, chosen by the user.
+        expires_at:
+          type: string
+          format: date-time
+          description: When the token stops working. Required unless never_expires is true.
+        never_expires:
+          type: boolean
+          description: Set to true to create a token that does not expire, instead of expires_at.
+
+    CreatedAccessToken:
+      type: object
+      required: [token, access_token]
+      properties:
+        token:
+          type: string
+          description: The token value. It is shown this once and cannot be retrieved later.
+        access_token: { $ref: "#/components/schemas/AccessToken" }
 
     UpdateProfileRequest:
       type: object

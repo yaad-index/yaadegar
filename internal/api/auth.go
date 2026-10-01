@@ -86,7 +86,7 @@ func (s *Server) Login(ctx context.Context, req gen.LoginRequestObject) (gen.Log
 	s.loginSucceeded(ipKey, idKey)
 	return gen.Login200JSONResponse{
 		AccessToken: token,
-		TokenType:   gen.Bearer,
+		TokenType:   gen.LoginResponseTokenTypeBearer,
 		ExpiresIn:   int(s.auth.Issuer().AccessTTL().Seconds()),
 	}, nil
 }

@@ -2,6 +2,7 @@ package sqlstore_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -81,7 +82,7 @@ func TestConfirmResetAtomic(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		claimed, err := ts.PasswordResetTokens().ConfirmReset(ctx, tok.ID, user.ID, "estab-hash", now)
+		claimed, _, err := ts.PasswordResetTokens().ConfirmReset(ctx, tok.ID, user.ID, "estab-hash", now)
 		require.NoError(t, err)
 		assert.True(t, claimed)
 
@@ -109,7 +110,7 @@ func TestConfirmResetAtomic(t *testing.T) {
 		require.True(t, claimed)
 
 		// The commit gate finds the token used → no session-relevant writes persist.
-		claimed, err = ts.PasswordResetTokens().ConfirmReset(ctx, tok.ID, user.ID, "estab-hash", now)
+		claimed, _, err = ts.PasswordResetTokens().ConfirmReset(ctx, tok.ID, user.ID, "estab-hash", now)
 		require.NoError(t, err)
 		assert.False(t, claimed, "a used token cannot be re-claimed")
 
@@ -120,12 +121,54 @@ func TestConfirmResetAtomic(t *testing.T) {
 		assert.Equal(t, storage.UserStatusPending, got.Status, "status unchanged (rolled back)")
 	})
 
+	t.Run("revokes every access token, and rolls that back with the rest", func(t *testing.T) {
+		user, err := ts.Users().Create(ctx, storage.User{Name: "Dana"})
+		require.NoError(t, err)
+		other, err := ts.Users().Create(ctx, storage.User{Name: "Eve"})
+		require.NoError(t, err)
+		for i, u := range []string{user.ID, user.ID, other.ID} {
+			_, err := ts.AccessTokens().Create(ctx, storage.AccessToken{
+				UserID: u, Name: "t", TokenHash: fmt.Sprintf("pat-%s-%d", u, i), Last4: "abcd",
+			}, 20, now)
+			require.NoError(t, err)
+		}
+		usedTok, err := ts.PasswordResetTokens().Create(ctx, storage.PasswordResetToken{UserID: user.ID, TokenHash: "hash-used-dana", ExpiresAt: exp})
+		require.NoError(t, err)
+		_, err = ts.PasswordResetTokens().MarkUsed(ctx, usedTok.ID, now)
+		require.NoError(t, err)
+		claimed, revoked, err := ts.PasswordResetTokens().ConfirmReset(ctx, usedTok.ID, user.ID, "h", now)
+		require.NoError(t, err)
+		assert.False(t, claimed)
+		assert.Zero(t, revoked)
+		active := func(id string) int {
+			list, err := ts.AccessTokens().ListByUser(ctx, id)
+			require.NoError(t, err)
+			n := 0
+			for _, tk := range list {
+				if tk.ActiveAt(now) {
+					n++
+				}
+			}
+			return n
+		}
+		assert.Equal(t, 2, active(user.ID), "a reset that does not commit revokes nothing")
+
+		tok, err := ts.PasswordResetTokens().Create(ctx, storage.PasswordResetToken{UserID: user.ID, TokenHash: "hash-dana", ExpiresAt: exp})
+		require.NoError(t, err)
+		claimed, revoked, err = ts.PasswordResetTokens().ConfirmReset(ctx, tok.ID, user.ID, "h", now)
+		require.NoError(t, err)
+		assert.True(t, claimed)
+		assert.Equal(t, int64(2), revoked)
+		assert.Equal(t, 0, active(user.ID), "every token of the account is revoked")
+		assert.Equal(t, 1, active(other.ID), "another account's are not")
+	})
+
 	t.Run("unknown user → ErrNotFound, nothing written", func(t *testing.T) {
 		tok, err := ts.PasswordResetTokens().Create(ctx, storage.PasswordResetToken{
 			UserID: "ghost", TokenHash: "hash-ghost", ExpiresAt: exp,
 		})
 		require.NoError(t, err)
-		claimed, err := ts.PasswordResetTokens().ConfirmReset(ctx, tok.ID, "ghost", "estab-hash", now)
+		claimed, _, err := ts.PasswordResetTokens().ConfirmReset(ctx, tok.ID, "ghost", "estab-hash", now)
 		assert.ErrorIs(t, err, storage.ErrNotFound)
 		assert.False(t, claimed)
 		// The token is untouched — a missing user must not consume it.

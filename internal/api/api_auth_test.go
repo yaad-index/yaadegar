@@ -36,7 +36,7 @@ func TestLoginIssuesUsableToken(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode, "body: %s", body)
 	lr := decode[gen.LoginResponse](t, body)
 	require.NotEmpty(t, lr.AccessToken)
-	assert.Equal(t, gen.Bearer, lr.TokenType)
+	assert.Equal(t, gen.LoginResponseTokenTypeBearer, lr.TokenType)
 	assert.Positive(t, lr.ExpiresIn)
 
 	// The token authenticates the owner surface.

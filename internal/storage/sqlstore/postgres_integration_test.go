@@ -569,3 +569,53 @@ func TestPostgres_AccessTokenLimitSingleWinner(t *testing.T) {
 		require.Len(t, list, 20, "the limit is never exceeded (round %d)", round)
 	}
 }
+
+// TestPostgres_ResetRevokesAccessTokens: the forgot-password confirm revokes every
+// personal access token of the account in its own transaction (ADR-0016 §4), and
+// a confirm that does not commit revokes none.
+func TestPostgres_ResetRevokesAccessTokens(t *testing.T) {
+	ctx := context.Background()
+	st := newPostgresStore(t)
+	suffix := uniqueSuffix(t)
+	ten, err := st.CreateTenant(ctx, storage.Tenant{Subdomain: "reset-pat-" + suffix})
+	require.NoError(t, err)
+	s := st.ForTenant(ten)
+	now := time.Date(2027, 1, 10, 9, 0, 0, 0, time.UTC)
+	user, err := s.Users().Create(ctx, storage.User{Name: "u"})
+	require.NoError(t, err)
+	for i := range 3 {
+		_, err := s.AccessTokens().Create(ctx, storage.AccessToken{
+			UserID: user.ID, Name: "t", TokenHash: fmt.Sprintf("pat-%s-%d", suffix, i), Last4: "abcd",
+		}, 20, now)
+		require.NoError(t, err)
+	}
+	active := func() int {
+		list, err := s.AccessTokens().ListByUser(ctx, user.ID)
+		require.NoError(t, err)
+		n := 0
+		for _, tk := range list {
+			if tk.ActiveAt(now) {
+				n++
+			}
+		}
+		return n
+	}
+
+	used, err := s.PasswordResetTokens().Create(ctx, storage.PasswordResetToken{UserID: user.ID, TokenHash: "used-" + suffix, ExpiresAt: now.Add(time.Hour)})
+	require.NoError(t, err)
+	_, err = s.PasswordResetTokens().MarkUsed(ctx, used.ID, now)
+	require.NoError(t, err)
+	claimed, revoked, err := s.PasswordResetTokens().ConfirmReset(ctx, used.ID, user.ID, "h", now)
+	require.NoError(t, err)
+	assert.False(t, claimed)
+	assert.Zero(t, revoked)
+	assert.Equal(t, 3, active(), "rolled back with the rest")
+
+	tok, err := s.PasswordResetTokens().Create(ctx, storage.PasswordResetToken{UserID: user.ID, TokenHash: "reset-" + suffix, ExpiresAt: now.Add(time.Hour)})
+	require.NoError(t, err)
+	claimed, revoked, err = s.PasswordResetTokens().ConfirmReset(ctx, tok.ID, user.ID, "h", now)
+	require.NoError(t, err)
+	assert.True(t, claimed)
+	assert.Equal(t, int64(3), revoked)
+	assert.Equal(t, 0, active())
+}

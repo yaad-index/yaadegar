@@ -172,7 +172,8 @@ func (s *Server) requireOwner(next http.Handler) http.Handler {
 			writeProblem(w, http.StatusUnauthorized, "session expired; sign in again")
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(withOwner(r.Context(), owner)))
+		ctx := withSessionIssued(withOwner(r.Context(), owner), principal.IssuedAt)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 

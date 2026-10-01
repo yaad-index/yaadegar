@@ -53,6 +53,21 @@ func (e ArchiveWarningCode) Valid() bool {
 	}
 }
 
+// Defines values for ChangePasswordResponseTokenType.
+const (
+	ChangePasswordResponseTokenTypeBearer ChangePasswordResponseTokenType = "Bearer"
+)
+
+// Valid indicates whether the value is a known member of the ChangePasswordResponseTokenType enum.
+func (e ChangePasswordResponseTokenType) Valid() bool {
+	switch e {
+	case ChangePasswordResponseTokenTypeBearer:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ContributionStatus.
 const (
 	ContributionStatusConfirmed ContributionStatus = "confirmed"
@@ -151,13 +166,13 @@ func (e ListVisibility) Valid() bool {
 
 // Defines values for LoginResponseTokenType.
 const (
-	Bearer LoginResponseTokenType = "Bearer"
+	LoginResponseTokenTypeBearer LoginResponseTokenType = "Bearer"
 )
 
 // Valid indicates whether the value is a known member of the LoginResponseTokenType enum.
 func (e LoginResponseTokenType) Valid() bool {
 	switch e {
-	case Bearer:
+	case LoginResponseTokenTypeBearer:
 		return true
 	default:
 		return false
@@ -203,6 +218,21 @@ func (e MyReservationState) Valid() bool {
 	case MyReservationStateActive:
 		return true
 	case MyReservationStateReserverNotified:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PasswordResetConfirmResponseTokenType.
+const (
+	PasswordResetConfirmResponseTokenTypeBearer PasswordResetConfirmResponseTokenType = "Bearer"
+)
+
+// Valid indicates whether the value is a known member of the PasswordResetConfirmResponseTokenType enum.
+func (e PasswordResetConfirmResponseTokenType) Valid() bool {
+	switch e {
+	case PasswordResetConfirmResponseTokenTypeBearer:
 		return true
 	default:
 		return false
@@ -276,6 +306,25 @@ func (e ConfirmMatchJSONBodyDecision) Valid() bool {
 	default:
 		return false
 	}
+}
+
+// AccessToken defines model for AccessToken.
+type AccessToken struct {
+	// Active Whether the token works now (not revoked, not expired).
+	Active    bool      `json:"active"`
+	CreatedAt time.Time `json:"created_at"`
+
+	// ExpiresAt When the token stops working, or null if it never expires.
+	ExpiresAt *time.Time `json:"expires_at"`
+	Id        string     `json:"id"`
+
+	// Last4 The last four characters of the token value, for recognising it.
+	Last4 string `json:"last4"`
+
+	// LastUsedAt When it was last used, to within five minutes; null if never.
+	LastUsedAt *time.Time `json:"last_used_at"`
+	Name       string     `json:"name"`
+	RevokedAt  *time.Time `json:"revoked_at"`
 }
 
 // AdminOwner defines model for AdminOwner.
@@ -397,6 +446,22 @@ type ChangePasswordRequest struct {
 	NewPassword string `json:"new_password"`
 }
 
+// ChangePasswordResponse defines model for ChangePasswordResponse.
+type ChangePasswordResponse struct {
+	// AccessToken Signed JWT to present as `Authorization: Bearer <token>`.
+	AccessToken string `json:"access_token"`
+
+	// ActiveTokens How many personal access tokens remain active. A password change leaves them valid (ADR-0016 §4).
+	ActiveTokens int `json:"active_tokens"`
+
+	// ExpiresIn Access-token lifetime in seconds.
+	ExpiresIn int                             `json:"expires_in"`
+	TokenType ChangePasswordResponseTokenType `json:"token_type"`
+}
+
+// ChangePasswordResponseTokenType defines model for ChangePasswordResponse.TokenType.
+type ChangePasswordResponseTokenType string
+
 // Contribution A giver's pledge toward co-buying an item (giver-facing view).
 type Contribution struct {
 	Id     *string `json:"id,omitempty"`
@@ -434,6 +499,26 @@ type ContributionCreated struct {
 
 // ContributionStatus tracks a pledge through the co-buying handshake. The terminal statuses (declined, withdrawn, expired) free the item; expired is set by the match auto-expiry sweep when a proposed match's confirm window elapses.
 type ContributionStatus string
+
+// CreateAccessTokenRequest defines model for CreateAccessTokenRequest.
+type CreateAccessTokenRequest struct {
+	// ExpiresAt When the token stops working. Required unless never_expires is true.
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+
+	// Name What the token is for, chosen by the user.
+	Name string `json:"name"`
+
+	// NeverExpires Set to true to create a token that does not expire, instead of expires_at.
+	NeverExpires *bool `json:"never_expires,omitempty"`
+}
+
+// CreatedAccessToken defines model for CreatedAccessToken.
+type CreatedAccessToken struct {
+	AccessToken AccessToken `json:"access_token"`
+
+	// Token The token value. It is shown this once and cannot be retrieved later.
+	Token string `json:"token"`
+}
 
 // Domain defines model for Domain.
 type Domain struct {
@@ -753,6 +838,22 @@ type PasswordResetConfirm struct {
 	// Token The raw reset token from the emailed link.
 	Token string `json:"token"`
 }
+
+// PasswordResetConfirmResponse defines model for PasswordResetConfirmResponse.
+type PasswordResetConfirmResponse struct {
+	// AccessToken Signed JWT to present as `Authorization: Bearer <token>`.
+	AccessToken string `json:"access_token"`
+
+	// ExpiresIn Access-token lifetime in seconds.
+	ExpiresIn int                                   `json:"expires_in"`
+	TokenType PasswordResetConfirmResponseTokenType `json:"token_type"`
+
+	// TokensRevoked How many personal access tokens the reset revoked. A reset revokes every one the account held (ADR-0016 §4).
+	TokensRevoked int `json:"tokens_revoked"`
+}
+
+// PasswordResetConfirmResponseTokenType defines model for PasswordResetConfirmResponse.TokenType.
+type PasswordResetConfirmResponseTokenType string
 
 // PasswordResetRequest defines model for PasswordResetRequest.
 type PasswordResetRequest struct {
@@ -1089,6 +1190,9 @@ type UpdateProfileJSONRequestBody = UpdateProfileRequest
 // CreateMyReservationJSONRequestBody defines body for CreateMyReservation for application/json ContentType.
 type CreateMyReservationJSONRequestBody = MyReservationCreate
 
+// CreateAccessTokenJSONRequestBody defines body for CreateAccessToken for application/json ContentType.
+type CreateAccessTokenJSONRequestBody = CreateAccessTokenRequest
+
 // UpdateTenantSettingsJSONRequestBody defines body for UpdateTenantSettings for application/json ContentType.
 type UpdateTenantSettingsJSONRequestBody = TenantSettingsUpdate
 
@@ -1220,6 +1324,15 @@ type ServerInterface interface {
 	// DeleteMyReservation Release one of the authenticated account's own reservations
 	// (DELETE /api/v1/me/reservations/{reservationId})
 	DeleteMyReservation(w http.ResponseWriter, r *http.Request, reservationId string)
+	// ListAccessTokens List the authenticated account's personal access tokens
+	// (GET /api/v1/me/tokens)
+	ListAccessTokens(w http.ResponseWriter, r *http.Request)
+	// CreateAccessToken Create a personal access token
+	// (POST /api/v1/me/tokens)
+	CreateAccessToken(w http.ResponseWriter, r *http.Request)
+	// RevokeAccessToken Revoke one of the authenticated account's personal access tokens
+	// (DELETE /api/v1/me/tokens/{tokenId})
+	RevokeAccessToken(w http.ResponseWriter, r *http.Request, tokenId string)
 	// GetCaptchaChallenge Issue a signed Altcha proof-of-work challenge (anonymous)
 	// (GET /api/v1/public/captcha/challenge)
 	GetCaptchaChallenge(w http.ResponseWriter, r *http.Request)
@@ -2129,6 +2242,60 @@ func (siw *ServerInterfaceWrapper) DeleteMyReservation(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// ListAccessTokens operation middleware
+func (siw *ServerInterfaceWrapper) ListAccessTokens(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAccessTokens(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateAccessToken operation middleware
+func (siw *ServerInterfaceWrapper) CreateAccessToken(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateAccessToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeAccessToken operation middleware
+func (siw *ServerInterfaceWrapper) RevokeAccessToken(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "tokenId" -------------
+	var tokenId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tokenId", r.PathValue("tokenId"), &tokenId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tokenId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeAccessToken(w, r, tokenId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetCaptchaChallenge operation middleware
 func (siw *ServerInterfaceWrapper) GetCaptchaChallenge(w http.ResponseWriter, r *http.Request) {
 
@@ -2633,6 +2800,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/me/owner-key", wrapper.GetOwnerKey)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/me/owner-key", wrapper.CreateOwnerKey)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/me/password", wrapper.ChangePassword)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/me/tokens", wrapper.ListAccessTokens)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/me/tokens", wrapper.CreateAccessToken)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/me/tokens/{tokenId}", wrapper.RevokeAccessToken)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/me/reservations", wrapper.ListMyReservations)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/me/reservations", wrapper.CreateMyReservation)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/me/reservations/{reservationId}", wrapper.DeleteMyReservation)
@@ -3329,7 +3499,7 @@ type ConfirmPasswordResetResponseObject interface {
 	VisitConfirmPasswordResetResponse(w http.ResponseWriter) error
 }
 
-type ConfirmPasswordReset200JSONResponse LoginResponse
+type ConfirmPasswordReset200JSONResponse PasswordResetConfirmResponse
 
 func (response ConfirmPasswordReset200JSONResponse) VisitConfirmPasswordResetResponse(w http.ResponseWriter) error {
 
@@ -4699,7 +4869,7 @@ type ChangePasswordResponseObject interface {
 	VisitChangePasswordResponse(w http.ResponseWriter) error
 }
 
-type ChangePassword200JSONResponse LoginResponse
+type ChangePassword200JSONResponse ChangePasswordResponse
 
 func (response ChangePassword200JSONResponse) VisitChangePasswordResponse(w http.ResponseWriter) error {
 
@@ -4988,6 +5158,209 @@ type DeleteMyReservation404ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response DeleteMyReservation404ApplicationProblemPlusJSONResponse) VisitDeleteMyReservationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAccessTokensRequestObject struct {
+}
+
+type ListAccessTokensResponseObject interface {
+	VisitListAccessTokensResponse(w http.ResponseWriter) error
+}
+
+type ListAccessTokens200JSONResponse []AccessToken
+
+func (response ListAccessTokens200JSONResponse) VisitListAccessTokensResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAccessTokens401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response ListAccessTokens401ApplicationProblemPlusJSONResponse) VisitListAccessTokensResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAccessTokens403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response ListAccessTokens403ApplicationProblemPlusJSONResponse) VisitListAccessTokensResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAccessTokenRequestObject struct {
+	Body *CreateAccessTokenJSONRequestBody
+}
+
+type CreateAccessTokenResponseObject interface {
+	VisitCreateAccessTokenResponse(w http.ResponseWriter) error
+}
+
+type CreateAccessToken201JSONResponse CreatedAccessToken
+
+func (response CreateAccessToken201JSONResponse) VisitCreateAccessTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAccessToken400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response CreateAccessToken400ApplicationProblemPlusJSONResponse) VisitCreateAccessTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAccessToken401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response CreateAccessToken401ApplicationProblemPlusJSONResponse) VisitCreateAccessTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAccessToken403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response CreateAccessToken403ApplicationProblemPlusJSONResponse) VisitCreateAccessTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAccessToken409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response CreateAccessToken409ApplicationProblemPlusJSONResponse) VisitCreateAccessTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeAccessTokenRequestObject struct {
+	TokenId string `json:"tokenId"`
+}
+
+type RevokeAccessTokenResponseObject interface {
+	VisitRevokeAccessTokenResponse(w http.ResponseWriter) error
+}
+
+type RevokeAccessToken204Response struct {
+}
+
+func (response RevokeAccessToken204Response) VisitRevokeAccessTokenResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RevokeAccessToken401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response RevokeAccessToken401ApplicationProblemPlusJSONResponse) VisitRevokeAccessTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeAccessToken403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response RevokeAccessToken403ApplicationProblemPlusJSONResponse) VisitRevokeAccessTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeAccessToken404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response RevokeAccessToken404ApplicationProblemPlusJSONResponse) VisitRevokeAccessTokenResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -6051,6 +6424,15 @@ type StrictServerInterface interface {
 	// DeleteMyReservation Release one of the authenticated account's own reservations
 	// (DELETE /api/v1/me/reservations/{reservationId})
 	DeleteMyReservation(ctx context.Context, request DeleteMyReservationRequestObject) (DeleteMyReservationResponseObject, error)
+	// ListAccessTokens List the authenticated account's personal access tokens
+	// (GET /api/v1/me/tokens)
+	ListAccessTokens(ctx context.Context, request ListAccessTokensRequestObject) (ListAccessTokensResponseObject, error)
+	// CreateAccessToken Create a personal access token
+	// (POST /api/v1/me/tokens)
+	CreateAccessToken(ctx context.Context, request CreateAccessTokenRequestObject) (CreateAccessTokenResponseObject, error)
+	// RevokeAccessToken Revoke one of the authenticated account's personal access tokens
+	// (DELETE /api/v1/me/tokens/{tokenId})
+	RevokeAccessToken(ctx context.Context, request RevokeAccessTokenRequestObject) (RevokeAccessTokenResponseObject, error)
 	// GetCaptchaChallenge Issue a signed Altcha proof-of-work challenge (anonymous)
 	// (GET /api/v1/public/captcha/challenge)
 	GetCaptchaChallenge(ctx context.Context, request GetCaptchaChallengeRequestObject) (GetCaptchaChallengeResponseObject, error)
@@ -7165,6 +7547,87 @@ func (sh *strictHandler) DeleteMyReservation(w http.ResponseWriter, r *http.Requ
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(DeleteMyReservationResponseObject); ok {
 		if err := validResponse.VisitDeleteMyReservationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListAccessTokens operation middleware
+func (sh *strictHandler) ListAccessTokens(w http.ResponseWriter, r *http.Request) {
+	var request ListAccessTokensRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListAccessTokens(ctx, request.(ListAccessTokensRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListAccessTokens")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListAccessTokensResponseObject); ok {
+		if err := validResponse.VisitListAccessTokensResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateAccessToken operation middleware
+func (sh *strictHandler) CreateAccessToken(w http.ResponseWriter, r *http.Request) {
+	var request CreateAccessTokenRequestObject
+
+	var body CreateAccessTokenJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateAccessToken(ctx, request.(CreateAccessTokenRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateAccessToken")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateAccessTokenResponseObject); ok {
+		if err := validResponse.VisitCreateAccessTokenResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RevokeAccessToken operation middleware
+func (sh *strictHandler) RevokeAccessToken(w http.ResponseWriter, r *http.Request, tokenId string) {
+	var request RevokeAccessTokenRequestObject
+
+	request.TokenId = tokenId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RevokeAccessToken(ctx, request.(RevokeAccessTokenRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RevokeAccessToken")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RevokeAccessTokenResponseObject); ok {
+		if err := validResponse.VisitRevokeAccessTokenResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
