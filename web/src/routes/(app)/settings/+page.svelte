@@ -33,17 +33,30 @@
 	// A newly created personal access token's value (ADR-0016). It exists only in
 	// this action result: it is shown once and the app keeps no copy.
 	const createdToken = $derived(form?.createdToken ?? '');
-	let tokenCopied = $state<'idle' | 'ok' | 'fail'>('idle');
+	let tokenField = $state<HTMLInputElement>();
+	let tokenCopied = $state<'idle' | 'ok' | 'manual'>('idle');
 	let tokenCopyTimer: ReturnType<typeof setTimeout> | undefined;
+	// The clipboard API is missing on plain http, and the value cannot be shown
+	// again, so a failed copy must leave a way forward: the text is selected and the
+	// page says to copy it by hand. That state stays until the next copy attempt.
 	async function copyToken() {
 		clearTimeout(tokenCopyTimer);
 		try {
 			await navigator.clipboard.writeText(createdToken);
 			tokenCopied = 'ok';
+			tokenCopyTimer = setTimeout(() => (tokenCopied = 'idle'), 2500);
 		} catch {
-			tokenCopied = 'fail';
+			tokenCopied = 'manual';
+			tokenField?.focus();
+			tokenField?.select();
 		}
-		tokenCopyTimer = setTimeout(() => (tokenCopied = 'idle'), 2500);
+	}
+
+	// Revoking cannot be undone, so it asks first.
+	function confirmRevoke(e: SubmitEvent, name: string) {
+		if (!confirm(`Revoke “${name}”? Anything using it stops working, and this can't be undone.`)) {
+			e.preventDefault();
+		}
 	}
 	const activeTokenCount = $derived(data.tokens.filter((t) => t.active).length);
 </script>
@@ -315,15 +328,22 @@
 				</p>
 				<div class="mt-3 flex flex-wrap items-center gap-3">
 					<input
+						bind:this={tokenField}
 						class="min-w-0 flex-1 rounded-card border border-line bg-surface px-3 py-2 font-mono text-ui text-ink"
 						value={createdToken}
 						readonly
 						aria-label="Your new access token"
 					/>
 					<Button type="button" variant="secondary" onclick={copyToken}>
-						{tokenCopied === 'ok' ? 'Copied' : tokenCopied === 'fail' ? 'Copy failed' : 'Copy'}
+						{tokenCopied === 'ok' ? 'Copied' : 'Copy'}
 					</Button>
 				</div>
+				{#if tokenCopied === 'manual'}
+					<p class="mt-2 font-ui text-ui text-ink" role="alert">
+						This browser couldn't copy it for you. The token is selected above: copy it with Ctrl+C
+						(⌘C on a Mac) before you leave this page.
+					</p>
+				{/if}
 			</div>
 		{/if}
 
@@ -381,7 +401,13 @@
 							{t.last_used_at ? `Last used ${formatDay(t.last_used_at)}` : 'Never used'}
 						</p>
 						{#if state === 'active'}
-							<form method="post" action="?/revokeToken" use:enhance class="mt-3">
+							<form
+								method="post"
+								action="?/revokeToken"
+								use:enhance
+								class="mt-3"
+								onsubmit={(e) => confirmRevoke(e, t.name)}
+							>
 								<input type="hidden" name="id" value={t.id} />
 								<button
 									type="submit"

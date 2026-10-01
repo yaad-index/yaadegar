@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { render, screen, within } from '@testing-library/svelte';
+import { render, screen, within, fireEvent } from '@testing-library/svelte';
 import Page from './+page.svelte';
 import type { PageData, ActionData } from './$types';
 
@@ -130,5 +130,53 @@ describe('Settings access tokens (ADR-0016)', () => {
 		render(Page, { props: { data: data(), form } });
 		expect(screen.getByText('Password changed.')).toBeInTheDocument();
 		expect(screen.queryByRole('link', { name: 'Review them' })).toBeNull();
+	});
+});
+
+describe('copying a new token (ADR-0016 §7)', () => {
+	const form = { createdToken: 'ydg_pat_secretvalue', createdTokenName: 'CI' } as ActionData;
+	afterEach(() => vi.unstubAllGlobals());
+
+	it('selects the token and says to copy it by hand when the browser cannot copy', async () => {
+		// Plain http: there is no clipboard API at all.
+		vi.stubGlobal('navigator', { ...navigator, clipboard: undefined });
+		render(Page, { props: { data: data(), form } });
+		const field = section().getByLabelText('Your new access token') as HTMLInputElement;
+		await fireEvent.click(section().getByRole('button', { name: 'Copy' }));
+		expect(section().getByRole('alert')).toHaveTextContent('copy it with Ctrl+C');
+		expect(document.activeElement).toBe(field);
+		expect(field.selectionStart).toBe(0);
+		expect(field.selectionEnd).toBe('ydg_pat_secretvalue'.length);
+	});
+
+	it('says copied when the browser could copy', async () => {
+		const writeText = vi.fn().mockResolvedValue(undefined);
+		vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+		render(Page, { props: { data: data(), form } });
+		await fireEvent.click(section().getByRole('button', { name: 'Copy' }));
+		expect(writeText).toHaveBeenCalledWith('ydg_pat_secretvalue');
+		expect(await section().findByRole('button', { name: 'Copied' })).toBeInTheDocument();
+		expect(section().queryByText(/copy it with Ctrl\+C/)).toBeNull();
+	});
+});
+
+describe('revoking a token asks first', () => {
+	afterEach(() => vi.unstubAllGlobals());
+
+	it.each([
+		[false, true],
+		[true, false]
+	])('confirm answered %s → submit prevented: %s', async (answer, prevented) => {
+		const confirm = vi.fn().mockReturnValue(answer);
+		vi.stubGlobal('confirm', confirm);
+		render(Page, {
+			props: { data: data({ tokens: [token({ name: 'Old laptop' })] }), form: null as ActionData }
+		});
+		const form = section()
+			.getByRole('button', { name: 'Revoke' })
+			.closest('form') as HTMLFormElement;
+		const allowed = await fireEvent.submit(form);
+		expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Old laptop'));
+		expect(allowed).toBe(!prevented);
 	});
 });
