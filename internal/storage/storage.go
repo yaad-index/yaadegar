@@ -476,7 +476,9 @@ type PasswordResetTokenRepo interface {
 	// confirm won), nothing is written and it reports claimed=false — so the account
 	// can never land in a partial state (password set + token consumed but still
 	// pending). The caller reads the post-commit user state to issue the session.
-	ConfirmReset(ctx context.Context, tokenID, userID, passwordHash string, usedAt time.Time) (claimed bool, err error)
+	// It also revokes every personal access token the user holds, in the same
+	// transaction (ADR-0016 §4), and reports how many it revoked.
+	ConfirmReset(ctx context.Context, tokenID, userID, passwordHash string, usedAt time.Time) (claimed bool, tokensRevoked int64, err error)
 }
 
 // AccessTokenRepo persists personal access tokens (ADR-0016), tenant-scoped like

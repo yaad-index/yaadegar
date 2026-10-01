@@ -238,7 +238,7 @@ func (s *Server) ConfirmPasswordReset(ctx context.Context, req gen.ConfirmPasswo
 	// ownership, which is why it also completes activation (ADR-0012 cut 1b); without
 	// it a pending account would auto-login once then be unable to log in again (the
 	// login gate rejects pending). claimed=false = a concurrent confirm already won.
-	claimed, err := ts.PasswordResetTokens().ConfirmReset(ctx, prt.ID, prt.UserID, hash, now)
+	claimed, revoked, err := ts.PasswordResetTokens().ConfirmReset(ctx, prt.ID, prt.UserID, hash, now)
 	if err != nil {
 		return nil, err
 	}
@@ -262,10 +262,14 @@ func (s *Server) ConfirmPasswordReset(ctx context.Context, req gen.ConfirmPasswo
 	if err != nil {
 		return nil, err
 	}
+	if revoked > 0 {
+		s.logger.Info("password reset revoked personal access tokens", "user_id", user.ID, "count", revoked)
+	}
 	return gen.ConfirmPasswordReset200JSONResponse{
-		AccessToken: tok,
-		TokenType:   gen.Bearer,
-		ExpiresIn:   int(s.auth.Issuer().AccessTTL().Seconds()),
+		AccessToken:   tok,
+		TokenType:     gen.PasswordResetConfirmResponseTokenTypeBearer,
+		ExpiresIn:     int(s.auth.Issuer().AccessTTL().Seconds()),
+		TokensRevoked: int(revoked),
 	}, nil
 }
 

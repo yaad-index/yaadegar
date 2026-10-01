@@ -295,7 +295,7 @@ func (s *Server) RegisterVerify(ctx context.Context, req gen.RegisterVerifyReque
 	}
 	return gen.RegisterVerify200JSONResponse{
 		AccessToken: tok,
-		TokenType:   gen.Bearer,
+		TokenType:   gen.LoginResponseTokenTypeBearer,
 		ExpiresIn:   int(s.auth.Issuer().AccessTTL().Seconds()),
 	}, nil
 }

@@ -89,9 +89,19 @@ func (s *Server) ChangePassword(ctx context.Context, req gen.ChangePasswordReque
 	if err != nil {
 		return nil, err
 	}
-	return gen.ChangePassword200JSONResponse{
+	resp := gen.ChangePassword200JSONResponse{
 		AccessToken: token,
-		TokenType:   gen.Bearer,
+		TokenType:   gen.ChangePasswordResponseTokenTypeBearer,
 		ExpiresIn:   int(s.auth.Issuer().AccessTTL().Seconds()),
-	}, nil
+	}
+	// Personal access tokens survive an ordinary password change (ADR-0016 §4);
+	// report how many, so the owner can review them. The password has already
+	// changed and the old session is gone, so a failed count must not turn into an
+	// error: the caller would lose the new session it needs.
+	if active, err := activeTokenCount(ctx, ts, owner.ID, s.clock.Now()); err != nil {
+		s.logger.Warn("counting active access tokens after a password change failed", "err", err, "user_id", owner.ID)
+	} else {
+		resp.ActiveTokens = &active
+	}
+	return resp, nil
 }

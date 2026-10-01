@@ -105,8 +105,9 @@ var errTokenAlreadyClaimed = errors.New("sqlstore: reset token already claimed")
 // token — the token claim is the commit gate: if a concurrent confirm already used
 // it, this affects 0 rows and the whole transaction rolls back, so the password and
 // activation writes never persist without the token being consumed (and vice versa).
-func (r passwordResetRepo) ConfirmReset(ctx context.Context, tokenID, userID, passwordHash string, usedAt time.Time) (bool, error) {
+func (r passwordResetRepo) ConfirmReset(ctx context.Context, tokenID, userID, passwordHash string, usedAt time.Time) (bool, int64, error) {
 	claimed := false
+	var revoked int64
 	err := r.withRowLock(ctx, "users", userID, func(tx *sql.Tx) error {
 		// Establish the password — bumps credential_version, invalidating every session.
 		if _, err := tx.ExecContext(ctx, r.rb(
@@ -121,6 +122,13 @@ func (r passwordResetRepo) ConfirmReset(ctx context.Context, tokenID, userID, pa
 			storage.UserStatusActive, r.tenantID, userID, storage.UserStatusPending); err != nil {
 			return err
 		}
+		// Recovery revokes every personal access token (ADR-0016 §4): a token minted
+		// while the owner may have lost control of the account must not survive it.
+		tokens, err := revokeAllAccessTokens(ctx, tx, r.baseRepo, userID, usedAt)
+		if err != nil {
+			return err
+		}
+		revoked = tokens
 		// Commit gate: claim the token only while still unused. 0 rows → a concurrent
 		// confirm won (or the token is gone) → abort → the writes above roll back.
 		res, err := tx.ExecContext(ctx, r.rb(
@@ -140,12 +148,12 @@ func (r passwordResetRepo) ConfirmReset(ctx context.Context, tokenID, userID, pa
 		return nil
 	})
 	if errors.Is(err, errTokenAlreadyClaimed) {
-		return false, nil
+		return false, 0, nil
 	}
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
-	return claimed, nil
+	return claimed, revoked, nil
 }
 
 // usedAtArg maps an optional used-at timestamp to a NULL-able driver value.

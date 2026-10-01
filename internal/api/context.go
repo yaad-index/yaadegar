@@ -8,6 +8,7 @@ package api
 
 import (
 	"context"
+	"time"
 
 	"github.com/yaad-index/yaadegar/internal/storage"
 )
@@ -21,6 +22,7 @@ const (
 	clientIPCtxKey
 	routingHostCtxKey
 	viaTokenCtxKey
+	sessionIssuedCtxKey
 )
 
 // withTenant returns ctx carrying the resolved tenant for the request.
@@ -95,4 +97,17 @@ func withViaToken(ctx context.Context, tokenID string) context.Context {
 func viaToken(ctx context.Context) (string, bool) {
 	id, ok := ctx.Value(viaTokenCtxKey).(string)
 	return id, ok
+}
+
+// withSessionIssued carries when the request's session was issued, which is when
+// it last authenticated (ADR-0016 §5). Only a session-authenticated request has it.
+func withSessionIssued(ctx context.Context, at time.Time) context.Context {
+	return context.WithValue(ctx, sessionIssuedCtxKey, at)
+}
+
+// sessionIssued returns when the request's session was issued; zero when the
+// request was not authenticated by a session, or its session carried no issue time.
+func sessionIssued(ctx context.Context) time.Time {
+	at, _ := ctx.Value(sessionIssuedCtxKey).(time.Time)
+	return at
 }

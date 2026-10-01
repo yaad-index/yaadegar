@@ -343,6 +343,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the authenticated account's personal access tokens
+         * @description Every personal access token the account holds (ADR-0016 §7), newest first, including revoked and expired ones. Never the token value or its hash. A request authenticated by a personal access token is refused: a token never operates on the account's credentials (§2).
+         */
+        get: operations["listAccessTokens"];
+        put?: never;
+        /**
+         * Create a personal access token
+         * @description Creates a personal access token (ADR-0016) and returns its value, once. The token carries the account's full access to its lists and items on this API. Either an expiry in the future or never_expires: true is required, so no expiry is always an explicit choice. Creation needs a session issued within the last 10 minutes (§5); an older session is refused, and the user signs in again by any method. A request authenticated by a personal access token is refused (§2). An account holds at most 20 active tokens.
+         */
+        post: operations["createAccessToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/tokens/{tokenId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tokenId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke one of the authenticated account's personal access tokens
+         * @description Revokes the token; it stops working on the next request (ADR-0016 §7). Revoking an already revoked token succeeds. A token the account does not hold is reported as not found. A request authenticated by a personal access token is refused (§2).
+         */
+        delete: operations["revokeAccessToken"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/reservations": {
         parameters: {
             query?: never;
@@ -966,6 +1012,70 @@ export interface components {
             token_type: "Bearer";
             /** @description Access-token lifetime in seconds. */
             expires_in: number;
+        };
+        ChangePasswordResponse: {
+            /** @description Signed JWT to present as `Authorization: Bearer <token>`. */
+            access_token: string;
+            /**
+             * @example Bearer
+             * @enum {string}
+             */
+            token_type: "Bearer";
+            /** @description Access-token lifetime in seconds. */
+            expires_in: number;
+            /** @description How many personal access tokens remain active. A password change leaves them valid (ADR-0016 §4). Absent when the count could not be read; the password change itself succeeded. */
+            active_tokens?: number;
+        };
+        PasswordResetConfirmResponse: {
+            /** @description Signed JWT to present as `Authorization: Bearer <token>`. */
+            access_token: string;
+            /**
+             * @example Bearer
+             * @enum {string}
+             */
+            token_type: "Bearer";
+            /** @description Access-token lifetime in seconds. */
+            expires_in: number;
+            /** @description How many personal access tokens the reset revoked. A reset revokes every one the account held (ADR-0016 §4). */
+            tokens_revoked: number;
+        };
+        AccessToken: {
+            id: string;
+            name: string;
+            /** @description The last four characters of the token value, for recognising it. */
+            last4: string;
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description When the token stops working, or null if it never expires.
+             */
+            expires_at: string | null;
+            /**
+             * Format: date-time
+             * @description When it was last used, to within five minutes; null if never.
+             */
+            last_used_at: string | null;
+            /** Format: date-time */
+            revoked_at: string | null;
+            /** @description Whether the token works now (not revoked, not expired). */
+            active: boolean;
+        };
+        CreateAccessTokenRequest: {
+            /** @description What the token is for, chosen by the user. */
+            name: string;
+            /**
+             * Format: date-time
+             * @description When the token stops working. Required unless never_expires is true.
+             */
+            expires_at?: string;
+            /** @description Set to true to create a token that does not expire, instead of expires_at. */
+            never_expires?: boolean;
+        };
+        CreatedAccessToken: {
+            /** @description The token value. It is shown this once and cannot be retrieved later. */
+            token: string;
+            access_token: components["schemas"]["AccessToken"];
         };
         UpdateProfileRequest: {
             /** @description The account's display name. A blank value clears the custom name and the display falls back to the account email (the creation default). */
@@ -1617,13 +1727,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The reset succeeded; a session access token is returned (auto-login). */
+            /** @description The reset succeeded; a session access token is returned (auto-login). Every personal access token the account held was revoked with it (ADR-0016 §4), and how many is reported. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["LoginResponse"];
+                    "application/json": components["schemas"]["PasswordResetConfirmResponse"];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -1962,18 +2072,91 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Password changed. A fresh session access token for the acting session is returned; the caller replaces its stored token with it. */
+            /** @description Password changed. A fresh session access token for the acting session is returned; the caller replaces its stored token with it. Personal access tokens are not affected (ADR-0016 §4), and how many remain active is reported so the caller can offer to review them. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["LoginResponse"];
+                    "application/json": components["schemas"]["ChangePasswordResponse"];
                 };
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    listAccessTokens: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The account's tokens. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessToken"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createAccessToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAccessTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description The token, with its value shown this once. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedAccessToken"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    revokeAccessToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tokenId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     listMyReservations: {
