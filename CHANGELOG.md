@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.26.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.25.0...yaadegar-v0.26.0) (2026-10-01)
+
+
+### Features
+
+* **auth:** authenticate personal access tokens on the owner surface ([#472](https://github.com/yaad-index/yaadegar/issues/472)) ([290ec03](https://github.com/yaad-index/yaadegar/commit/290ec03ff88cf607e26c5931d1ebdd7e3513cb15)), closes [#397](https://github.com/yaad-index/yaadegar/issues/397)
+* **auth:** endpoints to create, list and revoke personal access tokens ([#474](https://github.com/yaad-index/yaadegar/issues/474)) ([15a68d0](https://github.com/yaad-index/yaadegar/commit/15a68d0e145e6ae46f768d104822531dc22b8349))
+* **web:** manage personal access tokens in Settings ([#475](https://github.com/yaad-index/yaadegar/issues/475)) ([fa0d049](https://github.com/yaad-index/yaadegar/commit/fa0d0496c68660948b93ad47345dc6fc75d69942))
+
 ## [0.25.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.24.1...yaadegar-v0.25.0) (2026-09-29)
 
 
