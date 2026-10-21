@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.1](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.27.0...yaadegar-v0.27.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* **docs:** set the public link base in both compose quick starts ([#491](https://github.com/yaad-index/yaadegar/issues/491)) ([838f44b](https://github.com/yaad-index/yaadegar/commit/838f44b285f443c523ced4138896495eba09c820))
+
 ## [0.27.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.26.0...yaadegar-v0.27.0) (2026-10-21)
 
 
