@@ -178,6 +178,12 @@
 	const archiveError = $derived(
 		actionForm && 'archiveError' in actionForm ? actionForm.archiveError : undefined
 	);
+	// Delete reports through the same two regions as archive (#461): it is the other
+	// way to take an item off the list, and the owner reads both results in one place.
+	const deleteResult = $derived(actionForm && 'deletedName' in actionForm ? actionForm : undefined);
+	const deleteError = $derived(
+		actionForm && 'deleteError' in actionForm ? actionForm.deleteError : undefined
+	);
 	// Copy for each warning code. The backend sends a code, never a sentence, so the
 	// wording lives here and can be reworded without a contract change (#419 Q2).
 	const archiveWarningCopy: Record<string, string> = {
@@ -664,6 +670,9 @@
 	{#if archiveError}
 		<p class="mt-2 font-ui text-ui text-red-600" role="alert">{archiveError}</p>
 	{/if}
+	{#if deleteError}
+		<p class="mt-2 font-ui text-ui text-red-600" role="alert">{deleteError}</p>
+	{/if}
 	<div role="status">
 		{#if archiveResult && 'archived' in archiveResult}
 			<div class="mt-2">
@@ -680,6 +689,10 @@
 		{:else if archiveResult && 'unarchived' in archiveResult}
 			<p class="mt-2 font-ui text-ui text-green">
 				{archiveResult.archivedName ? `“${archiveResult.archivedName}” is` : 'It is'} back on your list.
+			</p>
+		{:else if deleteResult}
+			<p class="mt-2 font-ui text-ui text-green">
+				Deleted{deleteResult.deletedName ? ` “${deleteResult.deletedName}”` : ''}.
 			</p>
 		{/if}
 	</div>
@@ -776,6 +789,7 @@
 						</form>
 						<form method="post" action="?/delete" use:formEnhance={rowAction(id, 'live')}>
 							<input type="hidden" name="item_id" value={id} />
+							<input type="hidden" name="item_name" value={item.name} />
 							<button class="text-red-600 transition-colors hover:text-red-700">Delete</button>
 						</form>
 					</div>
@@ -957,6 +971,7 @@
 							</form>
 							<form method="post" action="?/delete" use:formEnhance={rowAction(id, 'archived')}>
 								<input type="hidden" name="item_id" value={id} />
+								<input type="hidden" name="item_name" value={item.name} />
 								<button class="text-red-600 transition-colors hover:text-red-700">Delete</button>
 							</form>
 						</div>
