@@ -157,11 +157,17 @@ and secret. At least one login method must be enabled and configured or the
 instance won't start; username+password (`YAADEGAR_AUTH_PASSWORD_ENABLED`,
 default on) satisfies this.
 
-### The public link base (emailed links)
+### The public link base (required)
 
-Set `YAADEGAR_PUBLIC_LINK_BASE` to the public URL of the giver-facing site so the
-links in reservation-confirm and decay keep/release emails point somewhere real,
-e.g. `https://example.com`. Without it those emails have no usable link.
+Set `YAADEGAR_PUBLIC_LINK_BASE` to the public URL of the giver-facing site,
+e.g. `https://example.com`. It prefixes every emailed link: reservation confirm,
+decay keep/release, co-buy, registration and password reset.
+
+Since 0.27.0 the instance **refuses to start** unless this is an absolute
+`http://` or `https://` URL, and the error names the setting. This holds whether
+or not SMTP is configured. The deprecated `YAADEGAR_DECAY_LINK_BASE` is still
+accepted as a fallback when `YAADEGAR_PUBLIC_LINK_BASE` is unset; if both are
+set, `YAADEGAR_PUBLIC_LINK_BASE` wins.
 
 ### Outgoing email (SMTP)
 

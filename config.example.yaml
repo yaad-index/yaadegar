@@ -66,13 +66,15 @@
 
 # --- Emailed links --------------------------------------------------------------
 
-# Base URL of the giver-facing site for links in emails (reservation confirm and
-# decay keep/release). Set this to where the frontend is reachable.
+# REQUIRED: base URL of the giver-facing site for links in emails (reservation
+# confirm, decay keep/release, co-buy, registration, password reset). Set this to
+# where the frontend is reachable. The instance refuses to start unless this (or
+# the deprecated decay-link-base below) is an absolute http(s) URL.
 # (env YAADEGAR_PUBLIC_LINK_BASE, flag --public-link-base)
 # public-link-base: ""
 
-# DEPRECATED alias for public-link-base, still honoured for the keep/release links
-# when public-link-base is unset. Prefer public-link-base.
+# DEPRECATED alias for public-link-base, used only when public-link-base is unset.
+# Prefer public-link-base.
 # (env YAADEGAR_DECAY_LINK_BASE, flag --decay-link-base)
 # decay-link-base: ""
 

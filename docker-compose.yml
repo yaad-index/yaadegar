@@ -8,9 +8,11 @@
 # for local use — never reuse them for anything real.
 #
 # Remote demo (a LAN host, no TLS, no DNS): override ORIGIN, YAADEGAR_BASE_DOMAIN,
-# and WEB_PORT at up-time. A nip.io host needs no DNS setup — e.g. tenant "demo":
+# YAADEGAR_PUBLIC_LINK_BASE and WEB_PORT at up-time. A nip.io host needs no DNS
+# setup — e.g. tenant "demo":
 #   YAADEGAR_BASE_DOMAIN=203.0.113.10.nip.io \
 #   ORIGIN=http://demo.203.0.113.10.nip.io:3000 \
+#   YAADEGAR_PUBLIC_LINK_BASE=http://demo.203.0.113.10.nip.io:3000 \
 #   WEB_PORT=3000 docker compose up --build --detach
 #   docker compose exec app yaadegar create-tenant --subdomain demo
 # ORIGIN must match the host the browser uses (SvelteKit's CSRF origin check).
@@ -49,6 +51,11 @@ services:
       # for local browsers/curl; override for a remote demo host (e.g. a nip.io host).
       YAADEGAR_BASE_DOMAIN: ${YAADEGAR_BASE_DOMAIN:-localhost}
       YAADEGAR_HTTP_ADDR: ":8080"
+      # Required: the giver-facing site's URL, which prefixes every emailed link
+      # (reservation confirm, decay keep/release, password reset). The instance
+      # refuses to start without an absolute http(s) URL here. The default is the
+      # quick start's tenant; set it to wherever givers reach your site.
+      YAADEGAR_PUBLIC_LINK_BASE: ${YAADEGAR_PUBLIC_LINK_BASE:-http://alice.localhost:3000}
       # The web service is the sole trusted proxy and forwards the tenant host as
       # X-Forwarded-Host; trust it because the backend port is not published
       # (ADR-0004 §7 — trust only when the backend isn't externally reachable).
