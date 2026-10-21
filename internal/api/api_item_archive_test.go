@@ -12,6 +12,7 @@ import (
 
 	"github.com/yaad-index/yaadegar/internal/api/gen"
 	"github.com/yaad-index/yaadegar/internal/decay"
+	"github.com/yaad-index/yaadegar/internal/email"
 	"github.com/yaad-index/yaadegar/internal/storage"
 )
 
@@ -338,6 +339,88 @@ func TestUnarchivingDoesNotEmailTheGiver(t *testing.T) {
 	require.Equal(t, http.StatusOK, h.unarchive(*item.Id).StatusCode)
 	assert.Empty(t, h.email.Sent()[before:],
 		"nothing about the giver's reservation changed — it was held, not released — so there is nothing to tell them")
+}
+
+// --- #425: co-buy pledgers are told too ---------------------------------------
+
+// archiveMail returns what archiving the item sent, keyed by recipient.
+func (h *harness) archiveMail(itemID string) map[string]email.Message {
+	h.t.Helper()
+	before := len(h.email.Sent())
+	require.Equal(h.t, http.StatusOK, mustStatus(h.archive(itemID)))
+	out := map[string]email.Message{}
+	for _, m := range h.email.Sent()[before:] {
+		_, dup := out[m.To]
+		require.False(h.t, dup, "one mail per address, got a second to %s", m.To)
+		out[m.To] = m
+	}
+	return out
+}
+
+func TestArchivingTellsBothHalvesOfAProposedMatch(t *testing.T) {
+	h := newHarness(t)
+	list := h.createList("List")
+	item := h.pricedItem(*list.Id, 10000, "EUR")
+	_, a := h.pledge(*list.ShareSlug, *item.Id, 5000, "EUR", "one@example.com")
+	_, b := h.pledge(*list.ShareSlug, *item.Id, 5000, "EUR", "two@example.com")
+	require.NotNil(t, b.Match, "the two pledges propose a match")
+	_ = a
+
+	sent := h.archiveMail(*item.Id)
+	require.Len(t, sent, 2, "both halves of the handshake hold a pledge and both are told")
+	for _, to := range []string{"one@example.com", "two@example.com"} {
+		m, ok := sent[to]
+		require.True(t, ok, "no mail to %s", to)
+		assert.Contains(t, m.Subject, "pledged toward")
+		assert.Contains(t, m.Body, "your pledge has not been cancelled")
+		assert.NotContains(t, m.Body, "@", "the note names the item and no person")
+	}
+}
+
+func TestArchivingTellsALonePledger(t *testing.T) {
+	h := newHarness(t)
+	list := h.createList("List")
+	item := h.pricedItem(*list.Id, 10000, "EUR")
+	resp, _ := h.pledge(*list.ShareSlug, *item.Id, 2000, "EUR", "lone@example.com")
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+	sent := h.archiveMail(*item.Id)
+	require.Len(t, sent, 1, "a pledge with no partner yet is still a commitment to the item")
+	assert.Contains(t, sent["lone@example.com"].Body, *item.Name)
+}
+
+func TestArchivingSkipsPledgersWhoAreNoLongerHoldingAnything(t *testing.T) {
+	h := newHarness(t)
+	list := h.createList("List")
+	item := h.pricedItem(*list.Id, 10000, "EUR")
+	_, a := h.pledge(*list.ShareSlug, *item.Id, 5000, "EUR", "declined@example.com")
+	_, b := h.pledge(*list.ShareSlug, *item.Id, 5000, "EUR", "withdrawn@example.com")
+	require.NotNil(t, b.Match)
+	resp, _ := h.confirm(*b.Match.Id, *a.CapabilityToken, "decline")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	resp, _ = h.reqH(http.MethodDelete, "/public/contributions/"+*b.ContributionId, h.ownerHost(),
+		map[string]string{"X-Capability-Token": *b.CapabilityToken}, nil)
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+	resp, _ = h.pledge(*list.ShareSlug, *item.Id, 1000, "EUR", "live@example.com")
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+	sent := h.archiveMail(*item.Id)
+	assert.Len(t, sent, 1, "declined and withdrawn pledges are terminal; only the live one is told")
+	assert.Contains(t, sent, "live@example.com")
+}
+
+func TestArchivingMailsEachAddressOnce(t *testing.T) {
+	h := newHarness(t)
+	list := h.createList("List")
+	item := h.pricedItem(*list.Id, 10000, "EUR")
+	resp, _ := h.pledge(*list.ShareSlug, *item.Id, 2000, "EUR", "same@example.com")
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	resp, _ = h.pledge(*list.ShareSlug, *item.Id, 3000, "EUR", "SAME@example.com")
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+	before := len(h.email.Sent())
+	require.Equal(t, http.StatusOK, mustStatus(h.archive(*item.Id)))
+	assert.Len(t, h.email.Sent()[before:], 1, "two pledges from one address are one mail, case-insensitively")
 }
 
 // --- Q2: warn, do not block --------------------------------------------------
