@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.27.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.26.0...yaadegar-v0.27.0) (2026-10-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* **email:** --public-link-base (YAADEGAR_PUBLIC_LINK_BASE) is now required at startup and must be an absolute http(s) URL; an instance without one fails to boot with the fix named. The deprecated --decay-link-base is still honoured first.
+
+### Features
+
+* **email:** give transactional mail a shared layout and an HTML part ([#444](https://github.com/yaad-index/yaadegar/issues/444)) ([7d48bfe](https://github.com/yaad-index/yaadegar/commit/7d48bfe3fe4045632537797629de317b57803ef5))
+
+
+### Bug Fixes
+
+* **api:** tell co-buy pledgers when an item is archived ([#484](https://github.com/yaad-index/yaadegar/issues/484)) ([3f81f86](https://github.com/yaad-index/yaadegar/commit/3f81f8692d65f083214fe59fb2baa5937f8ddeaa))
+* **web:** say what happened when an owner deletes an item ([#483](https://github.com/yaad-index/yaadegar/issues/483)) ([7cc46e6](https://github.com/yaad-index/yaadegar/commit/7cc46e6d5d650437d4350bae66451ee5ebe30568))
+
 ## [0.26.0](https://github.com/yaad-index/yaadegar/compare/yaadegar-v0.25.0...yaadegar-v0.26.0) (2026-10-01)
 
 
