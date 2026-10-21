@@ -333,16 +333,20 @@ export const actions: Actions = {
 		});
 	},
 
+	// Delete (#461). The name comes through the form for the same reason as archive's:
+	// the row is gone by the time the result renders, so only the form can say which
+	// item it was.
 	delete: async ({ request, locals }) => {
 		const fd = await request.formData();
 		const itemId = String(fd.get('item_id') ?? '');
+		const itemName = String(fd.get('item_name') ?? '');
 		if (!itemId) return fail(400, {});
 		const client = backendClient(locals);
 		const { error: err } = await client.DELETE('/api/v1/items/{itemId}', {
 			params: { path: { itemId } }
 		});
-		if (err) return fail(400, { deleteError: 'Could not delete the item.' });
-		return { deleted: true };
+		if (err) return fail(400, { deleteError: 'Could not delete that item.' });
+		return { deleted: true, deletedName: itemName };
 	},
 
 	// Archive (#419). The item name is carried through the form rather than looked
