@@ -50,12 +50,13 @@ Then open `http://alice.localhost:3000`, log in as `alice`, create a list, and
 copy its share link to try the anonymous giver flow.
 
 To stand it up on a remote demo host (a LAN box with no TLS or DNS), override the
-origin, base domain, and published port at up-time — a nip.io host needs no DNS
-setup:
+origin, base domain, emailed-link base, and published port at up-time — a nip.io
+host needs no DNS setup:
 
 ```sh
 YAADEGAR_BASE_DOMAIN=203.0.113.10.nip.io \
   ORIGIN=http://demo.203.0.113.10.nip.io:3000 \
+  YAADEGAR_PUBLIC_LINK_BASE=http://demo.203.0.113.10.nip.io:3000 \
   WEB_PORT=3000 docker compose up --build --detach
 docker compose exec app yaadegar create-tenant --subdomain demo
 ```
