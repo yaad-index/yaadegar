@@ -214,12 +214,13 @@ func (s *Server) resendVerificationEmailAsync(tenant storage.Tenant, userID, to,
 // verificationEmail builds the verification message shared by the first send and the
 // resend, so their subject and body never drift.
 func (s *Server) verificationEmail(tenant storage.Tenant, to, rawToken string) email.Message {
-	return email.Message{
-		To:      to,
-		Subject: "Verify your email",
-		Body: "Verify your email to finish creating your account: " + s.verifyLink(tenant, rawToken) +
-			"\n\nThis link can be used once and expires soon. If you didn't request it, you can ignore this email.",
+	c := email.Content{
+		Title:  "Verify your email",
+		Intro:  []string{"Confirm this address to finish creating your account."},
+		Action: &email.Action{Label: "Verify your email", URL: s.verifyLink(tenant, rawToken)},
+		Outro:  []string{"This link can be used once and expires soon. If you didn't request it, you can ignore this email."},
 	}
+	return c.Message(to, "Verify your email")
 }
 
 // verifyLink builds the tenant-correct verification URL. It mirrors resetLink: when a

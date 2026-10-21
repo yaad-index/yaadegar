@@ -192,6 +192,11 @@ func newHarnessFull(t *testing.T, limiter auth.Limiter, trustForwardedHost bool,
 		ReserverConfirmWindow: reserverConfirmWindow,
 		DisplayLocation:       displayLocation,
 		TrustedProxies:        trustedProxies,
+		// Absolute on purpose. Emailed links are useless relative — a mail has no
+		// document to resolve them against — and the shared layout refuses to render
+		// an action that is not a web URL, so a harness with no base would quietly
+		// produce confirm mails with nothing to confirm and pass anyway.
+		PublicLinkBase: "https://lists.example.invalid",
 	}
 	for _, f := range extra {
 		f(&opts)
