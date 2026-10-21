@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/yaad-index/yaadegar/internal/api/gen"
 	"github.com/yaad-index/yaadegar/internal/email"
@@ -55,7 +56,7 @@ func (s *Server) ArchiveItem(ctx context.Context, req gen.ArchiveItemRequestObje
 		return nil, err
 	}
 	if archivedNow {
-		s.notifyReserversArchived(ctx, ts, it)
+		s.notifyGiversArchived(ctx, ts, it)
 	}
 
 	updated, err := ts.Items().Get(ctx, it.ID)
@@ -151,46 +152,78 @@ func (s *Server) archiveWarnings(ctx context.Context, ts storage.TenantStore, it
 	return warnings, nil
 }
 
-// notifyReserversArchived tells every giver holding a live reservation that the
-// item has come off the list (#419 Q1: the giver is told, it does not go quiet).
+// notifyGiversArchived tells every giver still holding something on the item —
+// a live reservation or a live co-buy pledge — that it has come off the list
+// (#419 Q1: the giver is told, it does not go quiet; #425 extends that to pledgers,
+// including both halves of a proposed match).
 //
-// The decision it implements: staying silent leaves a giver holding a reservation
-// for something that has vanished, with no way to discover it. Telling them does
+// The decision it implements: staying silent leaves a giver holding a commitment
+// to something that has vanished, with no way to discover it. Telling them does
 // reveal that the owner acted on the item — but the giver already knows they
-// reserved it, so what is disclosed is narrow, and the alternative fails them
-// outright.
+// reserved or pledged, so what is disclosed is narrow, and the alternative fails
+// them outright.
 //
-// Each giver is emailed separately and the message names only the item, so no
-// giver learns that any other giver exists (ADR-0002 §5). Best-effort, like the
-// thank-you note: a send failure is logged and swallowed, because the archive
+// Each address is emailed once, separately, and the message names only the item,
+// so no giver learns that any other giver exists (ADR-0002 §5). An address holding
+// both a reservation and a pledge gets the reservation wording. Best-effort, like
+// the thank-you note: a send failure is logged and swallowed, because the archive
 // itself has already happened and un-doing it over an SMTP error would be worse
 // than a missed email.
-func (s *Server) notifyReserversArchived(ctx context.Context, ts storage.TenantStore, item storage.Item) {
+func (s *Server) notifyGiversArchived(ctx context.Context, ts storage.TenantStore, item storage.Item) {
+	what := item.Name
+	if what == "" {
+		what = "an item you reserved"
+	}
+	const after = " as finished, so it is no longer on their list. There is nothing you need to do — "
+	const reservedSubject = "A gift you reserved has come off the list"
+	const pledgedSubject = "A gift you pledged toward has come off the list"
+
+	type notice struct{ to, subject, body string }
+	var notices []notice
+	seen := map[string]bool{}
+	add := func(to, subject, body string) {
+		key := strings.ToLower(strings.TrimSpace(to))
+		if key == "" || seen[key] {
+			return
+		}
+		seen[key] = true
+		notices = append(notices, notice{to: to, subject: subject, body: body})
+	}
+
+	// Reservations first, so an address on both tracks gets the reservation wording.
 	reservations, err := ts.Reservations().ListByItem(ctx, item.ID)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "archive: reservation load failed (ignored)", "item_id", item.ID, "error", err)
-		return
 	}
 	for _, r := range reservations {
-		if r.State == storage.StateExpired {
+		if r.State == storage.StateExpired || r.GiverEmail == nil {
 			continue // not a live hold; nobody is waiting on this item
 		}
-		if r.GiverEmail == nil || *r.GiverEmail == "" {
-			continue
+		add(*r.GiverEmail, reservedSubject, "The owner has marked "+what+after+
+			"your reservation has not been cancelled, and you will not be asked about it again.")
+	}
+
+	contributions, err := ts.Contributions().ListByItem(ctx, item.ID)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "archive: contribution load failed (ignored)", "item_id", item.ID, "error", err)
+	}
+	pledged := item.Name
+	if pledged == "" {
+		pledged = "an item you pledged toward"
+	}
+	for _, c := range contributions {
+		switch c.Status {
+		case storage.ContributionDeclined, storage.ContributionWithdrawn, storage.ContributionExpired:
+			continue // terminal: this giver is no longer holding anything here
 		}
-		subject := "A gift you reserved has come off the list"
-		body := "The owner has marked " + item.Name + " as finished, so it is no longer on their list. " +
-			"There is nothing you need to do — your reservation has not been cancelled, and you will not be " +
-			"asked about it again."
-		if item.Name == "" {
-			subject = "A gift you reserved has come off the list"
-			body = "The owner has marked an item you reserved as finished, so it is no longer on their list. " +
-				"There is nothing you need to do — your reservation has not been cancelled, and you will not be " +
-				"asked about it again."
-		}
-		if err := s.email.Send(ctx, email.Message{To: *r.GiverEmail, Subject: subject, Body: body}); err != nil {
+		add(c.ContactEmail, pledgedSubject, "The owner has marked "+pledged+after+
+			"your pledge has not been cancelled, and you will not be asked about it again.")
+	}
+
+	for _, n := range notices {
+		if err := s.email.Send(ctx, email.Message{To: n.to, Subject: n.subject, Body: n.body}); err != nil {
 			s.logger.ErrorContext(ctx, "archive notification email failed (ignored)",
-				"item_id", item.ID, "reservation_id", r.ID, "error", err)
+				"item_id", item.ID, "error", err)
 		}
 	}
 }
