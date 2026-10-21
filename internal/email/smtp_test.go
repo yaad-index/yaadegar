@@ -2,8 +2,14 @@ package email
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"io"
+	"mime"
+	"mime/multipart"
+	"mime/quotedprintable"
 	"net"
+	"net/mail"
 	"strings"
 	"sync"
 	"testing"
@@ -137,7 +143,21 @@ func TestSendPlaintextLoopback(t *testing.T) {
 	assert.Equal(t, "giver@example.com", got.rcptTo)
 	assert.True(t, got.authed, "expected AUTH PLAIN to be exercised")
 	assert.Contains(t, got.data, "Subject: Still planning to buy your reserved gift?")
-	assert.Contains(t, got.data, "Keep it: https://example/keep?token=abc")
+	// The body is quoted-printable on the wire, so it is asserted through a decode
+	// rather than by matching raw bytes: "token=abc" travels as "token=3Dabc". The
+	// decoded form is also the only one that says anything about what a reader sees.
+	assert.Contains(t, got.data, "Content-Transfer-Encoding: quoted-printable")
+	assert.Contains(t, decodeBody(t, got.data), "Keep it: https://example/keep?token=abc")
+}
+
+// decodeBody returns the quoted-printable-decoded body of a single-part message.
+func decodeBody(t *testing.T, data string) string {
+	t.Helper()
+	_, body, found := strings.Cut(data, "\r\n\r\n")
+	require.True(t, found, "message has no header/body separator")
+	decoded, err := io.ReadAll(quotedprintable.NewReader(strings.NewReader(body)))
+	require.NoError(t, err)
+	return string(decoded)
 }
 
 // TestStartTLSRequiredRefusesPlaintextServer confirms the TLS-required posture:
@@ -274,4 +294,129 @@ func extractAddr(s string) string {
 		s = s[:i]
 	}
 	return s
+}
+
+// #437: a message with an HTML part goes out as multipart/alternative. These
+// assert the wire format rather than the rendering, because a mail that is
+// well-formed in Go and malformed on the wire is indistinguishable from a working
+// one until a client refuses it.
+
+func parseParts(t *testing.T, raw []byte) []struct {
+	ContentType string
+	Encoding    string
+	Body        string
+} {
+	t.Helper()
+	msg, err := mail.ReadMessage(bytes.NewReader(raw))
+	require.NoError(t, err)
+
+	mediaType, params, err := mime.ParseMediaType(msg.Header.Get("Content-Type"))
+	require.NoError(t, err)
+	require.Equal(t, "multipart/alternative", mediaType)
+	require.NotEmpty(t, params["boundary"], "a multipart message must declare its boundary")
+
+	var out []struct {
+		ContentType string
+		Encoding    string
+		Body        string
+	}
+	mr := multipart.NewReader(msg.Body, params["boundary"])
+	for {
+		// NextRawPart, not NextPart: NextPart transparently decodes a
+		// quoted-printable part and drops its header, so decoding again here turned
+		// "token=abc" into "token\xabc" and the assertion failed against a correct
+		// message. Reading raw keeps this helper's decode the only one.
+		p, err := mr.NextRawPart()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		body, err := io.ReadAll(quotedprintable.NewReader(p))
+		require.NoError(t, err)
+		out = append(out, struct {
+			ContentType string
+			Encoding    string
+			Body        string
+		}{p.Header.Get("Content-Type"), p.Header.Get("Content-Transfer-Encoding"), string(body)})
+	}
+	return out
+}
+
+func TestAMessageWithHTMLIsMultipartAlternativeTextFirst(t *testing.T) {
+	raw := buildMessage("noreply@example.invalid", Message{
+		To:      "giver@example.invalid",
+		Subject: "Confirm your reservation",
+		Body:    "Confirm the reservation:\nhttps://e.invalid/confirm?token=abc\n",
+		HTML:    `<html><body><a href="https://e.invalid/confirm?token=abc">Confirm</a></body></html>`,
+	})
+
+	parts := parseParts(t, raw)
+	require.Len(t, parts, 2)
+	// Order is the requirement, not an accident: a client picks the LAST part it can
+	// render (RFC 2046 §5.1.4), so text before HTML is what makes an HTML reader see
+	// the HTML and a text-only one see something sensible. Reversed, everyone gets text.
+	assert.Contains(t, parts[0].ContentType, "text/plain")
+	assert.Contains(t, parts[1].ContentType, "text/html")
+	assert.Equal(t, "quoted-printable", parts[0].Encoding)
+	assert.Equal(t, "quoted-printable", parts[1].Encoding)
+	assert.Contains(t, parts[0].Body, "https://e.invalid/confirm?token=abc")
+	assert.Contains(t, parts[1].Body, `href="https://e.invalid/confirm?token=abc"`)
+}
+
+func TestAMessageWithNoHTMLStaysSinglePart(t *testing.T) {
+	raw := string(buildMessage("noreply@example.invalid", Message{
+		To: "giver@example.invalid", Subject: "s", Body: "just text",
+	}))
+	assert.Contains(t, raw, "Content-Type: text/plain; charset=utf-8")
+	assert.NotContains(t, raw, "multipart/alternative")
+}
+
+func TestNoLineExceedsTheRFC5322Limit(t *testing.T) {
+	// The reason both parts are encoded at all. An inlined-CSS HTML part has long
+	// lines by construction, and a long item name can push a text line over on its
+	// own — so this is checked with a body that would blow the cap unencoded.
+	long := strings.Repeat("Cast iron pan and a very long descriptive name ", 60)
+	raw := buildMessage("noreply@example.invalid", Message{
+		To: "giver@example.invalid", Subject: "s", Body: long, HTML: "<html><body>" + long + "</body></html>",
+	})
+	for i, line := range strings.Split(string(raw), "\r\n") {
+		assert.LessOrEqual(t, len(line), 998, "line %d is over the RFC 5322 limit", i)
+	}
+}
+
+func TestANonASCIISubjectIsEncoded(t *testing.T) {
+	// Item and list names reach subject lines, and a raw 8-bit header arrives as
+	// mojibake rather than as the name the owner typed.
+	raw := string(buildMessage("noreply@example.invalid", Message{
+		To: "giver@example.invalid", Subject: "Café träy — naïve", Body: "b",
+	}))
+	assert.NotContains(t, raw, "Subject: Café träy")
+	assert.Contains(t, raw, "Subject: =?utf-8?q?")
+
+	msg, err := mail.ReadMessage(strings.NewReader(raw))
+	require.NoError(t, err)
+	decoded, err := new(mime.WordDecoder).DecodeHeader(msg.Header.Get("Subject"))
+	require.NoError(t, err)
+	assert.Equal(t, "Café träy — naïve", decoded)
+}
+
+func TestHeaderInjectionIsStillRefusedInBothSubjectPaths(t *testing.T) {
+	// sanitizeHeader runs before the ASCII check, so the guarantee does not depend
+	// on which branch a given subject happens to take.
+	for _, subject := range []string{
+		"plain\r\nBcc: attacker@example.invalid",
+		"näive\r\nBcc: attacker@example.invalid",
+	} {
+		raw := string(buildMessage("noreply@example.invalid", Message{To: "g@example.invalid", Subject: subject, Body: "b"}))
+		// The invariant is that the injected text cannot become a HEADER, not that
+		// the characters vanish. Stripping CR/LF leaves "Bcc: ..." sitting inside the
+		// subject value, which is harmless and is what correct behaviour produces —
+		// so asserting the substring is absent would fail against the fix.
+		for _, line := range strings.Split(raw, "\r\n") {
+			assert.False(t, strings.HasPrefix(line, "Bcc:"), "injected header line: %q", line)
+		}
+		msg, err := mail.ReadMessage(strings.NewReader(raw))
+		require.NoError(t, err)
+		assert.Empty(t, msg.Header.Get("Bcc"))
+	}
 }

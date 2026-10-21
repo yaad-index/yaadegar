@@ -174,20 +174,20 @@ func (s *Server) notifyGiversArchived(ctx context.Context, ts storage.TenantStor
 	if what == "" {
 		what = "an item you reserved"
 	}
-	const after = " as finished, so it is no longer on their list. There is nothing you need to do — "
+	const gone = " as finished, so it is no longer on their list."
 	const reservedSubject = "A gift you reserved has come off the list"
 	const pledgedSubject = "A gift you pledged toward has come off the list"
 
-	type notice struct{ to, subject, body string }
+	type notice struct{ to, subject, intro, outro string }
 	var notices []notice
 	seen := map[string]bool{}
-	add := func(to, subject, body string) {
+	add := func(to, subject, intro, outro string) {
 		key := strings.ToLower(strings.TrimSpace(to))
 		if key == "" || seen[key] {
 			return
 		}
 		seen[key] = true
-		notices = append(notices, notice{to: to, subject: subject, body: body})
+		notices = append(notices, notice{to: to, subject: subject, intro: intro, outro: outro})
 	}
 
 	// Reservations first, so an address on both tracks gets the reservation wording.
@@ -199,8 +199,8 @@ func (s *Server) notifyGiversArchived(ctx context.Context, ts storage.TenantStor
 		if r.State == storage.StateExpired || r.GiverEmail == nil {
 			continue // not a live hold; nobody is waiting on this item
 		}
-		add(*r.GiverEmail, reservedSubject, "The owner has marked "+what+after+
-			"your reservation has not been cancelled, and you will not be asked about it again.")
+		add(*r.GiverEmail, reservedSubject, "The owner has marked "+what+gone,
+			"There is nothing you need to do — your reservation has not been cancelled, and you will not be asked about it again.")
 	}
 
 	contributions, err := ts.Contributions().ListByItem(ctx, item.ID)
@@ -216,12 +216,15 @@ func (s *Server) notifyGiversArchived(ctx context.Context, ts storage.TenantStor
 		case storage.ContributionDeclined, storage.ContributionWithdrawn, storage.ContributionExpired:
 			continue // terminal: this giver is no longer holding anything here
 		}
-		add(c.ContactEmail, pledgedSubject, "The owner has marked "+pledged+after+
-			"your pledge has not been cancelled, and you will not be asked about it again.")
+		add(c.ContactEmail, pledgedSubject, "The owner has marked "+pledged+gone,
+			"There is nothing you need to do — your pledge has not been cancelled, and you will not be asked about it again.")
 	}
 
+	// No action: each notice says a thing has happened and that there is nothing
+	// for the giver to do, so a button would contradict the words.
 	for _, n := range notices {
-		if err := s.email.Send(ctx, email.Message{To: n.to, Subject: n.subject, Body: n.body}); err != nil {
+		c := email.Content{Title: n.subject, Intro: []string{n.intro}, Outro: []string{n.outro}}
+		if err := s.email.Send(ctx, c.Message(n.to, n.subject)); err != nil {
 			s.logger.ErrorContext(ctx, "archive notification email failed (ignored)",
 				"item_id", item.ID, "error", err)
 		}

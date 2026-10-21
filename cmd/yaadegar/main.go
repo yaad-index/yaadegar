@@ -250,9 +250,9 @@ func (c *ServeCmd) Run(cli *CLI) error {
 
 	// The public link base (giver-facing site) feeds every emailed link; the old
 	// --decay-link-base is honoured as a back-compat alias when it is unset.
-	linkBase := c.PublicLinkBase
-	if linkBase == "" {
-		linkBase = c.DecayLinkBase
+	linkBase, err := resolveLinkBase(c.PublicLinkBase, c.DecayLinkBase)
+	if err != nil {
+		return err
 	}
 	// Fail closed on a bogus instance-default tier rather than silently reserving
 	// as full_guest (ADR-0007).
@@ -490,4 +490,38 @@ func main() {
 		kong.UsageOnError(),
 	)
 	kctx.FatalIfErrorf(kctx.Run(cli))
+}
+
+// resolveLinkBase picks the giver-facing base URL for emailed links and refuses
+// one that cannot work.
+//
+// ⚠️ Validated at startup rather than at send time, and stricter than before. An
+// emailed link has no document to resolve against, so a relative or empty base
+// produces a confirm mail whose link cannot be followed — and the reservation then
+// expires silently, which is the failure #430 is about. The shared email layout
+// refuses to render an action that is not a web URL, so without this check the
+// mail goes out looking complete with nothing to click.
+//
+// This makes a previously-optional setting required for any instance that sends
+// mail. The trade is deliberate and it is about who can act on the breakage: with
+// no check the cost lands on givers, who can neither see nor fix it, and looks
+// identical to a giver who ignored the mail. A boot failure puts it in front of
+// the operator, who is the only person who can fix it, with the fix named.
+//
+// The deprecated --decay-link-base is honoured first, so an instance configured
+// entirely through the older name keeps starting. Failing those operators would
+// make a correctness fix into an upgrade trap for exactly the people who followed
+// the older documentation.
+func resolveLinkBase(publicBase, decayBase string) (string, error) {
+	base := publicBase
+	if base == "" {
+		base = decayBase
+	}
+	lower := strings.ToLower(base)
+	if !strings.HasPrefix(lower, "https://") && !strings.HasPrefix(lower, "http://") {
+		return "", fmt.Errorf("--public-link-base (or the deprecated --decay-link-base) must be an "+
+			"absolute http(s) URL of the giver-facing site, got %q: emailed confirm and keep/release "+
+			"links cannot be followed without it", base)
+	}
+	return base, nil
 }
